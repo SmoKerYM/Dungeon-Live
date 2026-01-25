@@ -2,6 +2,36 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
+
+// 笔记文件路径（Render Disk 挂载点）
+const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
+
+// 读取笔记
+function loadNotes() {
+  try {
+    if (fs.existsSync(NOTES_FILE)) {
+      return fs.readFileSync(NOTES_FILE, 'utf8');
+    }
+  } catch (err) {
+    console.error('读取笔记失败:', err);
+  }
+  return '';
+}
+
+// 保存笔记
+function saveNotes(content) {
+  try {
+    // 确保目录存在
+    const dir = path.dirname(NOTES_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(NOTES_FILE, content, 'utf8');
+  } catch (err) {
+    console.error('保存笔记失败:', err);
+  }
+}
 
 const app = express();
 const server = createServer(app);
@@ -32,7 +62,8 @@ const gameState = {
     black: { cur: 10, max: 10 }
   },
   drawings: [],       // 绘图数据
-  npcs: []            // NPC 数据 { id, x, y }
+  npcs: [],           // NPC 数据 { id, x, y }
+  notes: loadNotes()  // 共享笔记（从文件加载）
 };
 
 // Socket.IO 连接处理
@@ -78,7 +109,8 @@ io.on('connection', (socket) => {
         hp: gameState.hp,
         players: Array.from(gameState.players.values()),
         drawings: gameState.drawings,
-        npcs: gameState.npcs
+        npcs: gameState.npcs,
+        notes: gameState.notes
       }
     });
 
@@ -271,6 +303,16 @@ io.on('connection', (socket) => {
       message,
       timestamp: Date.now()
     });
+  });
+
+  // 笔记更新 (所有人可编辑)
+  socket.on('notes:update', (content) => {
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+
+    gameState.notes = content;
+    saveNotes(content);
+    socket.broadcast.emit('notes:sync', content);
   });
 
   // 断开连接

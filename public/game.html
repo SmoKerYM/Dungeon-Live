@@ -175,6 +175,66 @@
         }
         .color-option:hover { transform: scale(1.1); border-color: white; }
         .color-option.taken { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+        /* Tab 栏 */
+        #tab-bar {
+            display: flex;
+            background: #1a1a2e;
+            border-bottom: 2px solid #3498db;
+            flex-shrink: 0;
+        }
+        .tab {
+            padding: 12px 30px;
+            cursor: pointer;
+            color: #aaa;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab:hover { color: white; background: rgba(52, 152, 219, 0.1); }
+        .tab.active {
+            color: white;
+            background: rgba(52, 152, 219, 0.2);
+            border-bottom-color: #3498db;
+        }
+
+        /* 笔记视图 */
+        #notes-view {
+            display: none;
+            flex-grow: 1;
+            padding: 20px;
+            background: #1a1a1a;
+        }
+        #notes-textarea {
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            padding: 20px;
+            resize: none;
+            outline: none;
+        }
+        #notes-textarea:focus {
+            border-color: #3498db;
+        }
+        #notes-textarea::placeholder {
+            color: #666;
+        }
+
+        /* 主内容区域 */
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
     </style>
 </head>
 <body>
@@ -296,7 +356,14 @@
     </div>
 </div>
 
-<div id="viewport">
+<div id="main-content">
+    <!-- Tab 栏 -->
+    <div id="tab-bar">
+        <div class="tab active" data-tab="map" onclick="switchTab('map')">地图</div>
+        <div class="tab" data-tab="notes" onclick="switchTab('notes')">笔记</div>
+    </div>
+
+    <div id="viewport">
     <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
     <div id="ui-layer">
@@ -312,6 +379,12 @@
         <button id="lock-btn" onclick="toggleLock()">Lock Map</button>
     </div>
 </div>
+
+    <!-- 笔记视图 -->
+    <div id="notes-view">
+        <textarea id="notes-textarea" placeholder="在此输入共享笔记...&#10;&#10;所有人都可以编辑，内容会实时同步给所有玩家。"></textarea>
+    </div>
+</div><!-- end main-content -->
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -350,6 +423,34 @@
     let isDraggingMap = false, isLocked = false, startX, startY;
     let currentTool = 'move', isPainting = false, penColor = '#ff0000';
     let lastDrawPoint = null; // 记录上一个绘图点
+
+    // --- Tab 切换 ---
+    const notesTextarea = document.getElementById('notes-textarea');
+    let notesTimeout = null;
+
+    function switchTab(tabName) {
+        // 更新 Tab 按钮状态
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === tabName);
+        });
+
+        // 切换视图
+        const isMap = tabName === 'map';
+        document.getElementById('viewport').style.display = isMap ? 'flex' : 'none';
+        document.getElementById('notes-view').style.display = isMap ? 'none' : 'flex';
+    }
+
+    // --- 笔记同步 ---
+    notesTextarea.oninput = () => {
+        clearTimeout(notesTimeout);
+        notesTimeout = setTimeout(() => {
+            socket.emit('notes:update', notesTextarea.value);
+        }, 500); // 500ms 防抖
+    };
+
+    socket.on('notes:sync', (content) => {
+        notesTextarea.value = content;
+    });
 
     // --- 权限控制 ---
     function applyPermissions() {
@@ -468,6 +569,10 @@
             savedGameState.npcs.forEach(npc => {
                 createNPCElement(npc.id, npc.x, npc.y, npc.color);
             });
+        }
+        // 恢复笔记
+        if (savedGameState.notes) {
+            notesTextarea.value = savedGameState.notes;
         }
     }
 
@@ -988,6 +1093,11 @@
         // 恢复 NPC
         if (gs.npcs) {
             gs.npcs.forEach(npc => createNPCElement(npc.id, npc.x, npc.y, npc.color));
+        }
+
+        // 恢复笔记
+        if (gs.notes) {
+            notesTextarea.value = gs.notes;
         }
 
         // 【核心修复】：恢复所有已加入玩家的侧边栏卡片

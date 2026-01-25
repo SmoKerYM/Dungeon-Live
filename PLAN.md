@@ -372,3 +372,132 @@ const npcColorMap = {
 </div>
 ```
 
+---
+
+## 第十阶段：共享笔记系统
+
+### 10.1 功能概述
+- 在页面顶部添加 Tab 栏，包含「地图」和「笔记」两个标签
+- 点击「笔记」切换到共享笔记视图
+- 所有用户（DM 和 Player）都可以查看和编辑笔记
+- 笔记内容实时同步到所有连接的客户端
+- 笔记持久化存储（使用 Render Disk）
+
+### 10.2 服务端实现
+
+#### 文件持久化
+```javascript
+const fs = require('fs');
+const NOTES_FILE = '/data/notes.txt';
+
+// 读取笔记
+function loadNotes() {
+  try {
+    if (fs.existsSync(NOTES_FILE)) {
+      return fs.readFileSync(NOTES_FILE, 'utf8');
+    }
+  } catch (err) {
+    console.error('读取笔记失败:', err);
+  }
+  return '';
+}
+
+// 保存笔记
+function saveNotes(content) {
+  try {
+    fs.writeFileSync(NOTES_FILE, content, 'utf8');
+  } catch (err) {
+    console.error('保存笔记失败:', err);
+  }
+}
+```
+
+#### Socket 事件
+```javascript
+// 笔记更新（所有人可编辑）
+socket.on('notes:update', (content) => {
+  const player = gameState.players.get(socket.id);
+  if (!player) return;
+
+  gameState.notes = content;
+  saveNotes(content);
+  socket.broadcast.emit('notes:sync', content);
+});
+```
+
+### 10.3 客户端实现
+
+#### Tab 栏 HTML
+```html
+<div id="tab-bar">
+  <div class="tab active" data-tab="map">地图</div>
+  <div class="tab" data-tab="notes">笔记</div>
+</div>
+```
+
+#### Tab 栏样式
+```css
+#tab-bar {
+  display: flex;
+  background: #1a1a2e;
+  border-bottom: 2px solid #3498db;
+}
+.tab {
+  padding: 10px 20px;
+  cursor: pointer;
+  color: #aaa;
+  transition: all 0.3s;
+}
+.tab:hover { color: white; }
+.tab.active {
+  color: white;
+  background: #3498db;
+}
+```
+
+#### 笔记视图
+```html
+<div id="notes-view" style="display:none;">
+  <textarea id="notes-textarea" placeholder="在此输入共享笔记..."></textarea>
+</div>
+```
+
+#### Tab 切换逻辑
+```javascript
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+
+    const isMap = tab.dataset.tab === 'map';
+    document.getElementById('viewport').style.display = isMap ? 'block' : 'none';
+    document.getElementById('notes-view').style.display = isMap ? 'none' : 'flex';
+  };
+});
+```
+
+#### 笔记同步（带防抖）
+```javascript
+let notesTimeout;
+const notesTextarea = document.getElementById('notes-textarea');
+
+notesTextarea.oninput = () => {
+  clearTimeout(notesTimeout);
+  notesTimeout = setTimeout(() => {
+    socket.emit('notes:update', notesTextarea.value);
+  }, 500); // 500ms 防抖
+};
+
+socket.on('notes:sync', (content) => {
+  notesTextarea.value = content;
+});
+```
+
+### 10.4 Render Disk 配置
+1. 在 Render Dashboard 中进入服务设置
+2. 添加 Disk：
+   - Name: `data`
+   - Mount Path: `/data`
+   - Size: 1 GB（最小）
+3. 重新部署服务
+
