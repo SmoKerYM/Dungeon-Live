@@ -332,8 +332,8 @@
     // --- Socket 连接 ---
     const socket = io();
 
-    // 重新加入（页面刷新后）
-    socket.emit('join', { name: userName, role: userRole, password: isDM ? '12138' : '' });
+    // // 重新加入（页面刷新后）
+    // socket.emit('join', { name: userName, role: userRole, password: isDM ? '12138' : '' });
 
     // --- DOM 元素 ---
     const mapImg = document.getElementById('map-img');
@@ -469,6 +469,24 @@
                 createNPCElement(npc.id, npc.x, npc.y, npc.color);
             });
         }
+    }
+
+    // 清理旧的 init 逻辑，只保留权限和 UI 初始化
+    function startApp() {
+        applyPermissions();
+        
+        // 如果是玩家且还没选颜色，显示弹窗
+        if (!isDM && !userColor) {
+            document.getElementById('color-modal').style.display = 'flex';
+        }
+
+        // 【最后一步】：所有监听器注册完毕后，再发送加入请求
+        console.log('正在发送加入请求...');
+        socket.emit('join', { 
+            name: userName, 
+            role: userRole, 
+            password: isDM ? '12138' : '' 
+        });
     }
 
     // --- 颜色选择 ---
@@ -927,29 +945,28 @@
 
     // --- Socket 事件监听 ---
     socket.on('joinSuccess', (data) => {
+        console.log('加入成功，同步游戏数据...', data);
         if (data.dmName) {
             document.getElementById('dm-name').textContent = data.dmName;
         }
         
-        // 更新已占用的颜色
+        // 更新颜色选择弹窗
         if (data.takenColors) {
             updateColorOptions(data.takenColors);
         }
 
-        const gs = data.gameState; // 这是从服务器发来的实时全量数据
+        const gs = data.gameState;
         if (!gs) return;
 
-        // 【核心修复 1】：恢复地图背景与旧笔迹
+        // 【修复】：先清空当前棋子，防止重复渲染
+        mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
+
+        // 恢复地图、缩放、笔迹（与之前一致）
         if (gs.mapData) {
             loadMapFromData(gs.mapData, () => {
-                // 必须在地图图片加载完后，才能恢复笔迹，否则画布尺寸不对
-                if (gs.drawings) {
-                    restoreDrawings(gs.drawings);
-                }
+                if (gs.drawings) restoreDrawings(gs.drawings);
             });
         }
-
-        // 【核心修复 2】：恢复视角、缩放和地图锁定状态
         if (gs.mapTransform) {
             scale = gs.mapTransform.scale;
             originX = gs.mapTransform.originX;
@@ -961,33 +978,25 @@
             updateLockButton();
         }
 
-        // 【核心修复 3】：渲染已有的玩家棋子
+        // 恢复玩家棋子
         if (gs.tokens) {
             Object.keys(gs.tokens).forEach(color => {
                 createTokenElement(color, gs.tokens[color].x, gs.tokens[color].y);
             });
         }
 
-        // 【核心修复 4】：渲染已有的 NPC 棋子
+        // 恢复 NPC
         if (gs.npcs) {
-            gs.npcs.forEach(npc => {
-                createNPCElement(npc.id, npc.x, npc.y, npc.color);
-            });
+            gs.npcs.forEach(npc => createNPCElement(npc.id, npc.x, npc.y, npc.color));
         }
 
-        // 【核心修复 5】：同步血量数值
-        if (gs.hp) {
-            Object.keys(gs.hp).forEach(color => {
-                updateHPDisplay(color, gs.hp[color].cur, gs.hp[color].max);
-            });
-        }
-
-        // 恢复已有玩家的侧边栏颜色卡片
+        // 【核心修复】：恢复所有已加入玩家的侧边栏卡片
         if (gs.players) {
             gs.players.forEach(p => {
                 if (p.color) {
-                    // 判断是否是自己（如果还没选颜色，userColor 为空）
-                    const isMe = (p.color === userColor);
+                    // 识别是否是自己：通过名称和角色匹配
+                    const isMe = (p.name === userName && p.role === userRole);
+                    if (isMe) userColor = p.color; // 找回颜色状态
                     showPlayerCard(p.color, p.name, isMe);
                 }
             });
@@ -1056,8 +1065,30 @@
         }
     });
 
+    // socket.on('token:clearAll', () => {
+    //     mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
+    // });
+    // --- 修复后的清除玩家棋子逻辑 ---
     socket.on('token:clearAll', () => {
-        mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
+        // 使用 :not(.npc) 过滤掉 NPC 棋子，只删除纯玩家棋子
+        const playerTokens = mapContainer.querySelectorAll('.token:not(.npc)');
+        playerTokens.forEach(t => {
+            if (mapContainer.contains(t)) {
+                mapContainer.removeChild(t);
+            }
+        });
+        console.log('已清除所有玩家棋子，保留 NPC');
+    });
+
+    // --- 确保 NPC 清除逻辑也是独立的 ---
+    socket.on('npc:clearAll', () => {
+        const npcTokens = mapContainer.querySelectorAll('.token.npc');
+        npcTokens.forEach(t => {
+            if (mapContainer.contains(t)) {
+                mapContainer.removeChild(t);
+            }
+        });
+        console.log('已清除所有 NPC 棋子');
     });
 
     socket.on('token:remove', (color) => {
@@ -1087,9 +1118,9 @@
         }
     });
 
-    socket.on('npc:clearAll', () => {
-        mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
-    });
+    // socket.on('npc:clearAll', () => {
+    //     mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
+    // });
 
     socket.on('hp:update', (data) => {
         updateHPDisplay(data.color, data.cur, data.max);
@@ -1130,7 +1161,11 @@
     });
 
     // 初始化
-    init();
+    // init();
+    startApp();
+
+    // 重新加入（页面刷新后）
+    socket.emit('join', { name: userName, role: userRole, password: isDM ? '12138' : '' });
 </script>
 </body>
 </html>
