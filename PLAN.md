@@ -347,3 +347,28 @@ socket.on('npc:remove', (id) => { ... });
 socket.on('npc:clearAll', () => { ... });
 ```
 
+### 9.5 NPC 颜色选择
+- 在 NPC 角色卡中添加颜色选择色块
+- 可选颜色：红色、深蓝色、黑色、灰色、白色
+- DM 点击色块选择当前 NPC 颜色，再点击卡片生成对应颜色的 NPC
+- NPC 数据结构增加 `color` 字段：`{ id, x, y, color }`
+- 其他逻辑保持不变（多次生成、拖拽、双击删除）
+
+```javascript
+// NPC 颜色映射
+const npcColorMap = {
+  red: '#e74c3c',
+  darkblue: '#072af1',
+  black: '#1a1a1a',
+  gray: '#7f8c8d',
+  white: '#ecf0f1'
+};
+
+// NPC 角色卡 HTML
+<div class="npc-color-selector">
+  <div class="npc-color" style="background:#e74c3c" onclick="setNpcColor('red')"></div>
+  <div class="npc-color" style="background:#2c3e50" onclick="setNpcColor('darkblue')"></div>
+  ...
+</div>
+```
+

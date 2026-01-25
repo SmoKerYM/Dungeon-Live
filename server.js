@@ -5,7 +5,10 @@ const path = require('path');
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  maxHttpBufferSize: 50 * 1024 * 1024, // 50MB - 支持大尺寸地图图片
+  pingTimeout: 60000
+});
 
 const PORT = process.env.PORT || 3000;
 
@@ -208,7 +211,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
-    gameState.npcs.push({ id: data.id, x: data.x, y: data.y });
+    gameState.npcs.push({ id: data.id, x: data.x, y: data.y, color: data.color || 'gray' });
     socket.broadcast.emit('npc:spawn', data);
   });
 
