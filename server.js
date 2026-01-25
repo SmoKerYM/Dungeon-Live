@@ -28,7 +28,8 @@ const gameState = {
     purple: { cur: 10, max: 10 },
     black: { cur: 10, max: 10 }
   },
-  drawings: []        // 绘图数据
+  drawings: [],       // 绘图数据
+  npcs: []            // NPC 数据 { id, x, y }
 };
 
 // Socket.IO 连接处理
@@ -73,7 +74,8 @@ io.on('connection', (socket) => {
         tokens: gameState.tokens,
         hp: gameState.hp,
         players: Array.from(gameState.players.values()),
-        drawings: gameState.drawings
+        drawings: gameState.drawings,
+        npcs: gameState.npcs
       }
     });
 
@@ -199,6 +201,46 @@ io.on('connection', (socket) => {
 
     gameState.drawings = [];
     socket.broadcast.emit('draw:clear');
+  });
+
+  // NPC 生成 (仅 DM)
+  socket.on('npc:spawn', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    gameState.npcs.push({ id: data.id, x: data.x, y: data.y });
+    socket.broadcast.emit('npc:spawn', data);
+  });
+
+  // NPC 移动 (仅 DM)
+  socket.on('npc:move', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    const npc = gameState.npcs.find(n => n.id === data.id);
+    if (npc) {
+      npc.x = data.x;
+      npc.y = data.y;
+    }
+    socket.broadcast.emit('npc:move', data);
+  });
+
+  // NPC 删除 (仅 DM)
+  socket.on('npc:remove', (id) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    gameState.npcs = gameState.npcs.filter(n => n.id !== id);
+    socket.broadcast.emit('npc:remove', id);
+  });
+
+  // 清除所有 NPC (仅 DM)
+  socket.on('npc:clearAll', () => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    gameState.npcs = [];
+    socket.broadcast.emit('npc:clearAll');
   });
 
   // 骰子投掷 (所有人)

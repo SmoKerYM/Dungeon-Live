@@ -65,8 +65,8 @@
 
         /* 画布与地图 */
         #viewport { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #1a1a1a; position: relative; }
-        #map-frame { width: 1000px; height: 800px; border: 4px solid #7f8c8d; background: #000; position: relative; overflow: hidden; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
-        #map-container { position: absolute; transform-origin: 0 0; }
+        #map-frame { width: 1000px; height: 800px; border: 4px solid #7f8c8d; background: #000; position: relative; overflow: hidden; box-shadow: 0 0 40px rgba(0,0,0,0.8); contain: layout paint; }
+        #map-container { position: absolute; transform-origin: 0 0; isolation: isolate; }
         #map-img { display: block; pointer-events: none; }
         #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: auto; }
 
@@ -75,8 +75,19 @@
             border-left: 18px solid transparent; border-right: 18px solid transparent;
             border-bottom: 36px solid; cursor: move; z-index: 100;
             filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(4px 4px 4px rgba(0,0,0,0.7));
+            will-change: transform, left, top;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
         }
         .token.disabled { cursor: not-allowed; }
+        .token.npc {
+            width: 30px; height: 30px;
+            background: #7f8c8d;
+            border: 2px solid #555;
+            border-radius: 4px;
+            border-left: none; border-right: none; border-bottom: none;
+            filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(3px 3px 3px rgba(0,0,0,0.7));
+        }
 
         #ui-layer { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; z-index: 20; }
         #dice-column { display: flex; flex-direction: column; gap: 6px; }
@@ -162,7 +173,7 @@
             <div class="color-option" style="background: #27ae60;" onclick="chooseColor('green')">绿</div>
             <div class="color-option" style="background: #3498db;" onclick="chooseColor('blue')">蓝</div>
             <div class="color-option" style="background: #9b59b6;" onclick="chooseColor('purple')">紫</div>
-            <div class="color-option" style="background: #2c3e50;" onclick="chooseColor('black')">黑</div>
+            <!-- <div class="color-option" style="background: #2c3e50;" onclick="chooseColor('black')">黑</div> -->
         </div>
     </div>
 </div>
@@ -228,17 +239,25 @@
                 <span class="hp-display" onclick="editHP(event, 'purple')"><span id="hp-cur-purple">10</span>/<span id="hp-max-purple">10</span></span>
             </button>
         </div>
-        <div class="player-row" id="row-black" style="display: none;">
+        <!-- <div class="player-row" id="row-black" style="display: none;">
             <button class="player-btn" style="background: #2c3e50;" data-color="black" onclick="spawnToken('black')">
                 <span class="player-name" id="name-black">玩家 (黑)</span>
                 <span class="hp-display" onclick="editHP(event, 'black')"><span id="hp-cur-black">10</span>/<span id="hp-max-black">10</span></span>
             </button>
-        </div>
+        </div> -->
         <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无玩家加入</p>
+        <!-- NPC 角色卡 (仅 DM) -->
+        <div class="player-row dm-only" id="row-npc">
+            <button class="player-btn" style="background: #7f8c8d;" onclick="spawnNPC()">
+                <span class="player-name">NPC</span>
+                <span style="font-size: 11px; opacity: 0.8;">点击生成</span>
+            </button>
+        </div>
     </div>
 
     <div id="dm-actions" class="dm-only">
         <button id="clear-btn" class="action-btn" onclick="clearAllTokens()">清除所有棋子</button>
+        <button id="clear-npc-btn" class="action-btn" style="background: #7f8c8d;" onclick="clearAllNPCs()">清除所有NPC</button>
         <button id="clear-draw-btn" class="action-btn" onclick="clearCanvas()">清空所有笔迹</button>
     </div>
 
@@ -258,7 +277,7 @@
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
     <div id="ui-layer">
         <div id="dice-column">
-            <div class="dice" style="background: #7f8c8d;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #b2bfc0;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
             <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
             <div class="dice" style="background: #16a085;" onclick="rollDice(8, this)"><div class="dice-label">D8</div><div class="dice-val">?</div></div>
             <div class="dice" style="background: #2980b9;" onclick="rollDice(10, this)"><div class="dice-label">D10</div><div class="dice-val">?</div></div>
@@ -420,6 +439,12 @@
                 createTokenElement(color, savedGameState.tokens[color].x, savedGameState.tokens[color].y);
             });
         }
+        // 恢复 NPC
+        if (savedGameState.npcs) {
+            savedGameState.npcs.forEach(npc => {
+                createNPCElement(npc.id, npc.x, npc.y);
+            });
+        }
     }
 
     // --- 颜色选择 ---
@@ -465,6 +490,8 @@
             ctx.lineTo(data.toX, data.toY);
             ctx.stroke();
         });
+        // 重置合成模式
+        ctx.globalCompositeOperation = 'source-over';
     }
 
     fileInput.onchange = (e) => {
@@ -578,6 +605,9 @@
             });
 
             lastDrawPoint = { x, y };
+
+            // 重置合成模式，防止影响其他渲染
+            ctx.globalCompositeOperation = 'source-over';
         }
     };
 
@@ -619,6 +649,16 @@
     }
 
     // --- 棋子系统 ---
+    // 颜色映射：与角色卡颜色保持一致
+    const colorMap = {
+        orange: '#e67e22',
+        yellow: '#f1c40f',
+        green: '#27ae60',
+        blue: '#3498db',
+        purple: '#9b59b6',
+        black: '#2c3e50'
+    };
+
     function createTokenElement(color, x, y) {
         // 移除已存在的同色棋子
         const existing = mapContainer.querySelectorAll(`.token[data-color="${color}"]`);
@@ -626,7 +666,7 @@
 
         const token = document.createElement('div');
         token.className = 'token';
-        token.style.borderBottomColor = color;
+        token.style.borderBottomColor = colorMap[color] || color;
         token.setAttribute('data-color', color);
         token.style.left = x + 'px';
         token.style.top = y + 'px';
@@ -680,8 +720,76 @@
 
     function clearAllTokens() {
         if (!isDM) return;
-        mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
+        // 只清除玩家棋子，不清除 NPC
+        mapContainer.querySelectorAll('.token:not(.npc)').forEach(t => mapContainer.removeChild(t));
         socket.emit('token:clearAll');
+    }
+
+    // --- NPC 系统 ---
+    let npcCounter = 0;
+
+    function createNPCElement(id, x, y) {
+        const npc = document.createElement('div');
+        npc.className = 'token npc';
+        npc.setAttribute('data-npc-id', id);
+        npc.style.left = x + 'px';
+        npc.style.top = y + 'px';
+
+        // 拖动逻辑 (仅 DM)
+        npc.onmousedown = (e) => {
+            if (!isDM) return;
+            e.stopPropagation(); e.preventDefault();
+            let tsX = e.clientX - npc.offsetLeft * scale;
+            let tsY = e.clientY - npc.offsetTop * scale;
+
+            const move = (me) => {
+                const newX = (me.clientX - tsX) / scale;
+                const newY = (me.clientY - tsY) / scale;
+                npc.style.left = newX + 'px';
+                npc.style.top = newY + 'px';
+            };
+
+            const stop = () => {
+                window.removeEventListener('mousemove', move);
+                window.removeEventListener('mouseup', stop);
+                socket.emit('npc:move', {
+                    id,
+                    x: parseFloat(npc.style.left),
+                    y: parseFloat(npc.style.top)
+                });
+            };
+
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', stop);
+        };
+
+        // 双击删除 (仅 DM)
+        npc.ondblclick = (e) => {
+            if (!isDM) return;
+            e.stopPropagation();
+            mapContainer.removeChild(npc);
+            socket.emit('npc:remove', id);
+        };
+
+        mapContainer.appendChild(npc);
+        return npc;
+    }
+
+    function spawnNPC() {
+        if (!isDM) return;
+        const id = 'npc_' + Date.now() + '_' + (npcCounter++);
+        const rect = mapFrame.getBoundingClientRect();
+        const x = (rect.width/2 - originX)/scale - 15;
+        const y = (rect.height/2 - originY)/scale - 15;
+
+        createNPCElement(id, x, y);
+        socket.emit('npc:spawn', { id, x, y });
+    }
+
+    function clearAllNPCs() {
+        if (!isDM) return;
+        mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
+        socket.emit('npc:clearAll');
     }
 
     // --- 血量系统 ---
@@ -861,6 +969,30 @@
         }
     });
 
+    // --- NPC Socket 事件 ---
+    socket.on('npc:spawn', (data) => {
+        createNPCElement(data.id, data.x, data.y);
+    });
+
+    socket.on('npc:move', (data) => {
+        const npc = mapContainer.querySelector(`.token.npc[data-npc-id="${data.id}"]`);
+        if (npc) {
+            npc.style.left = data.x + 'px';
+            npc.style.top = data.y + 'px';
+        }
+    });
+
+    socket.on('npc:remove', (id) => {
+        const npc = mapContainer.querySelector(`.token.npc[data-npc-id="${id}"]`);
+        if (npc) {
+            mapContainer.removeChild(npc);
+        }
+    });
+
+    socket.on('npc:clearAll', () => {
+        mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
+    });
+
     socket.on('hp:update', (data) => {
         updateHPDisplay(data.color, data.cur, data.max);
         // 获取玩家名称
@@ -882,6 +1014,8 @@
         ctx.lineWidth = data.lineWidth;
         ctx.lineTo(data.toX, data.toY);
         ctx.stroke();
+        // 重置合成模式
+        ctx.globalCompositeOperation = 'source-over';
     });
 
     socket.on('draw:clear', () => {
