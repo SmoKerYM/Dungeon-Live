@@ -280,7 +280,7 @@
     </div>
 
     <div id="dm-actions" class="dm-only">
-        <button id="clear-btn" class="action-btn" onclick="clearAllTokens()">清除所有棋子</button>
+        <button id="clear-btn" class="action-btn" onclick="clearAllTokens()">清除所有玩家棋子</button>
         <button id="clear-npc-btn" class="action-btn" style="background: #7f8c8d;" onclick="clearAllNPCs()">清除所有NPC</button>
         <button id="clear-draw-btn" class="action-btn" onclick="clearCanvas()">清空所有笔迹</button>
     </div>
@@ -930,15 +930,65 @@
         if (data.dmName) {
             document.getElementById('dm-name').textContent = data.dmName;
         }
+        
         // 更新已占用的颜色
         if (data.takenColors) {
             updateColorOptions(data.takenColors);
         }
-        // 恢复已有玩家的颜色卡片
-        if (data.gameState && data.gameState.players) {
-            data.gameState.players.forEach(player => {
-                if (player.color) {
-                    showPlayerCard(player.color, player.name, false);
+
+        const gs = data.gameState; // 这是从服务器发来的实时全量数据
+        if (!gs) return;
+
+        // 【核心修复 1】：恢复地图背景与旧笔迹
+        if (gs.mapData) {
+            loadMapFromData(gs.mapData, () => {
+                // 必须在地图图片加载完后，才能恢复笔迹，否则画布尺寸不对
+                if (gs.drawings) {
+                    restoreDrawings(gs.drawings);
+                }
+            });
+        }
+
+        // 【核心修复 2】：恢复视角、缩放和地图锁定状态
+        if (gs.mapTransform) {
+            scale = gs.mapTransform.scale;
+            originX = gs.mapTransform.originX;
+            originY = gs.mapTransform.originY;
+            updateTransform();
+        }
+        if (gs.isLocked !== undefined) {
+            isLocked = gs.isLocked;
+            updateLockButton();
+        }
+
+        // 【核心修复 3】：渲染已有的玩家棋子
+        if (gs.tokens) {
+            Object.keys(gs.tokens).forEach(color => {
+                createTokenElement(color, gs.tokens[color].x, gs.tokens[color].y);
+            });
+        }
+
+        // 【核心修复 4】：渲染已有的 NPC 棋子
+        if (gs.npcs) {
+            gs.npcs.forEach(npc => {
+                createNPCElement(npc.id, npc.x, npc.y, npc.color);
+            });
+        }
+
+        // 【核心修复 5】：同步血量数值
+        if (gs.hp) {
+            Object.keys(gs.hp).forEach(color => {
+                updateHPDisplay(color, gs.hp[color].cur, gs.hp[color].max);
+            });
+        }
+
+        // 恢复已有玩家的侧边栏颜色卡片
+        if (gs.players) {
+            gs.players.forEach(p => {
+                if (p.color) {
+                    // 判断是否是自己（如果还没选颜色，userColor 为空）
+                    const isMe = (p.color === userColor);
+                    showPlayerCard(p.color, p.name, isMe);
                 }
             });
         }
