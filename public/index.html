@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DND 跑团工具 - 登录</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .login-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #aaa;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #ddd;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        .role-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .role-btn {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            font-size: 16px;
+        }
+        .role-btn:hover {
+            border-color: #3498db;
+            background: rgba(52, 152, 219, 0.2);
+        }
+        .role-btn.active {
+            border-color: #3498db;
+            background: rgba(52, 152, 219, 0.4);
+        }
+        /* .role-btn.dm { border-color: #e74c3c; } */
+        .role-btn.dm:hover, .role-btn.dm.active {
+            border-color: #e74c3c;
+            background: rgba(231, 76, 60, 0.4);
+        }
+        #password-group {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(52, 152, 219, 0.4);
+        }
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+        .error-msg {
+            background: rgba(231, 76, 60, 0.3);
+            border: 1px solid #e74c3c;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            text-align: center;
+        }
+        .dice-decoration {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="dice-decoration">🎲</div>
+        <h1>DND 跑团工具</h1>
+        <p class="subtitle">多人协作地图系统</p>
+
+        <div id="error-msg" class="error-msg"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="name">角色名</label>
+                <input type="text" id="name" placeholder="输入你的角色名" required>
+            </div>
+
+            <label>选择身份</label>
+            <div class="role-selector">
+                <div class="role-btn" data-role="Player" onclick="selectRole('Player', this)">
+                    🎭 玩家 (Player)
+                </div>
+                <div class="role-btn dm" data-role="DM" onclick="selectRole('DM', this)">
+                    👑 主持人 (DM)
+                </div>
+            </div>
+
+            <div class="form-group" id="password-group">
+                <label for="password">DM 密码</label>
+                <input type="password" id="password" placeholder="请输入管理员密码">
+            </div>
+
+            <button type="submit" class="submit-btn">进入游戏</button>
+        </form>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let selectedRole = null;
+
+        function selectRole(role, element) {
+            selectedRole = role;
+            document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+
+            const passwordGroup = document.getElementById('password-group');
+            passwordGroup.style.display = role === 'DM' ? 'block' : 'none';
+        }
+
+        document.getElementById('login-form').onsubmit = (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('name').value.trim();
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('error-msg');
+
+            if (!name) {
+                errorEl.textContent = '请输入角色名';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            if (!selectedRole) {
+                errorEl.textContent = '请选择身份';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            errorEl.style.display = 'none';
+
+            // 发送加入请求
+            socket.emit('join', { name, role: selectedRole, password });
+        };
+
+        // 加入成功
+        socket.on('joinSuccess', (data) => {
+            // 保存用户信息到 sessionStorage
+            sessionStorage.setItem('userData', JSON.stringify({
+                name: data.name,
+                role: data.role
+            }));
+            sessionStorage.setItem('gameState', JSON.stringify(data.gameState));
+            sessionStorage.setItem('dmName', data.dmName || '');
+
+            // 跳转到游戏页面
+            window.location.href = '/game.html';
+        });
+
+        // 加入失败
+        socket.on('joinError', (message) => {
+            const errorEl = document.getElementById('error-msg');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        });
+    </script>
+</body>
+</html>

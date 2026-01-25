@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>DND 线上跑团地图工具 - 多人协作版</title>
+    <style>
+        * { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; box-sizing: border-box; }
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #2c3e50; color: white; }
+
+        /* 侧边栏 */
+        #sidebar { width: 280px; background: #34495e; padding: 15px; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 10; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+        /* DM 信息显示 */
+        #dm-info {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(231, 76, 60, 0.3);
+        }
+        #dm-info .label { font-size: 12px; opacity: 0.8; }
+        #dm-info .name { font-size: 18px; margin-top: 5px; }
+
+        .section-title { font-size: 14px; color: #bdc3c7; margin: 15px 0 8px; border-bottom: 1px solid #555; padding-bottom: 5px; }
+
+        .player-row { width: 100%; margin-bottom: 8px; display: flex; flex-direction: column; }
+        .player-btn {
+            width: 100%; padding: 12px 10px; border: none; cursor: pointer; color: white;
+            font-weight: bold; border-radius: 6px; text-align: left;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .player-btn.disabled { opacity: 0.6; cursor: not-allowed; }
+        .player-name { font-size: 14px; }
+
+        /* 血量显示样式优化 */
+        .hp-display {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #ffffff;
+            text-shadow: 1px 1px 1px #000;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: color 0.3s ease;
+        }
+        .hp-warning { color: #f1c40f !important; }
+        .hp-danger { color: #ff4757 !important; font-weight: 900; }
+
+        /* 绘图工具 */
+        .tool-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; }
+        .tool-btn { padding: 10px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 13px; }
+        .tool-btn.active { border-color: #f1c40f; background: #555; }
+        .tool-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+        #color-selectors { display:none; gap: 8px; margin-bottom: 15px; padding: 5px; background: rgba(0,0,0,0.2); border-radius: 5px; flex-wrap: wrap; }
+        .color-btn { width: 30px; height: 30px; cursor: pointer; border-radius: 4px; border: 2px solid transparent; }
+        .color-btn.active { border: 2px solid white; transform: scale(1.1); }
+
+        .action-btn { margin-top: 8px; padding: 10px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; }
+        .action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+        #clear-btn { background: #e67e22; }
+        #clear-draw-btn { background: #4b5e71; }
+
+        /* 画布与地图 */
+        #viewport { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #1a1a1a; position: relative; }
+        #map-frame { width: 1000px; height: 800px; border: 4px solid #7f8c8d; background: #000; position: relative; overflow: hidden; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+        #map-container { position: absolute; transform-origin: 0 0; }
+        #map-img { display: block; pointer-events: none; }
+        #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: auto; }
+
+        .token {
+            position: absolute; width: 0; height: 0;
+            border-left: 18px solid transparent; border-right: 18px solid transparent;
+            border-bottom: 36px solid; cursor: move; z-index: 100;
+            filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(4px 4px 4px rgba(0,0,0,0.7));
+        }
+        .token.disabled { cursor: not-allowed; }
+
+        #ui-layer { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; z-index: 20; }
+        #dice-column { display: flex; flex-direction: column; gap: 6px; }
+        .dice { width: 50px; height: 50px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .dice-label { font-size: 9px; opacity: 0.8; }
+        .dice-val { font-size: 16px; font-weight: bold; }
+        .dice-big { width: 60px; height: 60px; border: 1px solid rgba(255,255,255,0.3); }
+        #lock-btn { background: #f39c12; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 130px; }
+        #lock-btn.locked { background: #e74c3c; }
+        #lock-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+        #top-controls { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 20px; z-index: 20; font-size: 13px; }
+
+        /* 聊天框 */
+        #chat-container {
+            margin-top: auto;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            height: 200px;
+        }
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 12px;
+        }
+        .chat-msg { margin-bottom: 5px; line-height: 1.4; }
+        .chat-msg .name { font-weight: bold; }
+        .chat-msg .dm { color: #e74c3c; }
+        .chat-msg .player { color: #3498db; }
+        .chat-msg .system { color: #f1c40f; font-style: italic; }
+        #chat-input-container { display: flex; padding: 8px; border-top: 1px solid #555; }
+        #chat-input { flex: 1; padding: 8px; border: none; border-radius: 4px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; }
+        #chat-send { padding: 8px 15px; background: #3498db; border: none; border-radius: 4px; color: white; cursor: pointer; margin-left: 5px; }
+
+        /* 颜色选择弹窗 */
+        #color-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: #34495e;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 400px;
+        }
+        .modal-content h2 { margin-bottom: 20px; }
+        .color-options { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .color-option {
+            width: 60px; height: 60px;
+            border-radius: 10px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: transform 0.2s, border-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        .color-option:hover { transform: scale(1.1); border-color: white; }
+        .color-option.taken { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<!-- 颜色选择弹窗 -->
+<div id="color-modal">
+    <div class="modal-content">
+        <h2>选择你的颜色</h2>
+        <p style="margin-bottom: 20px; color: #aaa;">选择一个颜色作为你的角色标识</p>
+        <div class="color-options">
+            <div class="color-option" style="background: #e67e22;" onclick="chooseColor('orange')">橙</div>
+            <div class="color-option" style="background: #f1c40f; color: black;" onclick="chooseColor('yellow')">黄</div>
+            <div class="color-option" style="background: #27ae60;" onclick="chooseColor('green')">绿</div>
+            <div class="color-option" style="background: #3498db;" onclick="chooseColor('blue')">蓝</div>
+            <div class="color-option" style="background: #9b59b6;" onclick="chooseColor('purple')">紫</div>
+            <div class="color-option" style="background: #2c3e50;" onclick="chooseColor('black')">黑</div>
+        </div>
+    </div>
+</div>
+
+<div id="sidebar">
+    <!-- DM 信息 -->
+    <div id="dm-info">
+        <div class="label">当前 DM</div>
+        <div class="name" id="dm-name">等待中...</div>
+    </div>
+
+    <div id="section-map" class="dm-only">
+        <div class="section-title">1. 地图资源</div>
+        <input type="file" id="file-input" accept="image/*" style="width: 100%; font-size: 12px;">
+    </div>
+
+    <div id="section-tools" class="dm-only">
+        <div class="section-title">2. 绘图工具</div>
+        <div class="tool-group">
+            <div id="btn-move" class="tool-btn active" onclick="setTool('move')">移动</div>
+            <div id="btn-draw" class="tool-btn" onclick="setTool('draw')">画笔</div>
+            <div id="btn-erase" class="tool-btn" onclick="setTool('erase')">橡皮</div>
+        </div>
+        <div id="color-selectors" style="display:none;">
+            <div class="color-btn active" onclick="setPenColor('#ff0000', this)" style="background:#ff0000;"></div>
+            <div class="color-btn" onclick="setPenColor('#ffffff', this)" style="background:#ffffff;"></div>
+            <div class="color-btn" onclick="setPenColor('#000000', this)" style="background:#000000; border: 1px solid #666;"></div>
+            <div class="color-btn" onclick="setPenColor('#0000ff', this)" style="background:#0000ff;"></div>
+            <div class="color-btn" onclick="setPenColor('#00ff00', this)" style="background:#00ff00;"></div>
+            <div class="color-btn" onclick="setPenColor('#ffff00', this)" style="background:#ffff00;"></div>
+        </div>
+    </div>
+
+    <div class="section-title">角色列表</div>
+    <div id="player-list">
+        <div class="player-row" id="row-orange" style="display: none;">
+            <button class="player-btn" style="background: #e67e22;" data-color="orange" onclick="spawnToken('orange')">
+                <span class="player-name" id="name-orange">玩家 (橙)</span>
+                <span class="hp-display" onclick="editHP(event, 'orange')"><span id="hp-cur-orange">10</span>/<span id="hp-max-orange">10</span></span>
+            </button>
+        </div>
+        <div class="player-row" id="row-yellow" style="display: none;">
+            <button class="player-btn" style="background: #f1c40f; color: black;" data-color="yellow" onclick="spawnToken('yellow')">
+                <span class="player-name" id="name-yellow">玩家 (黄)</span>
+                <span class="hp-display" onclick="editHP(event, 'yellow')"><span id="hp-cur-yellow">10</span>/<span id="hp-max-yellow">10</span></span>
+            </button>
+        </div>
+        <div class="player-row" id="row-green" style="display: none;">
+            <button class="player-btn" style="background: #27ae60;" data-color="green" onclick="spawnToken('green')">
+                <span class="player-name" id="name-green">玩家 (绿)</span>
+                <span class="hp-display" onclick="editHP(event, 'green')"><span id="hp-cur-green">10</span>/<span id="hp-max-green">10</span></span>
+            </button>
+        </div>
+        <div class="player-row" id="row-blue" style="display: none;">
+            <button class="player-btn" style="background: #3498db;" data-color="blue" onclick="spawnToken('blue')">
+                <span class="player-name" id="name-blue">玩家 (蓝)</span>
+                <span class="hp-display" onclick="editHP(event, 'blue')"><span id="hp-cur-blue">10</span>/<span id="hp-max-blue">10</span></span>
+            </button>
+        </div>
+        <div class="player-row" id="row-purple" style="display: none;">
+            <button class="player-btn" style="background: #9b59b6;" data-color="purple" onclick="spawnToken('purple')">
+                <span class="player-name" id="name-purple">玩家 (紫)</span>
+                <span class="hp-display" onclick="editHP(event, 'purple')"><span id="hp-cur-purple">10</span>/<span id="hp-max-purple">10</span></span>
+            </button>
+        </div>
+        <div class="player-row" id="row-black" style="display: none;">
+            <button class="player-btn" style="background: #2c3e50;" data-color="black" onclick="spawnToken('black')">
+                <span class="player-name" id="name-black">玩家 (黑)</span>
+                <span class="hp-display" onclick="editHP(event, 'black')"><span id="hp-cur-black">10</span>/<span id="hp-max-black">10</span></span>
+            </button>
+        </div>
+        <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无玩家加入</p>
+    </div>
+
+    <div id="dm-actions" class="dm-only">
+        <button id="clear-btn" class="action-btn" onclick="clearAllTokens()">清除所有棋子</button>
+        <button id="clear-draw-btn" class="action-btn" onclick="clearCanvas()">清空所有笔迹</button>
+    </div>
+
+    <!-- 聊天框 -->
+    <div class="section-title">聊天</div>
+    <div id="chat-container">
+        <div id="chat-messages"></div>
+        <div id="chat-input-container">
+            <input type="text" id="chat-input" placeholder="输入消息..." onkeypress="handleChatKeypress(event)">
+            <button id="chat-send" onclick="sendChat()">发送</button>
+        </div>
+    </div>
+</div>
+
+<div id="viewport">
+    <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
+    <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
+    <div id="ui-layer">
+        <div id="dice-column">
+            <div class="dice" style="background: #7f8c8d;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #16a085;" onclick="rollDice(8, this)"><div class="dice-label">D8</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #2980b9;" onclick="rollDice(10, this)"><div class="dice-label">D10</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #8e44ad;" onclick="rollDice(12, this)"><div class="dice-label">D12</div><div class="dice-val">?</div></div>
+            <div class="dice dice-big" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val" style="font-size:20px;">?</div></div>
+            <div class="dice dice-big" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
+        </div>
+        <button id="lock-btn" onclick="toggleLock()">Lock Map</button>
+    </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    // --- 用户信息 ---
+    const userData = JSON.parse(sessionStorage.getItem('userData') || '{}');
+    const savedGameState = JSON.parse(sessionStorage.getItem('gameState') || '{}');
+    const savedDmName = sessionStorage.getItem('dmName') || '';
+
+    if (!userData.name) {
+        window.location.href = '/';
+    }
+
+    const userRole = userData.role;
+    const userName = userData.name;
+    let userColor = null;
+    const isDM = userRole === 'DM';
+
+    // --- Socket 连接 ---
+    const socket = io();
+
+    // 重新加入（页面刷新后）
+    socket.emit('join', { name: userName, role: userRole, password: isDM ? '12138' : '' });
+
+    // --- DOM 元素 ---
+    const mapImg = document.getElementById('map-img');
+    const mapContainer = document.getElementById('map-container');
+    const mapFrame = document.getElementById('map-frame');
+    const canvas = document.getElementById('drawing-canvas');
+    const ctx = canvas.getContext('2d');
+    const zoomSlider = document.getElementById('zoom-slider');
+    const fileInput = document.getElementById('file-input');
+    const lockBtn = document.getElementById('lock-btn');
+    const chatMessages = document.getElementById('chat-messages');
+
+    let scale = 1, originX = 0, originY = 0;
+    let isDraggingMap = false, isLocked = false, startX, startY;
+    let currentTool = 'move', isPainting = false, penColor = '#ff0000';
+    let lastDrawPoint = null; // 记录上一个绘图点
+
+    // --- 权限控制 ---
+    function applyPermissions() {
+        if (!isDM) {
+            // 隐藏 DM 专用区域
+            document.querySelectorAll('.dm-only').forEach(el => {
+                el.style.display = 'none';
+            });
+
+            // 隐藏缩放滑块和锁定按钮
+            document.getElementById('top-controls').style.display = 'none';
+            lockBtn.style.display = 'none';
+
+            // 禁用角色按钮的生成棋子功能（点击不生成棋子）
+            document.querySelectorAll('.player-btn').forEach(btn => {
+                btn.classList.add('disabled');
+                btn.onclick = null;
+            });
+        }
+    }
+
+    // 显示玩家卡片
+    function showPlayerCard(color, playerName, isMe = false) {
+        const row = document.getElementById(`row-${color}`);
+        if (row) {
+            row.style.display = 'flex';
+            const nameEl = document.getElementById(`name-${color}`);
+            nameEl.textContent = isMe ? `${playerName}（这是我）` : playerName;
+
+            // 如果是自己的卡片，启用点击生成棋子功能
+            if (isMe) {
+                const btn = row.querySelector('.player-btn');
+                btn.classList.remove('disabled');
+                btn.onclick = () => spawnToken(color);
+            }
+
+            // 隐藏"暂无玩家"提示
+            document.getElementById('no-players-hint').style.display = 'none';
+        }
+    }
+
+    // 隐藏玩家卡片
+    function hidePlayerCard(color) {
+        const row = document.getElementById(`row-${color}`);
+        if (row) {
+            row.style.display = 'none';
+            // 检查是否还有可见的玩家行
+            let hasVisiblePlayers = false;
+            document.querySelectorAll('.player-row').forEach(r => {
+                if (r.style.display !== 'none') hasVisiblePlayers = true;
+            });
+            if (!hasVisiblePlayers) {
+                document.getElementById('no-players-hint').style.display = 'block';
+            }
+        }
+    }
+
+    // 更新颜色选择器中的可用状态
+    function updateColorOptions(takenColors) {
+        document.querySelectorAll('.color-option').forEach(option => {
+            const color = option.getAttribute('onclick').match(/'(\w+)'/)[1];
+            if (takenColors.includes(color)) {
+                option.classList.add('taken');
+            } else {
+                option.classList.remove('taken');
+            }
+        });
+    }
+
+    // --- 初始化 ---
+    function init() {
+        // 设置 DM 名称
+        if (savedDmName) {
+            document.getElementById('dm-name').textContent = savedDmName;
+        }
+
+        // 应用权限
+        applyPermissions();
+
+        // 如果是玩家，显示颜色选择弹窗
+        if (!isDM) {
+            document.getElementById('color-modal').style.display = 'flex';
+        }
+
+        // 恢复游戏状态
+        if (savedGameState.mapData) {
+            loadMapFromData(savedGameState.mapData, () => {
+                // 地图加载完成后恢复绘图
+                if (savedGameState.drawings && savedGameState.drawings.length > 0) {
+                    restoreDrawings(savedGameState.drawings);
+                }
+            });
+        }
+        if (savedGameState.mapTransform) {
+            scale = savedGameState.mapTransform.scale;
+            originX = savedGameState.mapTransform.originX;
+            originY = savedGameState.mapTransform.originY;
+            updateTransform();
+        }
+        if (savedGameState.isLocked) {
+            isLocked = savedGameState.isLocked;
+            updateLockButton();
+        }
+        if (savedGameState.hp) {
+            Object.keys(savedGameState.hp).forEach(color => {
+                updateHPDisplay(color, savedGameState.hp[color].cur, savedGameState.hp[color].max);
+            });
+        }
+        if (savedGameState.tokens) {
+            Object.keys(savedGameState.tokens).forEach(color => {
+                createTokenElement(color, savedGameState.tokens[color].x, savedGameState.tokens[color].y);
+            });
+        }
+    }
+
+    // --- 颜色选择 ---
+    function chooseColor(color) {
+        // 检查颜色是否已被占用（由CSS类控制，但也做个检查）
+        const option = document.querySelector(`.color-option[onclick*="'${color}'"]`);
+        if (option && option.classList.contains('taken')) {
+            alert('该颜色已被其他玩家选择');
+            return;
+        }
+
+        userColor = color;
+        socket.emit('selectColor', color);
+        document.getElementById('color-modal').style.display = 'none';
+        addSystemMessage(`你选择了 ${color} 颜色`);
+    }
+
+    // --- 地图加载 ---
+    function loadMapFromData(data, callback) {
+        mapImg.src = data;
+        mapImg.onload = () => {
+            mapImg.style.display = 'block';
+            canvas.width = mapImg.naturalWidth;
+            canvas.height = mapImg.naturalHeight;
+            if (callback) callback();
+        };
+    }
+
+    // --- 绘图恢复 ---
+    function restoreDrawings(drawings) {
+        drawings.forEach(data => {
+            ctx.beginPath();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.moveTo(data.fromX, data.fromY);
+            if (data.tool === 'draw') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = data.color;
+            } else {
+                ctx.globalCompositeOperation = 'destination-out';
+            }
+            ctx.lineWidth = data.lineWidth;
+            ctx.lineTo(data.toX, data.toY);
+            ctx.stroke();
+        });
+    }
+
+    fileInput.onchange = (e) => {
+        if (!isDM) return;
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const data = event.target.result;
+                loadMapFromData(data);
+                resetMap();
+                socket.emit('map:load', data);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    function resetMap() {
+        scale = 1; originX = 0; originY = 0;
+        updateTransform();
+        if (isDM) socket.emit('map:transform', { scale, originX, originY });
+    }
+
+    function updateTransform() {
+        mapContainer.style.transform = `translate(${originX}px, ${originY}px) scale(${scale})`;
+        zoomSlider.value = scale;
+    }
+
+    function updateLockButton() {
+        lockBtn.innerText = isLocked ? "Unlock Map" : "Lock Map";
+        lockBtn.classList.toggle('locked', isLocked);
+    }
+
+    // --- 工具切换 ---
+    function setTool(tool) {
+        if (!isDM && (tool === 'draw' || tool === 'erase')) return;
+        currentTool = tool;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + tool).classList.add('active');
+        document.getElementById('color-selectors').style.display = (tool === 'draw') ? 'flex' : 'none';
+        mapFrame.style.cursor = (tool === 'move') ? (isLocked ? 'default' : 'grab') : 'crosshair';
+    }
+
+    function setPenColor(c, el) {
+        penColor = c;
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function clearCanvas() {
+        if (!isDM) return;
+        if(confirm("确定要清空所有笔记吗？")) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            socket.emit('draw:clear');
+        }
+    }
+
+    // --- 地图拖动与绘图 ---
+    mapFrame.onmousedown = (e) => {
+        if (e.target.classList.contains('token')) return;
+        if (currentTool === 'move') {
+            if (isLocked || !isDM) return;
+            isDraggingMap = true;
+            startX = e.clientX - originX;
+            startY = e.clientY - originY;
+            mapFrame.style.cursor = 'grabbing';
+        } else if (isDM) {
+            isPainting = true;
+            const rect = mapFrame.getBoundingClientRect();
+            const x = (e.clientX - rect.left - originX) / scale;
+            const y = (e.clientY - rect.top - originY) / scale;
+            lastDrawPoint = { x, y };
+        }
+        e.preventDefault();
+    };
+
+    window.onmousemove = (e) => {
+        if (isDraggingMap && isDM) {
+            originX = e.clientX - startX;
+            originY = e.clientY - startY;
+            updateTransform();
+        } else if (isPainting && isDM && lastDrawPoint) {
+            const rect = mapFrame.getBoundingClientRect();
+            const x = (e.clientX - rect.left - originX) / scale;
+            const y = (e.clientY - rect.top - originY) / scale;
+            const lineWidth = currentTool === 'draw' ? 5 / scale : 25 / scale;
+
+            // 绘制线段
+            ctx.beginPath();
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
+            if (currentTool === 'draw') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = penColor;
+            } else {
+                ctx.globalCompositeOperation = 'destination-out';
+            }
+            ctx.lineWidth = lineWidth;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+
+            // 发送完整线段数据（包含起点和终点）
+            socket.emit('draw:path', {
+                fromX: lastDrawPoint.x,
+                fromY: lastDrawPoint.y,
+                toX: x,
+                toY: y,
+                color: penColor,
+                tool: currentTool,
+                lineWidth: lineWidth
+            });
+
+            lastDrawPoint = { x, y };
+        }
+    };
+
+    window.onmouseup = () => {
+        if (isDraggingMap && isDM) {
+            socket.emit('map:transform', { scale, originX, originY });
+        }
+        isDraggingMap = false;
+        isPainting = false;
+        lastDrawPoint = null;
+        if (currentTool === 'move' && !isLocked && isDM) mapFrame.style.cursor = 'grab';
+    };
+
+    mapFrame.onwheel = (e) => {
+        if (isLocked || !isDM) return;
+        e.preventDefault();
+        scale *= (e.deltaY > 0 ? 0.9 : 1.1);
+        scale = Math.min(Math.max(0.1, scale), 5);
+        updateTransform();
+        socket.emit('map:transform', { scale, originX, originY });
+    };
+
+    zoomSlider.oninput = (e) => {
+        if (!isDM) return;
+        if (!isLocked) {
+            scale = parseFloat(e.target.value);
+            updateTransform();
+            socket.emit('map:transform', { scale, originX, originY });
+        } else {
+            zoomSlider.value = scale;
+        }
+    };
+
+    function toggleLock() {
+        if (!isDM) return;
+        isLocked = !isLocked;
+        updateLockButton();
+        socket.emit('map:lock', isLocked);
+    }
+
+    // --- 棋子系统 ---
+    function createTokenElement(color, x, y) {
+        // 移除已存在的同色棋子
+        const existing = mapContainer.querySelectorAll(`.token[data-color="${color}"]`);
+        existing.forEach(t => mapContainer.removeChild(t));
+
+        const token = document.createElement('div');
+        token.className = 'token';
+        token.style.borderBottomColor = color;
+        token.setAttribute('data-color', color);
+        token.style.left = x + 'px';
+        token.style.top = y + 'px';
+
+        // 拖动逻辑
+        token.onmousedown = (e) => {
+            // 玩家只能拖动自己颜色的棋子
+            if (!isDM && userColor !== color) return;
+
+            e.stopPropagation(); e.preventDefault();
+            let tsX = e.clientX - token.offsetLeft * scale;
+            let tsY = e.clientY - token.offsetTop * scale;
+
+            const move = (me) => {
+                const newX = (me.clientX - tsX) / scale;
+                const newY = (me.clientY - tsY) / scale;
+                token.style.left = newX + 'px';
+                token.style.top = newY + 'px';
+            };
+
+            const stop = () => {
+                window.removeEventListener('mousemove', move);
+                window.removeEventListener('mouseup', stop);
+                // 发送位置更新
+                socket.emit('token:move', {
+                    color,
+                    x: parseFloat(token.style.left),
+                    y: parseFloat(token.style.top)
+                });
+            };
+
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', stop);
+        };
+
+        mapContainer.appendChild(token);
+        return token;
+    }
+
+    function spawnToken(color) {
+        // DM 可以生成所有，玩家只能生成自己的
+        if (!isDM && userColor !== color) return;
+
+        const rect = mapFrame.getBoundingClientRect();
+        const x = (rect.width/2 - originX)/scale - 18;
+        const y = (rect.height/2 - originY)/scale - 18;
+
+        createTokenElement(color, x, y);
+        socket.emit('token:spawn', { color, x, y });
+    }
+
+    function clearAllTokens() {
+        if (!isDM) return;
+        mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
+        socket.emit('token:clearAll');
+    }
+
+    // --- 血量系统 ---
+    function updateHPDisplay(color, cur, max) {
+        const curEl = document.getElementById(`hp-cur-${color}`);
+        const maxEl = document.getElementById(`hp-max-${color}`);
+        const displayBox = curEl.parentElement;
+
+        curEl.innerText = cur;
+        maxEl.innerText = max;
+
+        const ratio = cur / max;
+        displayBox.classList.remove('hp-warning', 'hp-danger');
+        if (ratio <= 0.334) {
+            displayBox.classList.add('hp-danger');
+        } else if (ratio <= 0.501) {
+            displayBox.classList.add('hp-warning');
+        }
+    }
+
+    function editHP(event, color) {
+        event.stopPropagation();
+        if (!isDM) return;
+
+        const curEl = document.getElementById(`hp-cur-${color}`);
+        const maxEl = document.getElementById(`hp-max-${color}`);
+
+        const newCur = prompt(`修改 ${color} 的当前血量:`, curEl.innerText);
+        if (newCur !== null) {
+            const newMax = prompt(`修改 ${color} 的最高血量:`, maxEl.innerText);
+            if (newMax !== null) {
+                const cur = parseInt(newCur);
+                const max = parseInt(newMax);
+                updateHPDisplay(color, cur, max);
+                socket.emit('hp:update', { color, cur, max });
+            }
+        }
+    }
+
+    // --- 骰子系统 ---
+    function rollDice(sides, element) {
+        const valEl = element.querySelector('.dice-val');
+        let count = 0;
+        let finalResult;
+
+        const interval = setInterval(() => {
+            finalResult = Math.floor(Math.random() * sides) + 1;
+            valEl.innerText = finalResult;
+            if (count++ > 8) {
+                clearInterval(interval);
+                // 发送骰子结果
+                socket.emit('dice:roll', { sides, result: finalResult });
+            }
+        }, 40);
+    }
+
+    // --- 聊天系统 ---
+    function addChatMessage(name, role, message) {
+        const div = document.createElement('div');
+        div.className = 'chat-msg';
+        const roleClass = role === 'DM' ? 'dm' : 'player';
+        div.innerHTML = `<span class="name ${roleClass}">[${role === 'DM' ? 'DM' : name}]</span> ${message}`;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function addSystemMessage(message) {
+        const div = document.createElement('div');
+        div.className = 'chat-msg';
+        div.innerHTML = `<span class="system">${message}</span>`;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function sendChat() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+        if (message) {
+            socket.emit('chat:message', message);
+            input.value = '';
+        }
+    }
+
+    function handleChatKeypress(e) {
+        if (e.key === 'Enter') sendChat();
+    }
+
+    // --- Socket 事件监听 ---
+    socket.on('joinSuccess', (data) => {
+        if (data.dmName) {
+            document.getElementById('dm-name').textContent = data.dmName;
+        }
+        // 更新已占用的颜色
+        if (data.takenColors) {
+            updateColorOptions(data.takenColors);
+        }
+        // 恢复已有玩家的颜色卡片
+        if (data.gameState && data.gameState.players) {
+            data.gameState.players.forEach(player => {
+                if (player.color) {
+                    showPlayerCard(player.color, player.name, false);
+                }
+            });
+        }
+    });
+
+    socket.on('playerJoined', (data) => {
+        addSystemMessage(`${data.name} (${data.role}) 加入了游戏`);
+        if (data.dmName) {
+            document.getElementById('dm-name').textContent = data.dmName;
+        }
+    });
+
+    socket.on('playerLeft', (data) => {
+        addSystemMessage(`${data.name} 离开了游戏`);
+        // 隐藏该玩家的角色卡
+        if (data.color) {
+            hidePlayerCard(data.color);
+        }
+    });
+
+    socket.on('dmLeft', () => {
+        document.getElementById('dm-name').textContent = '已离开';
+        addSystemMessage('DM 已离开游戏');
+    });
+
+    socket.on('colorSelected', (data) => {
+        // 判断是否是自己
+        const isMe = (data.color === userColor);
+        showPlayerCard(data.color, data.name, isMe);
+    });
+
+    socket.on('takenColors', (colors) => {
+        updateColorOptions(colors);
+    });
+
+    socket.on('colorError', (message) => {
+        alert(message);
+    });
+
+    socket.on('map:load', (data) => {
+        loadMapFromData(data);
+    });
+
+    socket.on('map:transform', (data) => {
+        scale = data.scale;
+        originX = data.originX;
+        originY = data.originY;
+        updateTransform();
+    });
+
+    socket.on('map:lock', (locked) => {
+        isLocked = locked;
+        updateLockButton();
+    });
+
+    socket.on('token:spawn', (data) => {
+        createTokenElement(data.color, data.x, data.y);
+    });
+
+    socket.on('token:move', (data) => {
+        const token = mapContainer.querySelector(`.token[data-color="${data.color}"]`);
+        if (token) {
+            token.style.left = data.x + 'px';
+            token.style.top = data.y + 'px';
+        }
+    });
+
+    socket.on('token:clearAll', () => {
+        mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
+    });
+
+    socket.on('token:remove', (color) => {
+        const token = mapContainer.querySelector(`.token[data-color="${color}"]`);
+        if (token) {
+            mapContainer.removeChild(token);
+        }
+    });
+
+    socket.on('hp:update', (data) => {
+        updateHPDisplay(data.color, data.cur, data.max);
+        // 获取玩家名称
+        const playerName = document.getElementById(`name-${data.color}`)?.textContent || data.color;
+        addSystemMessage(`DM 修改了 ${playerName} 的血量: ${data.cur}/${data.max}`);
+    });
+
+    socket.on('draw:path', (data) => {
+        ctx.beginPath();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.moveTo(data.fromX, data.fromY);
+        if (data.tool === 'draw') {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = data.color;
+        } else {
+            ctx.globalCompositeOperation = 'destination-out';
+        }
+        ctx.lineWidth = data.lineWidth;
+        ctx.lineTo(data.toX, data.toY);
+        ctx.stroke();
+    });
+
+    socket.on('draw:clear', () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+
+    socket.on('dice:result', (data) => {
+        const who = data.role === 'DM' ? 'DM' : data.playerName;
+        addSystemMessage(`${who} 投掷了 D${data.sides}，结果是 ${data.result}`);
+    });
+
+    socket.on('chat:message', (data) => {
+        addChatMessage(data.name, data.role, data.message);
+    });
+
+    // 初始化
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>DND 线上跑团地图工具 - 智能血量版</title>
+    <style>
+        * { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; box-sizing: border-box; }
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #2c3e50; color: white; }
+        
+        /* 侧边栏 */
+        #sidebar { width: 250px; background: #34495e; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 10; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
+        .section-title { font-size: 14px; color: #bdc3c7; margin: 15px 0 8px; border-bottom: 1px solid #555; padding-bottom: 5px; }
+        
+        .player-row { width: 100%; margin-bottom: 8px; display: flex; flex-direction: column; }
+        .player-btn { 
+            width: 100%; padding: 12px 10px; border: none; cursor: pointer; color: white; 
+            font-weight: bold; border-radius: 6px; text-align: left;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        /* 血量显示样式优化 */
+        .hp-display {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #ffffff; /* 默认白色 */
+            text-shadow: 1px 1px 1px #000;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: color 0.3s ease;
+        }
+        /* 动态血量颜色类 */
+        .hp-warning { color: #f1c40f !important; } /* 黄色 (<= 50%) */
+        .hp-danger { color: #ff4757 !important; font-weight: 900; } /* 红色 (<= 33%) */
+
+        /* 绘图工具 */
+        .tool-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; }
+        .tool-btn { padding: 10px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 13px; }
+        .tool-btn.active { border-color: #f1c40f; background: #555; }
+        #color-selectors { display:none; gap: 8px; margin-bottom: 15px; padding: 5px; background: rgba(0,0,0,0.2); border-radius: 5px; flex-wrap: wrap; }
+        .color-btn { width: 30px; height: 30px; cursor: pointer; border-radius: 4px; border: 2px solid transparent; }
+        .color-btn.active { border: 2px solid white; transform: scale(1.1); }
+
+        #clear-btn { margin-top: 20px; background: #e67e22; color: white; border: none; padding: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+
+        /* 画布与地图 */
+        #viewport { flex-grow: 1; display: flex; align-items: center; justify-content: center; background: #1a1a1a; position: relative; }
+        #map-frame { width: 1000px; height: 800px; border: 4px solid #7f8c8d; background: #000; position: relative; overflow: hidden; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+        #map-container { position: absolute; transform-origin: 0 0; }
+        #map-img { display: block; pointer-events: none; }
+        #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: auto; }
+
+        .token { 
+            position: absolute; width: 0; height: 0; 
+            border-left: 18px solid transparent; border-right: 18px solid transparent; 
+            border-bottom: 36px solid; cursor: move; z-index: 100;
+            filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(4px 4px 4px rgba(0,0,0,0.7)); 
+        }
+
+        #ui-layer { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; z-index: 20; }
+        #dice-column { display: flex; flex-direction: column; gap: 6px; }
+        .dice { width: 50px; height: 50px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .dice-label { font-size: 9px; opacity: 0.8; }
+        .dice-val { font-size: 16px; font-weight: bold; }
+        .dice-big { width: 60px; height: 60px; border: 1px solid rgba(255,255,255,0.3); }
+        #lock-btn { background: #f39c12; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 130px; }
+        #lock-btn.locked { background: #e74c3c; }
+        #top-controls { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 20px; z-index: 20; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="section-title">1. 地图资源</div>
+    <input type="file" id="file-input" accept="image/*" style="width: 100%; font-size: 12px;">
+    
+    <div class="section-title">2. 绘图工具</div>
+    <div class="tool-group">
+        <div id="btn-move" class="tool-btn active" onclick="setTool('move')">🖐️ 移动</div>
+        <div id="btn-draw" class="tool-btn" onclick="setTool('draw')">✏️ 画笔</div>
+        <div id="btn-erase" class="tool-btn" onclick="setTool('erase')">🧽 橡皮</div>
+    </div>
+    <div id="color-selectors" style="display:none;">
+        <div class="color-btn active" onclick="setPenColor('#ff0000', this)" style="background:#ff0000;"></div>
+        <div class="color-btn" onclick="setPenColor('#ffffff', this)" style="background:#ffffff;"></div>
+        <div class="color-btn" onclick="setPenColor('#000000', this)" style="background:#000000; border: 1px solid #666;"></div>
+        <div class="color-btn" onclick="setPenColor('#0000ff', this)" style="background:#0000ff;"></div>
+        <div class="color-btn" onclick="setPenColor('#00ff00', this)" style="background:#00ff00;"></div>
+        <div class="color-btn" onclick="setPenColor('#ffff00', this)" style="background:#ffff00;"></div>
+    </div>
+
+    <div class="section-title">3. 角色血量 (点击数字修改)</div>
+    <div class="player-row">
+        <button class="player-btn" style="background: #2980b9;" onclick="spawnToken('blue')">
+            <span>玩家 (蓝)</span>
+            <span class="hp-display" onclick="editHP(event, 'blue')"><span id="hp-cur-blue">10</span>/<span id="hp-max-blue">10</span></span>
+        </button>
+    </div>
+    <div class="player-row">
+        <button class="player-btn" style="background: #27ae60;" onclick="spawnToken('green')">
+            <span>玩家 (绿)</span>
+            <span class="hp-display" onclick="editHP(event, 'green')"><span id="hp-cur-green">10</span>/<span id="hp-max-green">10</span></span>
+        </button>
+    </div>
+    <div class="player-row">
+        <button class="player-btn" style="background: #f39c12; color: black;" onclick="spawnToken('yellow')">
+            <span>玩家 (黄)</span>
+            <span class="hp-display" onclick="editHP(event, 'yellow')"><span id="hp-cur-yellow">10</span>/<span id="hp-max-yellow">10</span></span>
+        </button>
+    </div>
+    <div class="player-row">
+        <button class="player-btn" style="background: #c0392b;" onclick="spawnToken('red')">
+            <span>玩家 (红)</span>
+            <span class="hp-display" onclick="editHP(event, 'red')"><span id="hp-cur-red">10</span>/<span id="hp-max-red">10</span></span>
+        </button>
+    </div>
+    <div class="player-row">
+        <button class="player-btn" style="background: #000;" onclick="spawnToken('black')">
+            <span>玩家 (黑)</span>
+            <span class="hp-display" onclick="editHP(event, 'black')"><span id="hp-cur-black">10</span>/<span id="hp-max-black">10</span></span>
+        </button>
+    </div>
+    <div class="player-row">
+        <button class="player-btn" style="background: #8e44ad;" onclick="spawnToken('purple')">
+            <span>玩家 (紫)</span>
+            <span class="hp-display" onclick="editHP(event, 'purple')"><span id="hp-cur-purple">10</span>/<span id="hp-max-purple">10</span></span>
+        </button>
+    </div>
+    
+    <button id="clear-btn" onclick="clearAllTokens()">🗑️ 清除所有棋子</button>
+    <button onclick="clearCanvas()" style="margin-top:8px; padding:10px; background:#4b5e71; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">🧹 清空所有笔迹</button>
+</div>
+
+<div id="viewport">
+    <div id="top-controls">🔍 缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
+    <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
+    <div id="ui-layer">
+        <div id="dice-column">
+            <div class="dice" style="background: #7f8c8d;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #16a085;" onclick="rollDice(8, this)"><div class="dice-label">D8</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #2980b9;" onclick="rollDice(10, this)"><div class="dice-label">D10</div><div class="dice-val">?</div></div>
+            <div class="dice" style="background: #8e44ad;" onclick="rollDice(12, this)"><div class="dice-label">D12</div><div class="dice-val">?</div></div>
+            <div class="dice dice-big" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val" style="font-size:20px;">?</div></div>
+            <div class="dice dice-big" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
+        </div>
+        <button id="lock-btn" onclick="toggleLock()">Lock Map</button>
+    </div>
+</div>
+
+<script>
+    // --- 核心血量预警逻辑 ---
+    function editHP(event, color) {
+        event.stopPropagation();
+        const curEl = document.getElementById(`hp-cur-${color}`);
+        const maxEl = document.getElementById(`hp-max-${color}`);
+        const displayBox = curEl.parentElement;
+
+        const newCur = prompt(`修改 ${color} 的当前血量:`, curEl.innerText);
+        if (newCur !== null) {
+            curEl.innerText = newCur;
+            const newMax = prompt(`修改 ${color} 的最高血量:`, maxEl.innerText);
+            if (newMax !== null) maxEl.innerText = newMax;
+        }
+
+        // 计算比例并更新颜色
+        const cur = parseInt(curEl.innerText);
+        const max = parseInt(maxEl.innerText);
+        const ratio = cur / max;
+
+        displayBox.classList.remove('hp-warning', 'hp-danger');
+        
+        if (ratio <= 0.334) {
+            displayBox.classList.add('hp-danger'); // 危急：红色
+        } else if (ratio <= 0.501) {
+            displayBox.classList.add('hp-warning'); // 受损：黄色
+        }
+    }
+
+    // --- 基础地图与工具逻辑 ---
+    const mapImg = document.getElementById('map-img');
+    const mapContainer = document.getElementById('map-container');
+    const mapFrame = document.getElementById('map-frame');
+    const canvas = document.getElementById('drawing-canvas');
+    const ctx = canvas.getContext('2d');
+    const zoomSlider = document.getElementById('zoom-slider');
+    const fileInput = document.getElementById('file-input');
+    const lockBtn = document.getElementById('lock-btn');
+
+    let scale = 1, originX = 0, originY = 0;
+    let isDraggingMap = false, isLocked = false, startX, startY;
+    let currentTool = 'move', isPainting = false, penColor = '#ff0000';
+
+    fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                mapImg.src = event.target.result;
+                mapImg.onload = () => {
+                    mapImg.style.display = 'block';
+                    canvas.width = mapImg.naturalWidth;
+                    canvas.height = mapImg.naturalHeight;
+                    resetMap();
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    function resetMap() { scale = 1; originX = 0; originY = 0; updateTransform(); }
+    function updateTransform() {
+        mapContainer.style.transform = `translate(${originX}px, ${originY}px) scale(${scale})`;
+        zoomSlider.value = scale;
+    }
+
+    function setTool(tool) {
+        currentTool = tool;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + tool).classList.add('active');
+        document.getElementById('color-selectors').style.display = (tool === 'draw') ? 'flex' : 'none';
+        mapFrame.style.cursor = (tool === 'move') ? (isLocked ? 'default' : 'grab') : 'crosshair';
+    }
+
+    function setPenColor(c, el) {
+        penColor = c;
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function clearCanvas() { if(confirm("确定要清空所有笔记吗？")) ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+    mapFrame.onmousedown = (e) => {
+        if (e.target.classList.contains('token')) return;
+        if (currentTool === 'move') {
+            if (isLocked) return;
+            isDraggingMap = true;
+            startX = e.clientX - originX;
+            startY = e.clientY - originY;
+            mapFrame.style.cursor = 'grabbing';
+        } else {
+            isPainting = true;
+            ctx.beginPath();
+            const rect = mapFrame.getBoundingClientRect();
+            const x = (e.clientX - rect.left - originX) / scale;
+            const y = (e.clientY - rect.top - originY) / scale;
+            ctx.moveTo(x, y);
+        }
+        e.preventDefault();
+    };
+
+    window.onmousemove = (e) => {
+        if (isDraggingMap) {
+            originX = e.clientX - startX;
+            originY = e.clientY - startY;
+            updateTransform();
+        } else if (isPainting) {
+            const rect = mapFrame.getBoundingClientRect();
+            const x = (e.clientX - rect.left - originX) / scale;
+            const y = (e.clientY - rect.top - originY) / scale;
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            if (currentTool === 'draw') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = penColor;
+                ctx.lineWidth = 5 / scale;
+            } else {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.lineWidth = 25 / scale;
+            }
+            ctx.lineTo(x, y); ctx.stroke();
+        }
+    };
+
+    window.onmouseup = () => { isDraggingMap = false; isPainting = false; if (currentTool === 'move' && !isLocked) mapFrame.style.cursor = 'grab'; };
+
+    mapFrame.onwheel = (e) => {
+        if (isLocked) return;
+        e.preventDefault();
+        scale *= (e.deltaY > 0 ? 0.9 : 1.1);
+        scale = Math.min(Math.max(0.1, scale), 5);
+        updateTransform();
+    };
+
+    zoomSlider.oninput = (e) => { if (!isLocked) { scale = parseFloat(e.target.value); updateTransform(); } else { zoomSlider.value = scale; } };
+
+    function toggleLock() {
+        isLocked = !isLocked;
+        lockBtn.innerText = isLocked ? "Unlock Map" : "Lock Map";
+        lockBtn.classList.toggle('locked', isLocked);
+    }
+
+    function spawnToken(color) {
+        const existing = mapContainer.querySelectorAll(`.token[data-color="${color}"]`);
+        existing.forEach(t => mapContainer.removeChild(t));
+        const token = document.createElement('div');
+        token.className = 'token';
+        token.style.borderBottomColor = color;
+        token.setAttribute('data-color', color);
+        const rect = mapFrame.getBoundingClientRect();
+        token.style.left = (rect.width/2 - originX)/scale - 18 + 'px';
+        token.style.top = (rect.height/2 - originY)/scale - 18 + 'px';
+        token.onmousedown = (e) => {
+            e.stopPropagation(); e.preventDefault();
+            let tsX = e.clientX - token.offsetLeft * scale;
+            let tsY = e.clientY - token.offsetTop * scale;
+            const move = (me) => {
+                token.style.left = (me.clientX - tsX) / scale + 'px';
+                token.style.top = (me.clientY - tsY) / scale + 'px';
+            };
+            const stop = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', stop); };
+            window.addEventListener('mousemove', move); window.addEventListener('mouseup', stop);
+        };
+        mapContainer.appendChild(token);
+    }
+
+    function clearAllTokens() { mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t)); }
+
+    function rollDice(sides, element) {
+        const valEl = element.querySelector('.dice-val');
+        let count = 0;
+        const interval = setInterval(() => {
+            valEl.innerText = Math.floor(Math.random() * sides) + 1;
+            if (count++ > 8) { clearInterval(interval); valEl.innerText = Math.floor(Math.random() * sides) + 1; }
+        }, 40);
+    }
+</script>
+</body>
+</html>
