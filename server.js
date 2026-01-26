@@ -33,6 +33,11 @@ function saveNotes(content) {
   }
 }
 
+// 地图哈希函数（用于判断是否为同一张地图）
+function getMapHash(mapData) {
+  return mapData.substring(0, 1000) + '_' + mapData.length;
+}
+
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
@@ -63,7 +68,8 @@ const gameState = {
   },
   drawings: [],       // 绘图数据
   npcs: [],           // NPC 数据 { id, x, y }
-  notes: loadNotes()  // 共享笔记（从文件加载）
+  notes: loadNotes(), // 共享笔记（从文件加载）
+  savedMaps: []       // 地图存档（最多4张）
 };
 
 // Socket.IO 连接处理
@@ -110,7 +116,8 @@ io.on('connection', (socket) => {
         players: Array.from(gameState.players.values()),
         drawings: gameState.drawings,
         npcs: gameState.npcs,
-        notes: gameState.notes
+        notes: gameState.notes,
+        savedMaps: gameState.savedMaps.map(m => ({ id: m.id, thumbnail: m.thumbnail }))
       }
     });
 
@@ -313,6 +320,90 @@ io.on('connection', (socket) => {
     gameState.notes = content;
     saveNotes(content);
     socket.broadcast.emit('notes:sync', content);
+  });
+
+  // 保存地图 (仅 DM)
+  socket.on('map:save', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    const mapHash = getMapHash(data.mapData);
+
+    // 查找是否已存在相同地图
+    const existingIndex = gameState.savedMaps.findIndex(m => m.mapHash === mapHash);
+
+    if (existingIndex !== -1) {
+      // 更新现有存档
+      const archive = gameState.savedMaps[existingIndex];
+      archive.thumbnail = data.thumbnail;
+      archive.mapTransform = data.mapTransform;
+      archive.tokens = data.tokens;
+      archive.npcs = data.npcs;
+      archive.drawings = data.drawings;
+
+      io.emit('map:saved', {
+        slotIndex: existingIndex,
+        thumbnail: data.thumbnail,
+        id: archive.id,
+        isUpdate: true
+      });
+    } else {
+      // 创建新存档
+      if (gameState.savedMaps.length >= 4) {
+        socket.emit('map:saveError', '地图存档已满（最多4张）');
+        return;
+      }
+
+      const mapArchive = {
+        id: 'map_' + Date.now(),
+        mapHash,
+        thumbnail: data.thumbnail,
+        mapData: data.mapData,
+        mapTransform: data.mapTransform,
+        tokens: data.tokens,
+        npcs: data.npcs,
+        drawings: data.drawings
+      };
+
+      gameState.savedMaps.push(mapArchive);
+      io.emit('map:saved', {
+        slotIndex: gameState.savedMaps.length - 1,
+        thumbnail: data.thumbnail,
+        id: mapArchive.id,
+        isUpdate: false
+      });
+    }
+  });
+
+  // 加载已保存的地图 (仅 DM)
+  socket.on('map:loadSaved', (mapId) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    const archive = gameState.savedMaps.find(m => m.id === mapId);
+    if (!archive) return;
+
+    // 更新当前游戏状态
+    gameState.mapData = archive.mapData;
+    gameState.mapTransform = { ...archive.mapTransform };
+    gameState.tokens = { ...archive.tokens };
+    gameState.npcs = [...archive.npcs];
+    gameState.drawings = [...archive.drawings];
+
+    // 广播给所有人
+    io.emit('map:loadedSaved', archive);
+  });
+
+  // 删除地图存档 (仅 DM)
+  socket.on('map:deleteSaved', (mapId) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    const index = gameState.savedMaps.findIndex(m => m.id === mapId);
+    if (index === -1) return;
+
+    gameState.savedMaps.splice(index, 1);
+    io.emit('map:deletedSaved', mapId);
   });
 
   // 断开连接

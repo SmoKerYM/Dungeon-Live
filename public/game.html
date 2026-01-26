@@ -235,6 +235,114 @@
             flex-direction: column;
             overflow: hidden;
         }
+
+        /* 地图存档槽 */
+        #map-slots {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .map-slot {
+            aspect-ratio: 1;
+            background: rgba(0,0,0,0.3);
+            border: 2px dashed #555;
+            border-radius: 8px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .map-slot:hover {
+            border-color: #3498db;
+        }
+        .map-slot.empty::after {
+            content: '+';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #555;
+        }
+        .map-slot.empty:hover::after {
+            color: #3498db;
+        }
+        .map-slot img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .map-slot .delete-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 20px;
+            height: 20px;
+            background: #e74c3c;
+            border-radius: 50%;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+            line-height: 1;
+        }
+        .map-slot:hover .delete-btn {
+            opacity: 1;
+        }
+        .map-slot .delete-btn:hover {
+            background: #c0392b;
+        }
+
+        /* 保存地图按钮 */
+        #save-map-btn {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            z-index: 25;
+            padding: 8px 15px;
+            background: #27ae60;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            display: none;
+        }
+        #save-map-btn:hover {
+            background: #2ecc71;
+        }
+
+        /* DM Toast 通知 */
+        #dm-toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            padding: 12px 24px;
+            background: rgba(46, 204, 113, 0.95);
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        #dm-toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        #dm-toast.error {
+            background: rgba(231, 76, 60, 0.95);
+        }
     </style>
 </head>
 <body>
@@ -255,6 +363,9 @@
     </div>
 </div>
 
+<!-- DM Toast 通知（仅 DM 可见） -->
+<div id="dm-toast" class="dm-only"></div>
+
 <div id="sidebar">
     <!-- DM 信息 -->
     <div id="dm-info">
@@ -265,6 +376,13 @@
     <div id="section-map" class="dm-only">
         <div class="section-title">1. 地图资源</div>
         <input type="file" id="file-input" accept="image/*" style="width: 100%; font-size: 12px;">
+        <div class="section-title" style="margin-top: 10px;">地图存档</div>
+        <div id="map-slots">
+            <div class="map-slot empty" data-slot="0"></div>
+            <div class="map-slot empty" data-slot="1"></div>
+            <div class="map-slot empty" data-slot="2"></div>
+            <div class="map-slot empty" data-slot="3"></div>
+        </div>
     </div>
 
     <div id="section-tools" class="dm-only">
@@ -365,6 +483,7 @@
 
     <div id="viewport">
     <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
+    <button id="save-map-btn" class="dm-only" onclick="saveCurrentMap()">💾 保存地图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
     <div id="ui-layer">
         <div id="dice-column">
@@ -648,9 +767,20 @@
             const reader = new FileReader();
             reader.onload = (event) => {
                 const data = event.target.result;
-                loadMapFromData(data);
+                loadMapFromData(data, () => {
+                    updateSaveButtonVisibility();
+                });
                 resetMap();
+
+                // 清空当前所有棋子、NPC、笔迹
+                mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                localDrawings = [];
+
                 socket.emit('map:load', data);
+                socket.emit('token:clearAll');
+                socket.emit('npc:clearAll');
+                socket.emit('draw:clear');
             };
             reader.readAsDataURL(file);
         }
@@ -691,6 +821,7 @@
     function clearCanvas() {
         if (!isDM) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        localDrawings = [];
         socket.emit('draw:clear');
     }
 
@@ -739,7 +870,7 @@
             ctx.stroke();
 
             // 发送完整线段数据（包含起点和终点）
-            socket.emit('draw:path', {
+            const drawData = {
                 fromX: lastDrawPoint.x,
                 fromY: lastDrawPoint.y,
                 toX: x,
@@ -747,7 +878,9 @@
                 color: penColor,
                 tool: currentTool,
                 lineWidth: lineWidth
-            });
+            };
+            localDrawings.push(drawData);
+            socket.emit('draw:path', drawData);
 
             lastDrawPoint = { x, y };
 
@@ -963,6 +1096,136 @@
         socket.emit('npc:clearAll');
     }
 
+    // --- DM Toast 通知系统 ---
+    let toastTimeout = null;
+    function showDmToast(message, isError = false) {
+        if (!isDM) return;  // 仅 DM 可见
+
+        const toast = document.getElementById('dm-toast');
+        // 清除之前的定时器
+        if (toastTimeout) {
+            clearTimeout(toastTimeout);
+        }
+
+        toast.textContent = message;
+        toast.className = 'dm-only show' + (isError ? ' error' : '');
+
+        // 1.5 秒后自动消失
+        toastTimeout = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 1500);
+    }
+
+    // --- 地图存档系统 ---
+    let localSavedMaps = []; // 本地存储的地图存档信息（仅 id 和 thumbnail）
+    let localDrawings = [];  // 本地维护的笔迹数据副本
+
+    function generateThumbnail(mapData, callback) {
+        const img = new Image();
+        img.onload = () => {
+            const thumbCanvas = document.createElement('canvas');
+            const maxSize = 150;
+            const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+            thumbCanvas.width = img.width * ratio;
+            thumbCanvas.height = img.height * ratio;
+            const thumbCtx = thumbCanvas.getContext('2d');
+            thumbCtx.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
+            callback(thumbCanvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.src = mapData;
+    }
+
+    function getCurrentTokens() {
+        const tokens = {};
+        mapContainer.querySelectorAll('.token:not(.npc)').forEach(t => {
+            const color = t.getAttribute('data-color');
+            tokens[color] = {
+                x: parseFloat(t.style.left),
+                y: parseFloat(t.style.top)
+            };
+        });
+        return tokens;
+    }
+
+    function getCurrentNPCs() {
+        const npcs = [];
+        mapContainer.querySelectorAll('.token.npc').forEach(t => {
+            npcs.push({
+                id: t.getAttribute('data-npc-id'),
+                x: parseFloat(t.style.left),
+                y: parseFloat(t.style.top),
+                color: t.getAttribute('data-npc-color')
+            });
+        });
+        return npcs;
+    }
+
+    function saveCurrentMap() {
+        if (!isDM || !mapImg.src || mapImg.style.display === 'none') {
+            showDmToast('✗ 请先上传地图', true);
+            return;
+        }
+
+        // 不再在客户端检查存档数量，因为 save-or-update 逻辑允许更新已有地图
+        // 服务端会判断是新增还是更新，并在真正满的时候返回错误
+
+        generateThumbnail(mapImg.src, (thumbnail) => {
+            const data = {
+                thumbnail,
+                mapData: mapImg.src,
+                mapTransform: { scale, originX, originY },
+                tokens: getCurrentTokens(),
+                npcs: getCurrentNPCs(),
+                drawings: [...localDrawings]
+            };
+            socket.emit('map:save', data);
+        });
+    }
+
+    function loadSavedMap(mapId) {
+        if (!isDM) return;
+        socket.emit('map:loadSaved', mapId);
+    }
+
+    function deleteSavedMap(mapId, event) {
+        event.stopPropagation();
+        if (!isDM) return;
+        socket.emit('map:deleteSaved', mapId);
+    }
+
+    function renderMapSlots() {
+        const slots = document.querySelectorAll('.map-slot');
+        slots.forEach((slot, i) => {
+            slot.innerHTML = '';
+            slot.classList.add('empty');
+            slot.onclick = null;
+
+            if (localSavedMaps[i]) {
+                slot.classList.remove('empty');
+                const img = document.createElement('img');
+                img.src = localSavedMaps[i].thumbnail;
+                slot.appendChild(img);
+
+                const deleteBtn = document.createElement('div');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.innerHTML = '×';
+                deleteBtn.onclick = (e) => deleteSavedMap(localSavedMaps[i].id, e);
+                slot.appendChild(deleteBtn);
+
+                slot.onclick = () => loadSavedMap(localSavedMaps[i].id);
+            }
+        });
+    }
+
+    function updateSaveButtonVisibility() {
+        const saveBtn = document.getElementById('save-map-btn');
+        if (isDM && mapImg.src && mapImg.style.display !== 'none') {
+            saveBtn.style.display = 'block';
+        } else {
+            saveBtn.style.display = 'none';
+        }
+    }
+
     // --- 血量系统 ---
     function updateHPDisplay(color, cur, max) {
         const curEl = document.getElementById(`hp-cur-${color}`);
@@ -1069,7 +1332,10 @@
         // 恢复地图、缩放、笔迹（与之前一致）
         if (gs.mapData) {
             loadMapFromData(gs.mapData, () => {
-                if (gs.drawings) restoreDrawings(gs.drawings);
+                if (gs.drawings) {
+                    restoreDrawings(gs.drawings);
+                    localDrawings = [...gs.drawings];
+                }
             });
         }
         if (gs.mapTransform) {
@@ -1111,6 +1377,15 @@
                 }
             });
         }
+
+        // 恢复地图存档槽
+        if (gs.savedMaps && isDM) {
+            localSavedMaps = gs.savedMaps;
+            renderMapSlots();
+        }
+
+        // 更新保存按钮可见性
+        updateSaveButtonVisibility();
     });
 
     socket.on('playerJoined', (data) => {
@@ -1268,6 +1543,71 @@
 
     socket.on('chat:message', (data) => {
         addChatMessage(data.name, data.role, data.message);
+    });
+
+    // --- 地图存档 Socket 事件 ---
+    socket.on('map:saved', (data) => {
+        if (data.isUpdate) {
+            // 更新现有槽位的缩略图
+            localSavedMaps[data.slotIndex].thumbnail = data.thumbnail;
+            addSystemMessage('DM 更新了地图存档');
+            showDmToast('✓ 地图更新成功');
+        } else {
+            // 添加新槽位
+            localSavedMaps.push({ id: data.id, thumbnail: data.thumbnail });
+            addSystemMessage('DM 保存了一张新地图');
+            showDmToast('✓ 地图保存成功');
+        }
+        renderMapSlots();
+    });
+
+    socket.on('map:saveError', (message) => {
+        showDmToast('✗ ' + message, true);
+    });
+
+    socket.on('map:loadedSaved', (archive) => {
+        // 清空当前棋子和 NPC
+        mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 加载地图
+        loadMapFromData(archive.mapData, () => {
+            // 恢复笔迹
+            if (archive.drawings) {
+                restoreDrawings(archive.drawings);
+                localDrawings = [...archive.drawings];
+            }
+            updateSaveButtonVisibility();
+        });
+
+        // 恢复变换
+        scale = archive.mapTransform.scale;
+        originX = archive.mapTransform.originX;
+        originY = archive.mapTransform.originY;
+        updateTransform();
+
+        // 恢复棋子
+        if (archive.tokens) {
+            Object.keys(archive.tokens).forEach(color => {
+                createTokenElement(color, archive.tokens[color].x, archive.tokens[color].y);
+            });
+        }
+
+        // 恢复 NPC
+        if (archive.npcs) {
+            archive.npcs.forEach(npc => {
+                createNPCElement(npc.id, npc.x, npc.y, npc.color);
+            });
+        }
+
+        addSystemMessage('DM 读取了一张地图');
+    });
+
+    socket.on('map:deletedSaved', (mapId) => {
+        localSavedMaps = localSavedMaps.filter(m => m.id !== mapId);
+        renderMapSlots();
+        addSystemMessage('DM 删除了一张地图');
+        showDmToast('✓ 地图删除成功');
     });
 
     // 初始化

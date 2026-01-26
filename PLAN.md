@@ -501,3 +501,566 @@ socket.on('notes:sync', (content) => {
    - Size: 1 GB（最小）
 3. 重新部署服务
 
+---
+
+## 第十一阶段：地图快捷保存与切换系统
+
+### 11.1 功能概述
+支持 DM 保存多张地图的完整状态，并在不同地图间快速切换。适用于多楼层、多场景的跑团场景。
+
+**核心特性：**
+- DM 侧边栏显示 4 个地图存储槽（正方形缩略图）
+- 保存地图时记录完整状态：地图图片、缩放变换、玩家棋子、NPC、笔迹
+- 点击缩略图可快速加载对应地图状态
+- 支持删除已保存的地图
+
+### 11.2 数据结构
+
+#### 单张地图存档
+```javascript
+{
+  id: 'map_1234567890',        // 唯一标识
+  thumbnail: 'data:image/...',  // 缩略图 Base64（压缩后）
+  mapData: 'data:image/...',    // 原始地图 Base64
+  mapTransform: { scale: 1, originX: 0, originY: 0 },
+  tokens: { orange: {x, y}, blue: {x, y}, ... },
+  npcs: [{ id, x, y, color }, ...],
+  drawings: [{ fromX, fromY, toX, toY, color, tool, lineWidth }, ...]
+}
+```
+
+#### 服务端状态
+```javascript
+gameState.savedMaps = [];  // 最多 4 张地图存档
+```
+
+### 11.3 UI 设计
+
+#### 侧边栏地图槽（仅 DM 可见）
+```html
+<div class="section-title">地图存档</div>
+<div id="map-slots" class="dm-only">
+  <div class="map-slot empty" data-slot="0"></div>
+  <div class="map-slot empty" data-slot="1"></div>
+  <div class="map-slot empty" data-slot="2"></div>
+  <div class="map-slot empty" data-slot="3"></div>
+</div>
+```
+
+#### 地图槽样式
+```css
+#map-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+.map-slot {
+  aspect-ratio: 1;
+  background: rgba(0,0,0,0.3);
+  border: 2px dashed #555;
+  border-radius: 8px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.map-slot.empty::after {
+  content: '+';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #555;
+}
+.map-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.map-slot .delete-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background: #e74c3c;
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+```
+
+#### 保存按钮（地图视图左上角）
+```html
+<button id="save-map-btn" class="dm-only" style="display:none;">
+  💾 保存地图
+</button>
+```
+
+```css
+#save-map-btn {
+  position: absolute;
+  top: 60px;
+  left: 20px;
+  z-index: 25;
+  padding: 8px 15px;
+  background: #27ae60;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+#save-map-btn:hover {
+  background: #2ecc71;
+}
+```
+
+### 11.4 服务端实现
+
+#### Socket 事件
+```javascript
+// 保存地图 (仅 DM)
+socket.on('map:save', (data) => {
+  const player = gameState.players.get(socket.id);
+  if (player?.role !== 'DM') return;
+
+  if (gameState.savedMaps.length >= 4) {
+    socket.emit('map:saveError', '地图存档已满（最多4张）');
+    return;
+  }
+
+  const mapArchive = {
+    id: 'map_' + Date.now(),
+    thumbnail: data.thumbnail,
+    mapData: data.mapData,
+    mapTransform: data.mapTransform,
+    tokens: data.tokens,
+    npcs: data.npcs,
+    drawings: data.drawings
+  };
+
+  gameState.savedMaps.push(mapArchive);
+  io.emit('map:saved', {
+    slotIndex: gameState.savedMaps.length - 1,
+    thumbnail: data.thumbnail,
+    id: mapArchive.id
+  });
+});
+
+// 加载地图 (仅 DM)
+socket.on('map:loadSaved', (mapId) => {
+  const player = gameState.players.get(socket.id);
+  if (player?.role !== 'DM') return;
+
+  const archive = gameState.savedMaps.find(m => m.id === mapId);
+  if (!archive) return;
+
+  // 更新当前游戏状态
+  gameState.mapData = archive.mapData;
+  gameState.mapTransform = archive.mapTransform;
+  gameState.tokens = { ...archive.tokens };
+  gameState.npcs = [...archive.npcs];
+  gameState.drawings = [...archive.drawings];
+
+  // 广播给所有人
+  io.emit('map:loadedSaved', archive);
+});
+
+// 删除地图存档 (仅 DM)
+socket.on('map:deleteSaved', (mapId) => {
+  const player = gameState.players.get(socket.id);
+  if (player?.role !== 'DM') return;
+
+  const index = gameState.savedMaps.findIndex(m => m.id === mapId);
+  if (index === -1) return;
+
+  gameState.savedMaps.splice(index, 1);
+  io.emit('map:deletedSaved', mapId);
+});
+```
+
+### 11.5 客户端实现
+
+#### 生成缩略图
+```javascript
+function generateThumbnail(mapData, callback) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    const maxSize = 150;
+    const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+    canvas.width = img.width * ratio;
+    canvas.height = img.height * ratio;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    callback(canvas.toDataURL('image/jpeg', 0.6));
+  };
+  img.src = mapData;
+}
+```
+
+#### 保存地图
+```javascript
+function saveCurrentMap() {
+  if (!isDM || !mapImg.src) return;
+
+  generateThumbnail(mapImg.src, (thumbnail) => {
+    const data = {
+      thumbnail,
+      mapData: mapImg.src,
+      mapTransform: { scale, originX, originY },
+      tokens: getCurrentTokens(),
+      npcs: getCurrentNPCs(),
+      drawings: [...gameState.drawings] // 需要客户端维护 drawings 副本
+    };
+    socket.emit('map:save', data);
+  });
+}
+
+function getCurrentTokens() {
+  const tokens = {};
+  mapContainer.querySelectorAll('.token:not(.npc)').forEach(t => {
+    const color = t.getAttribute('data-color');
+    tokens[color] = {
+      x: parseFloat(t.style.left),
+      y: parseFloat(t.style.top)
+    };
+  });
+  return tokens;
+}
+
+function getCurrentNPCs() {
+  const npcs = [];
+  mapContainer.querySelectorAll('.token.npc').forEach(t => {
+    npcs.push({
+      id: t.getAttribute('data-npc-id'),
+      x: parseFloat(t.style.left),
+      y: parseFloat(t.style.top),
+      color: t.getAttribute('data-npc-color')
+    });
+  });
+  return npcs;
+}
+```
+
+#### 加载已保存的地图
+```javascript
+function loadSavedMap(mapId) {
+  if (!isDM) return;
+  socket.emit('map:loadSaved', mapId);
+}
+
+socket.on('map:loadedSaved', (archive) => {
+  // 清空当前棋子和 NPC
+  mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+
+  // 加载地图
+  loadMapFromData(archive.mapData, () => {
+    // 恢复笔迹
+    if (archive.drawings) restoreDrawings(archive.drawings);
+  });
+
+  // 恢复变换
+  scale = archive.mapTransform.scale;
+  originX = archive.mapTransform.originX;
+  originY = archive.mapTransform.originY;
+  updateTransform();
+
+  // 恢复棋子
+  Object.keys(archive.tokens).forEach(color => {
+    createTokenElement(color, archive.tokens[color].x, archive.tokens[color].y);
+  });
+
+  // 恢复 NPC
+  archive.npcs.forEach(npc => {
+    createNPCElement(npc.id, npc.x, npc.y, npc.color);
+  });
+
+  addSystemMessage('DM 读取了一张地图');
+});
+```
+
+#### 渲染地图槽
+```javascript
+function renderMapSlots(savedMaps) {
+  const slots = document.querySelectorAll('.map-slot');
+  slots.forEach((slot, i) => {
+    slot.innerHTML = '';
+    slot.classList.add('empty');
+
+    if (savedMaps[i]) {
+      slot.classList.remove('empty');
+      const img = document.createElement('img');
+      img.src = savedMaps[i].thumbnail;
+      slot.appendChild(img);
+
+      const deleteBtn = document.createElement('div');
+      deleteBtn.className = 'delete-btn';
+      deleteBtn.innerHTML = '×';
+      deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        socket.emit('map:deleteSaved', savedMaps[i].id);
+      };
+      slot.appendChild(deleteBtn);
+
+      slot.onclick = () => loadSavedMap(savedMaps[i].id);
+    }
+  });
+}
+```
+
+### 11.6 重新上传地图时清空状态
+```javascript
+fileInput.onchange = (e) => {
+  if (!isDM) return;
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const data = event.target.result;
+      loadMapFromData(data);
+      resetMap();
+
+      // 清空当前所有棋子、NPC、笔迹
+      mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      socket.emit('map:load', data);
+      socket.emit('token:clearAll');
+      socket.emit('npc:clearAll');
+      socket.emit('draw:clear');
+    };
+    reader.readAsDataURL(file);
+  }
+};
+```
+
+### 11.7 Edge Cases 处理
+
+| 场景 | 处理方式 |
+|------|----------|
+| 保存成功 | 聊天区显示「DM 保存了一张地图」 |
+| 读取地图 | 聊天区显示「DM 读取了一张地图」 |
+| 存档已满（4张） | 弹窗提示「地图存档已满」，阻止保存 |
+| 删除地图 | 聊天区显示「DM 删除了一张地图」 |
+| 无地图时点击保存 | 按钮隐藏，无法触发 |
+
+### 11.8 Socket 事件汇总
+
+| 事件名 | 方向 | 数据 | 说明 |
+|--------|------|------|------|
+| `map:save` | C→S | { thumbnail, mapData, mapTransform, tokens, npcs, drawings } | DM 保存地图 |
+| `map:saved` | S→C | { slotIndex, thumbnail, id, isUpdate } | 保存成功，更新槽位 |
+| `map:saveError` | S→C | string | 保存失败（已满） |
+| `map:loadSaved` | C→S | mapId | DM 请求加载存档 |
+| `map:loadedSaved` | S→C | archive | 广播加载的完整数据 |
+| `map:deleteSaved` | C→S | mapId | DM 删除存档 |
+| `map:deletedSaved` | S→C | mapId | 广播删除结果 |
+
+### 11.9 保存或更新逻辑（Save-or-Update）
+
+#### 需求背景
+游戏过程中，地图图片本身不会改变，变化的只是：
+- 地图缩放/位置（mapTransform）
+- 玩家棋子位置（tokens）
+- NPC 位置（npcs）
+- 笔迹（drawings）
+
+因此，保存时应检测当前地图是否已存在于存档列表中：
+- **已存在**：更新该存档的状态（不占用新槽位）
+- **不存在**：创建新存档（占用新槽位，受 4 张上限限制）
+
+#### 判断逻辑
+由于 mapData 是完整的 Base64 字符串（可能很大），直接比较效率低。采用以下方案：
+
+1. 计算 mapData 的简单哈希值（取前 1000 字符 + 长度）
+2. 保存时在 archive 中存储此哈希值
+3. 保存新地图时，计算当前地图的哈希值并与已有存档比较
+
+```javascript
+// 简单哈希函数
+function getMapHash(mapData) {
+  return mapData.substring(0, 1000) + '_' + mapData.length;
+}
+```
+
+#### 服务端实现
+```javascript
+socket.on('map:save', (data) => {
+  const player = gameState.players.get(socket.id);
+  if (player?.role !== 'DM') return;
+
+  const mapHash = getMapHash(data.mapData);
+
+  // 查找是否已存在相同地图
+  const existingIndex = gameState.savedMaps.findIndex(m => m.mapHash === mapHash);
+
+  if (existingIndex !== -1) {
+    // 更新现有存档
+    const archive = gameState.savedMaps[existingIndex];
+    archive.thumbnail = data.thumbnail;
+    archive.mapTransform = data.mapTransform;
+    archive.tokens = data.tokens;
+    archive.npcs = data.npcs;
+    archive.drawings = data.drawings;
+    saveSavedMapsToFile();
+
+    io.emit('map:saved', {
+      slotIndex: existingIndex,
+      thumbnail: data.thumbnail,
+      id: archive.id,
+      isUpdate: true
+    });
+  } else {
+    // 创建新存档
+    if (gameState.savedMaps.length >= 4) {
+      socket.emit('map:saveError', '地图存档已满（最多4张）');
+      return;
+    }
+
+    const mapArchive = {
+      id: 'map_' + Date.now(),
+      mapHash,
+      thumbnail: data.thumbnail,
+      mapData: data.mapData,
+      mapTransform: data.mapTransform,
+      tokens: data.tokens,
+      npcs: data.npcs,
+      drawings: data.drawings
+    };
+
+    gameState.savedMaps.push(mapArchive);
+    saveSavedMapsToFile();
+
+    io.emit('map:saved', {
+      slotIndex: gameState.savedMaps.length - 1,
+      thumbnail: data.thumbnail,
+      id: mapArchive.id,
+      isUpdate: false
+    });
+  }
+});
+```
+
+#### 客户端提示
+```javascript
+socket.on('map:saved', (data) => {
+  if (data.isUpdate) {
+    // 更新现有槽位的缩略图
+    localSavedMaps[data.slotIndex].thumbnail = data.thumbnail;
+    addSystemMessage('DM 更新了地图存档');
+  } else {
+    // 添加新槽位
+    localSavedMaps.push({ id: data.id, thumbnail: data.thumbnail });
+    addSystemMessage('DM 保存了一张新地图');
+  }
+  renderMapSlots();
+});
+```
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 保存已存在的地图 | 更新该存档，提示「DM 更新了地图存档」 |
+| 保存新地图 | 创建新存档，提示「DM 保存了一张新地图」 |
+| 存档已满且保存新地图 | 弹窗提示「地图存档已满」 |
+| 存档已满但更新已有地图 | 正常更新，不受上限限制 |
+
+### 11.10 DM 通知徽章系统（Toast Notification）
+
+#### 需求背景
+DM 执行地图操作后，需要即时反馈操作结果。使用非阻塞的 Toast 通知替代传统 alert 弹窗，提升用户体验。
+
+**特性：**
+- 仅 DM 可见，Player 不显示
+- 出现在屏幕顶部中央
+- 自动消失（1.5 秒后）
+- 不阻塞用户操作
+
+#### 通知消息类型
+
+| 操作 | 消息内容 |
+|------|----------|
+| 保存新地图成功 | ✓ 地图保存成功 |
+| 更新地图成功 | ✓ 地图更新成功 |
+| 删除地图成功 | ✓ 地图删除成功 |
+| 存档已满 | ✗ 地图存档已满（最多4张） |
+
+#### HTML 结构
+```html
+<!-- 放在 body 末尾，仅 DM 可见 -->
+<div id="dm-toast" class="dm-only"></div>
+```
+
+#### CSS 样式
+```css
+#dm-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  padding: 12px 24px;
+  background: rgba(46, 204, 113, 0.95);
+  color: white;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 9999;
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: none;
+}
+
+#dm-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+#dm-toast.error {
+  background: rgba(231, 76, 60, 0.95);
+}
+```
+
+#### JavaScript 实现
+```javascript
+function showDmToast(message, isError = false) {
+  if (!isDM) return;  // 仅 DM 可见
+
+  const toast = document.getElementById('dm-toast');
+  toast.textContent = message;
+  toast.className = 'dm-only show' + (isError ? ' error' : '');
+
+  // 1.5 秒后自动消失
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 1500);
+}
+
+// 使用示例
+socket.on('map:saved', (data) => {
+  if (data.isUpdate) {
+    showDmToast('✓ 地图更新成功');
+  } else {
+    showDmToast('✓ 地图保存成功');
+  }
+  // ... 其他逻辑
+});
+
+socket.on('map:saveError', (message) => {
+  showDmToast('✗ ' + message, true);
+});
+
+socket.on('map:deletedSaved', (mapId) => {
+  showDmToast('✓ 地图删除成功');
+  // ... 其他逻辑
+});
+```
+
