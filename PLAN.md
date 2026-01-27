@@ -206,18 +206,6 @@ railway up
 
 ---
 
-## 实施时间线
-
-| 阶段 | 内容 | 建议顺序 |
-|------|------|----------|
-| 1 | 项目初始化 + 服务器 | 第1步 |
-| 2 | 用户认证 | 第2步 |
-| 3 | 权限系统 | 第3步 |
-| 4 | 实时同步 | 第4步 |
-| 5 | UI 改造 | 第5步 |
-| 6 | 部署 | 第6步 |
-
----
 
 ## 第七阶段：玩家交互优化
 
@@ -1480,3 +1468,625 @@ socket.on('map:loadedSaved', (archive) => {
 | DM 断开连接 | 最后一次 dirty 状态可能丢失（可接受） |
 | 玩家操作 | 玩家移动自己棋子也会触发 DM 端的自动保存 |
 
+---
+
+## 第十二阶段：角色卡实现
+
+### 12.1 功能概述
+
+新增「角色卡」Tab，提供类似 Roll20 的角色卡 UI，支持 DM 和 Player 创建、编辑、保存角色卡。角色卡数据持久化存储到服务器端 JSON 文件。
+
+### 12.2 Tab 结构
+
+```
+[地图] [笔记] [角色卡]  ← 新增第三个 Tab
+```
+
+- **可见性**：DM 和 Player 都可见
+- **切换逻辑**：复用现有 `switchTab()` 函数
+
+### 12.3 UI 布局（参考 Roll20 风格）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  [新建角色卡]  [读取角色卡 ▼]                                │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────┐    ┌─────────────────┐                │
+│  │ 角色姓名：       │    │ 当前血量/最大血量：│                │
+│  │      V          │    │     10/10       │                │
+│  └─────────────────┘    └─────────────────┘                │
+│                                                             │
+│  ┌─────────────────┐    ┌─────────────────┐                │
+│  │    基础属性      │    │     豁免检定     │                │
+│  │  ┌───────────┐  │    │  ○ -1  力量     │                │
+│  │  │ 力量：-1  │  │    │  ● 5   敏捷     │                │
+│  │  └───────────┘  │    │  ○ 2   体质     │                │
+│  │  ┌───────────┐  │    │  ● 3   智力     │                │
+│  │  │ 敏捷：3   │  │    │  ○ 3   感知     │                │
+│  │  └───────────┘  │    │  ○ -1  魅力     │                │
+│  │  ┌───────────┐  │    └─────────────────┘                │
+│  │  │ 体质：2   │  │                                       │
+│  │  └───────────┘  │    ┌─────────────────┐                │
+│  │  ┌───────────┐  │    │      技能       │                │
+│  │  │ 智力：1   │  │    │  ○ 3  体操(敏捷) │                │
+│  │  └───────────┘  │    │  ○ 3  驯兽(感知) │                │
+│  │  ┌───────────┐  │    │  ○ 1  奥秘(智力) │                │
+│  │  │ 感知：3   │  │    │  ...            │                │
+│  │  └───────────┘  │    │  ● 5  巧手(敏捷) │                │
+│  │  ┌───────────┐  │    │  ● 5  隐匿(敏捷) │                │
+│  │  │ 魅力：-1  │  │    │  ○ 3  求生(感知) │                │
+│  │  └───────────┘  │    └─────────────────┘                │
+│  └─────────────────┘                                       │
+│                                                             │
+│                                    [编辑]  [保存]           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 12.4 数据结构
+
+#### 角色卡 JSON 结构
+```javascript
+{
+  name: "V",                    // 角色名（唯一标识）
+  hp: { cur: 10, max: 10 },     // 血量
+  attributes: {                 // 六大基础属性
+    strength: -1,     // 力量
+    dexterity: 3,     // 敏捷
+    constitution: 2,  // 体质
+    intelligence: 1,  // 智力
+    wisdom: 3,        // 感知
+    charisma: -1      // 魅力
+  },
+  savingThrows: ["dexterity", "intelligence"],  // 已选豁免（最多2个）
+  skills: ["sleightOfHand", "stealth", "medicine", "perception"]  // 已选技能（最多4个）
+}
+```
+
+#### 技能与属性映射
+```javascript
+const skillAttributeMap = {
+  // 力量 (Strength)
+  athletics: 'strength',        // 运动
+
+  // 敏捷 (Dexterity)
+  acrobatics: 'dexterity',      // 体操
+  sleightOfHand: 'dexterity',   // 巧手
+  stealth: 'dexterity',         // 隐匿
+
+  // 智力 (Intelligence)
+  arcana: 'intelligence',       // 奥秘
+  history: 'intelligence',      // 历史
+  investigation: 'intelligence', // 调查
+  nature: 'intelligence',       // 自然
+  religion: 'intelligence',     // 宗教
+
+  // 感知 (Wisdom)
+  animalHandling: 'wisdom',     // 驯兽
+  insight: 'wisdom',            // 洞悉
+  medicine: 'wisdom',           // 医药
+  perception: 'wisdom',         // 察觉
+  survival: 'wisdom',           // 求生
+
+  // 魅力 (Charisma)
+  deception: 'charisma',        // 欺瞒
+  intimidation: 'charisma',     // 威吓
+  performance: 'charisma',      // 表演
+  persuasion: 'charisma'        // 游说
+};
+```
+
+### 12.5 数值计算逻辑
+
+#### 豁免检定数值
+```javascript
+function getSavingThrowValue(attribute, characterData) {
+  const baseValue = characterData.attributes[attribute];
+  const isProficient = characterData.savingThrows.includes(attribute);
+  return isProficient ? baseValue + 2 : baseValue;
+}
+```
+
+#### 技能数值
+```javascript
+function getSkillValue(skillName, characterData) {
+  const attribute = skillAttributeMap[skillName];
+  const baseValue = characterData.attributes[attribute];
+  const isProficient = characterData.skills.includes(skillName);
+  return isProficient ? baseValue + 2 : baseValue;
+}
+```
+
+### 12.6 Checkbox 限制逻辑
+
+#### 豁免检定（最多选2个）
+```javascript
+function onSavingThrowChange(attribute, checked) {
+  if (checked && currentCharacter.savingThrows.length >= 2) {
+    // 阻止选中，显示提示
+    showToast('豁免检定最多选择2个', true);
+    return false;
+  }
+  // 更新选中状态
+  if (checked) {
+    currentCharacter.savingThrows.push(attribute);
+  } else {
+    currentCharacter.savingThrows = currentCharacter.savingThrows.filter(a => a !== attribute);
+  }
+  updateSavingThrowDisplay();
+}
+```
+
+#### 技能（最多选4个）
+```javascript
+function onSkillChange(skillName, checked) {
+  if (checked && currentCharacter.skills.length >= 4) {
+    showToast('技能最多选择4个', true);
+    return false;
+  }
+  if (checked) {
+    currentCharacter.skills.push(skillName);
+  } else {
+    currentCharacter.skills = currentCharacter.skills.filter(s => s !== skillName);
+  }
+  updateSkillDisplay();
+}
+```
+
+### 12.7 编辑模式
+
+#### 状态切换
+```javascript
+let isEditMode = false;
+
+function toggleEditMode() {
+  isEditMode = !isEditMode;
+
+  // 切换输入框的 disabled 状态
+  document.querySelectorAll('.char-input').forEach(input => {
+    input.disabled = !isEditMode;
+  });
+
+  // 切换 checkbox 的 disabled 状态
+  document.querySelectorAll('.char-checkbox').forEach(cb => {
+    cb.disabled = !isEditMode;
+  });
+
+  // 更新按钮文字
+  document.getElementById('edit-btn').textContent = isEditMode ? '取消' : '编辑';
+}
+```
+
+### 12.8 数据持久化
+
+#### 服务端存储路径
+```javascript
+const CHARACTERS_FILE = process.env.NODE_ENV === 'production'
+  ? '/data/characters.json'
+  : './data/characters.json';
+```
+
+#### 文件格式
+```json
+{
+  "V": { "name": "V", "hp": {...}, "attributes": {...}, ... },
+  "Alice": { "name": "Alice", "hp": {...}, "attributes": {...}, ... }
+}
+```
+
+#### 读取角色卡列表
+```javascript
+function loadCharacters() {
+  try {
+    if (fs.existsSync(CHARACTERS_FILE)) {
+      return JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取角色卡失败:', err);
+  }
+  return {};
+}
+```
+
+#### 保存角色卡
+```javascript
+function saveCharacter(characterData) {
+  const characters = loadCharacters();
+  characters[characterData.name] = characterData;
+
+  const dir = path.dirname(CHARACTERS_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(CHARACTERS_FILE, JSON.stringify(characters, null, 2), 'utf8');
+}
+```
+
+### 12.9 Socket 事件
+
+#### 客户端 → 服务端
+
+| 事件 | 数据 | 说明 |
+|------|------|------|
+| `character:save` | `{ characterData }` | 保存角色卡 |
+| `character:load` | `{ name }` | 加载指定角色卡 |
+| `character:list` | - | 请求角色卡列表 |
+| `character:delete` | `{ name }` | 删除角色卡（仅 DM） |
+
+#### 服务端 → 客户端
+
+| 事件 | 数据 | 说明 |
+|------|------|------|
+| `character:saved` | `{ name }` | 保存成功 |
+| `character:loaded` | `{ characterData }` | 返回角色卡数据 |
+| `character:listResult` | `{ names: [...] }` | 返回角色卡名称列表 |
+| `character:error` | `{ message }` | 操作失败 |
+
+### 12.10 DM 特殊视图
+
+DM 进入角色卡 Tab 时，默认显示角色卡列表：
+
+```
+┌─────────────────────────────────────┐
+│         已创建的角色卡              │
+├─────────────────────────────────────┤
+│  📋 V                    [查看]     │
+│  📋 Alice                [查看]     │
+│  📋 Bob                  [查看]     │
+├─────────────────────────────────────┤
+│  [+ 新建角色卡]                     │
+└─────────────────────────────────────┘
+```
+
+### 12.11 HTML 结构
+
+```html
+<!-- 角色卡视图 -->
+<div id="character-view" style="display: none;">
+  <!-- 顶部操作栏 -->
+  <div class="char-toolbar">
+    <button id="new-char-btn" onclick="newCharacter()">新建角色卡</button>
+    <select id="char-select" onchange="loadSelectedCharacter()">
+      <option value="">-- 读取角色卡 --</option>
+    </select>
+  </div>
+
+  <!-- DM 角色列表（仅 DM 可见） -->
+  <div id="char-list" class="dm-only"></div>
+
+  <!-- 角色卡内容 -->
+  <div id="char-sheet">
+    <!-- 角色名和血量 -->
+    <div class="char-header">
+      <div class="char-field">
+        <label>角色姓名：</label>
+        <input type="text" id="char-name" class="char-input" disabled>
+      </div>
+      <div class="char-field">
+        <label>当前血量/最大血量：</label>
+        <input type="number" id="char-hp-cur" class="char-input" disabled>
+        <span>/</span>
+        <input type="number" id="char-hp-max" class="char-input" disabled>
+      </div>
+    </div>
+
+    <!-- 基础属性 -->
+    <div class="char-section">
+      <div class="section-title">基础属性</div>
+      <div class="attr-grid">
+        <div class="attr-box"><label>力量</label><input type="number" id="attr-str" class="char-input" disabled></div>
+        <div class="attr-box"><label>敏捷</label><input type="number" id="attr-dex" class="char-input" disabled></div>
+        <div class="attr-box"><label>体质</label><input type="number" id="attr-con" class="char-input" disabled></div>
+        <div class="attr-box"><label>智力</label><input type="number" id="attr-int" class="char-input" disabled></div>
+        <div class="attr-box"><label>感知</label><input type="number" id="attr-wis" class="char-input" disabled></div>
+        <div class="attr-box"><label>魅力</label><input type="number" id="attr-cha" class="char-input" disabled></div>
+      </div>
+    </div>
+
+    <!-- 豁免检定 -->
+    <div class="char-section">
+      <div class="section-title">豁免检定</div>
+      <div id="saving-throws"></div>
+    </div>
+
+    <!-- 技能 -->
+    <div class="char-section">
+      <div class="section-title">技能</div>
+      <div id="skills-list"></div>
+    </div>
+  </div>
+
+  <!-- 底部按钮 -->
+  <div class="char-actions">
+    <button id="edit-btn" onclick="toggleEditMode()">编辑</button>
+    <button id="save-char-btn" onclick="saveCharacter()">保存</button>
+  </div>
+</div>
+```
+
+### 12.12 CSS 样式
+
+```css
+#character-view {
+  padding: 20px;
+  color: white;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.char-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.char-header {
+  display: flex;
+  gap: 30px;
+  margin-bottom: 20px;
+}
+
+.char-field {
+  background: rgba(255,255,255,0.1);
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.char-field label {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 5px;
+}
+
+.char-field input {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 24px;
+  width: 100%;
+  text-align: center;
+}
+
+.char-section {
+  background: rgba(255,255,255,0.1);
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.attr-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.attr-box {
+  background: rgba(255,255,255,0.1);
+  padding: 15px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.attr-box label {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.attr-box input {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 28px;
+  width: 60px;
+  text-align: center;
+}
+
+.save-row, .skill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.save-row input[type="checkbox"],
+.skill-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.save-value, .skill-value {
+  font-weight: bold;
+  min-width: 30px;
+  text-align: center;
+}
+
+.char-actions {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.char-actions button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#edit-btn {
+  background: #f39c12;
+  color: white;
+}
+
+#save-char-btn {
+  background: #27ae60;
+  color: white;
+}
+```
+
+### 12.13 Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 角色名为空 | 保存时提示「请输入角色名」 |
+| 角色名已存在 | 覆盖原有数据，提示「角色卡已更新」 |
+| 角色名为新名称 | 创建新记录，提示「角色卡已保存」 |
+| 选择超过2个豁免 | 阻止选中，提示「豁免检定最多选择2个」 |
+| 选择超过4个技能 | 阻止选中，提示「技能最多选择4个」 |
+| DM 删除角色卡 | 二次确认后删除，同步更新列表 |
+| 未保存就切换角色 | 可选：弹窗提示是否保存 |
+| 服务器文件不存在 | 自动创建空的 characters.json |
+
+### 12.14 实现步骤
+
+1. **HTML/CSS**：添加角色卡 Tab 和视图结构
+2. **客户端 JS**：实现编辑模式、数值计算、checkbox 限制
+3. **服务端**：添加 Socket 事件处理和文件读写
+4. **测试**：验证数据持久化、多用户同步、边界情况
+
+### 12.15 UI 优化：统一标题样式与熟练加值
+
+#### 需求背景
+1. 角色姓名和血量的标题应使用与「基础属性」相同的蓝色样式，保持视觉一致性
+2. 新增「熟练项加值」字段，影响豁免检定和技能的加成计算
+
+#### 改动点
+
+##### 1. 标题样式统一
+将角色姓名和血量的 `<label>` 改用 `.section-title` 样式：
+```html
+<div class="char-field">
+    <div class="section-title">角色姓名</div>
+    <input type="text" id="char-name" ...>
+</div>
+```
+
+##### 2. 熟练项加值字段
+在「基础属性」section 下方添加新字段：
+```html
+<div class="char-section proficiency-section">
+    <div class="section-title">熟练项加值</div>
+    <input type="number" id="proficiency-bonus" class="char-input" disabled value="2">
+</div>
+```
+
+##### 3. 数据结构扩展
+```javascript
+{
+  name: "V",
+  hp: { cur: 10, max: 10 },
+  proficiencyBonus: 2,  // 新增字段，默认值为 2
+  attributes: { ... },
+  savingThrows: [...],
+  skills: [...]
+}
+```
+
+##### 4. 计算逻辑更新
+```javascript
+// 豁免检定数值（使用熟练加值）
+function getSavingThrowValue(attribute) {
+  const baseValue = currentCharacter.attributes[attribute];
+  const isProficient = currentCharacter.savingThrows.includes(attribute);
+  const bonus = currentCharacter.proficiencyBonus || 2;
+  return isProficient ? baseValue + bonus : baseValue;
+}
+
+// 技能数值（使用熟练加值）
+function getSkillValue(skillName) {
+  const attr = skillAttributeMap[skillName];
+  const baseValue = currentCharacter.attributes[attr];
+  const isProficient = currentCharacter.skills.includes(skillName);
+  const bonus = currentCharacter.proficiencyBonus || 2;
+  return isProficient ? baseValue + bonus : baseValue;
+}
+```
+
+##### 5. CSS 样式
+```css
+.proficiency-section {
+  text-align: center;
+}
+.proficiency-section input {
+  font-size: 28px;
+  width: 60px;
+}
+```
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 旧角色卡无 proficiencyBonus 字段 | 默认使用 2 |
+| 熟练加值修改后 | 实时更新所有豁免和技能显示 |
+
+### 12.16 Player 自动加载同名角色卡
+
+#### 需求背景
+当 Player 点击「角色卡」Tab 时，自动搜索是否有与当前玩家名字相同的角色卡数据。如果有，自动加载并显示；如果没有，显示提示信息。
+
+#### 交互流程
+1. Player 点击「角色卡」Tab
+2. 客户端发送 `character:load` 请求，参数为当前玩家名 `userName`
+3. 服务端查找是否存在同名角色卡
+4. 如果找到：返回角色卡数据，自动填充表单
+5. 如果未找到：显示提示「未找到角色数据，请点击新建角色卡」
+
+#### 客户端改动
+
+##### switchTab 函数
+```javascript
+function switchTab(tabName) {
+    // ... 原有逻辑 ...
+
+    if (tabName === 'character') {
+        socket.emit('character:list');
+
+        // Player 自动加载同名角色卡
+        if (!isDM) {
+            socket.emit('character:load', { name: userName });
+        }
+    }
+}
+```
+
+##### 处理未找到的情况
+```javascript
+socket.on('character:notFound', () => {
+    // 显示提示信息
+    showCharToast('未找到角色数据，请点击新建角色卡', true);
+    // 隐藏角色卡表单
+    document.getElementById('char-sheet').classList.remove('visible');
+});
+```
+
+#### 服务端改动
+```javascript
+socket.on('character:load', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+
+    const character = getCharacter(data.name);
+    if (character) {
+        socket.emit('character:loaded', character);
+    } else {
+        // 区分错误类型：角色卡不存在 vs 自动加载未找到
+        socket.emit('character:notFound', { name: data.name });
+    }
+});
+```
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| Player 名字与角色卡名字相同 | 自动加载该角色卡 |
+| Player 名字无对应角色卡 | 显示提示，隐藏表单 |
+| Player 手动从下拉框选择其他角色 | 正常加载所选角色 |
+| DM 进入角色卡 Tab | 不触发自动加载，仅显示列表 |

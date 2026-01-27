@@ -6,6 +6,8 @@ const fs = require('fs');
 
 // 笔记文件路径（Render Disk 挂载点）
 const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
+// 角色卡文件路径
+const CHARACTERS_FILE = process.env.NODE_ENV === 'production' ? '/data/characters.json' : './data/characters.json';
 
 // 读取笔记
 function loadNotes() {
@@ -31,6 +33,49 @@ function saveNotes(content) {
   } catch (err) {
     console.error('保存笔记失败:', err);
   }
+}
+
+// 读取所有角色卡
+function loadCharacters() {
+  try {
+    if (fs.existsSync(CHARACTERS_FILE)) {
+      return JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取角色卡失败:', err);
+  }
+  return {};
+}
+
+// 保存角色卡
+function saveCharacter(characterData) {
+  try {
+    const characters = loadCharacters();
+    const isNew = !characters[characterData.name];
+    characters[characterData.name] = characterData;
+
+    const dir = path.dirname(CHARACTERS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CHARACTERS_FILE, JSON.stringify(characters, null, 2), 'utf8');
+    return { success: true, isNew };
+  } catch (err) {
+    console.error('保存角色卡失败:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// 获取角色卡名称列表
+function getCharacterNames() {
+  const characters = loadCharacters();
+  return Object.keys(characters);
+}
+
+// 获取指定角色卡
+function getCharacter(name) {
+  const characters = loadCharacters();
+  return characters[name] || null;
 }
 
 // 地图哈希函数（用于判断是否为同一张地图）
@@ -320,6 +365,45 @@ io.on('connection', (socket) => {
     gameState.notes = content;
     saveNotes(content);
     socket.broadcast.emit('notes:sync', content);
+  });
+
+  // 角色卡列表 (所有人)
+  socket.on('character:list', () => {
+    const names = getCharacterNames();
+    socket.emit('character:listResult', { names });
+  });
+
+  // 加载角色卡 (所有人)
+  socket.on('character:load', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+
+    const character = getCharacter(data.name);
+    if (character) {
+      socket.emit('character:loaded', character);
+    } else {
+      // 使用 notFound 事件，区分于其他错误
+      socket.emit('character:notFound', { name: data.name });
+    }
+  });
+
+  // 保存角色卡 (所有人)
+  socket.on('character:save', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+
+    if (!data.name || !data.name.trim()) {
+      socket.emit('character:error', { message: '角色名不能为空' });
+      return;
+    }
+
+    const result = saveCharacter(data);
+    if (result.success) {
+      socket.emit('character:saved', { name: data.name, isNew: result.isNew });
+      console.log(`${player.name} 保存了角色卡: ${data.name}`);
+    } else {
+      socket.emit('character:error', { message: '保存失败: ' + result.error });
+    }
   });
 
   // 保存地图 (仅 DM)
