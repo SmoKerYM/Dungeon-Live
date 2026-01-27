@@ -2090,3 +2090,129 @@ socket.on('character:load', (data) => {
 | Player 名字无对应角色卡 | 显示提示，隐藏表单 |
 | Player 手动从下拉框选择其他角色 | 正常加载所选角色 |
 | DM 进入角色卡 Tab | 不触发自动加载，仅显示列表 |
+
+### 12.17 侧边栏 HP 显示同步角色卡
+
+#### 需求背景
+侧边栏角色列表中的血量显示应从角色卡 JSON 文件读取，而非使用固定默认值。当角色卡更新时，侧边栏 HP 显示也应同步更新。
+
+#### 显示逻辑
+1. 当玩家选择颜色后显示角色卡时，查询是否有同名角色卡
+2. 如果有：显示角色卡中的 `当前HP/最大HP`
+3. 如果没有：显示 `_/_`
+4. 当任何角色卡保存/更新时，广播 HP 数据，所有客户端更新对应玩家的 HP 显示
+
+#### 服务端改动
+
+##### 新增函数
+```javascript
+// 根据玩家名获取角色卡 HP
+function getCharacterHP(playerName) {
+    const character = getCharacter(playerName);
+    if (character && character.hp) {
+        return { cur: character.hp.cur, max: character.hp.max };
+    }
+    return null;
+}
+```
+
+##### 修改 colorSelected 事件
+当玩家选择颜色时，查询并返回其角色卡 HP：
+```javascript
+socket.on('selectColor', (color) => {
+    // ... 原有逻辑 ...
+
+    // 广播时附带角色卡 HP
+    const characterHP = getCharacterHP(player.name);
+    io.emit('colorSelected', {
+        socketId: socket.id,
+        name: player.name,
+        color,
+        characterHP  // 新增：{ cur, max } 或 null
+    });
+});
+```
+
+##### 修改 character:save 事件
+角色卡保存后，广播 HP 更新给所有客户端：
+```javascript
+socket.on('character:save', (data) => {
+    // ... 原有保存逻辑 ...
+
+    if (result.success) {
+        // 广播 HP 更新（所有客户端检查是否有该玩家在线）
+        io.emit('character:hpUpdated', {
+            name: data.name,
+            hp: data.hp
+        });
+    }
+});
+```
+
+##### 修改 joinSuccess
+在玩家列表中附带每个已选颜色玩家的角色卡 HP：
+```javascript
+// 获取玩家列表时附带 HP
+const playersWithHP = Array.from(gameState.players.values()).map(p => ({
+    ...p,
+    characterHP: p.color ? getCharacterHP(p.name) : null
+}));
+
+socket.emit('joinSuccess', {
+    // ... 其他字段 ...
+    gameState: {
+        // ...
+        players: playersWithHP
+    }
+});
+```
+
+#### 客户端改动
+
+##### 修改 showPlayerCard 函数
+```javascript
+function showPlayerCard(color, playerName, isMe = false, characterHP = null) {
+    const row = document.getElementById(`row-${color}`);
+    if (row) {
+        row.style.display = 'flex';
+        const nameEl = document.getElementById(`name-${color}`);
+        nameEl.textContent = isMe ? `${playerName}（这是我）` : playerName;
+
+        // 更新 HP 显示
+        const curEl = document.getElementById(`hp-cur-${color}`);
+        const maxEl = document.getElementById(`hp-max-${color}`);
+        if (characterHP) {
+            curEl.textContent = characterHP.cur;
+            maxEl.textContent = characterHP.max;
+        } else {
+            curEl.textContent = '_';
+            maxEl.textContent = '_';
+        }
+    }
+}
+```
+
+##### 监听 character:hpUpdated
+```javascript
+socket.on('character:hpUpdated', (data) => {
+    // 遍历所有玩家，找到名字匹配的玩家并更新其 HP 显示
+    gameState.players.forEach((p, socketId) => {
+        if (p.name === data.name && p.color) {
+            const curEl = document.getElementById(`hp-cur-${p.color}`);
+            const maxEl = document.getElementById(`hp-max-${p.color}`);
+            curEl.textContent = data.hp.cur;
+            maxEl.textContent = data.hp.max;
+        }
+    });
+});
+```
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 玩家无角色卡 | 显示 `_/_` |
+| 玩家有角色卡 | 显示角色卡 HP |
+| 角色卡保存后 | 实时更新同名玩家的侧边栏 HP |
+| 玩家名与角色卡名不一致 | 显示 `_/_`（无法匹配） |
+| 多个玩家同名 | 都会更新（极端情况，一般不会发生） |

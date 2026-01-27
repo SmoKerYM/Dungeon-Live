@@ -78,6 +78,15 @@ function getCharacter(name) {
   return characters[name] || null;
 }
 
+// 根据玩家名获取角色卡 HP
+function getCharacterHP(playerName) {
+  const character = getCharacter(playerName);
+  if (character && character.hp) {
+    return { cur: character.hp.cur, max: character.hp.max };
+  }
+  return null;
+}
+
 // 地图哈希函数（用于判断是否为同一张地图）
 function getMapHash(mapData) {
   return mapData.substring(0, 1000) + '_' + mapData.length;
@@ -146,6 +155,12 @@ io.on('connection', (socket) => {
       if (p.color) takenColors.push(p.color);
     });
 
+    // 获取玩家列表时附带角色卡 HP
+    const playersWithHP = Array.from(gameState.players.values()).map(p => ({
+      ...p,
+      characterHP: p.color ? getCharacterHP(p.name) : null
+    }));
+
     // 发送加入成功和当前游戏状态
     socket.emit('joinSuccess', {
       role,
@@ -158,7 +173,7 @@ io.on('connection', (socket) => {
         isLocked: gameState.isLocked,
         tokens: gameState.tokens,
         hp: gameState.hp,
-        players: Array.from(gameState.players.values()),
+        players: playersWithHP,
         drawings: gameState.drawings,
         npcs: gameState.npcs,
         notes: gameState.notes,
@@ -198,7 +213,9 @@ io.on('connection', (socket) => {
     }
 
     player.color = color;
-    io.emit('colorSelected', { socketId: socket.id, name: player.name, color });
+    // 广播时附带角色卡 HP
+    const characterHP = getCharacterHP(player.name);
+    io.emit('colorSelected', { socketId: socket.id, name: player.name, color, characterHP });
     // 广播更新已占用颜色
     io.emit('takenColors', getTakenColors());
   });
@@ -401,6 +418,8 @@ io.on('connection', (socket) => {
     if (result.success) {
       socket.emit('character:saved', { name: data.name, isNew: result.isNew });
       console.log(`${player.name} 保存了角色卡: ${data.name}`);
+      // 广播 HP 更新给所有客户端（用于更新侧边栏 HP 显示）
+      io.emit('character:hpUpdated', { name: data.name, hp: data.hp });
     } else {
       socket.emit('character:error', { message: '保存失败: ' + result.error });
     }

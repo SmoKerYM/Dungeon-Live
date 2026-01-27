@@ -28,9 +28,10 @@
   "Player1": {
     "name": "Player1",
     "hp": {
-      "cur": 10,
-      "max": 10
+      "cur": 12,
+      "max": 12
     },
+    "proficiencyBonus": 2,
     "attributes": {
       "strength": 3,
       "dexterity": -1,

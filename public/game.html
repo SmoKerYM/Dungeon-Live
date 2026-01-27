@@ -998,12 +998,23 @@
     }
 
     // 显示玩家卡片
-    function showPlayerCard(color, playerName, isMe = false) {
+    function showPlayerCard(color, playerName, isMe = false, characterHP = null) {
         const row = document.getElementById(`row-${color}`);
         if (row) {
             row.style.display = 'flex';
             const nameEl = document.getElementById(`name-${color}`);
             nameEl.textContent = isMe ? `${playerName}（这是我）` : playerName;
+
+            // 更新 HP 显示（从角色卡读取）
+            const curEl = document.getElementById(`hp-cur-${color}`);
+            const maxEl = document.getElementById(`hp-max-${color}`);
+            if (characterHP) {
+                curEl.textContent = characterHP.cur;
+                maxEl.textContent = characterHP.max;
+            } else {
+                curEl.textContent = '_';
+                maxEl.textContent = '_';
+            }
 
             // 如果是自己的卡片，启用点击生成棋子功能
             if (isMe) {
@@ -1946,7 +1957,7 @@
                     // 识别是否是自己：通过名称和角色匹配
                     const isMe = (p.name === userName && p.role === userRole);
                     if (isMe) userColor = p.color; // 找回颜色状态
-                    showPlayerCard(p.color, p.name, isMe);
+                    showPlayerCard(p.color, p.name, isMe, p.characterHP);
                 }
             });
         }
@@ -1984,7 +1995,7 @@
     socket.on('colorSelected', (data) => {
         // 判断是否是自己
         const isMe = (data.color === userColor);
-        showPlayerCard(data.color, data.name, isMe);
+        showPlayerCard(data.color, data.name, isMe, data.characterHP);
     });
 
     socket.on('takenColors', (colors) => {
@@ -2599,6 +2610,25 @@
             showCharToast('未找到角色数据，请点击新建角色卡', true);
             document.getElementById('char-sheet').classList.remove('visible');
         }
+    });
+
+    // 角色卡 HP 更新（同步侧边栏 HP 显示）
+    socket.on('character:hpUpdated', (data) => {
+        // 遍历所有玩家颜色，找到名字匹配的玩家并更新其 HP 显示
+        const colors = ['orange', 'yellow', 'green', 'blue', 'purple', 'black'];
+        colors.forEach(color => {
+            const nameEl = document.getElementById(`name-${color}`);
+            if (nameEl) {
+                // 提取玩家名（去掉"（这是我）"后缀）
+                const displayName = nameEl.textContent.replace('（这是我）', '').trim();
+                if (displayName === data.name) {
+                    const curEl = document.getElementById(`hp-cur-${color}`);
+                    const maxEl = document.getElementById(`hp-max-${color}`);
+                    curEl.textContent = data.hp.cur;
+                    maxEl.textContent = data.hp.max;
+                }
+            }
+        });
     });
 
     // 监听属性输入变化
