@@ -67,8 +67,29 @@
 
         .action-btn { margin-top: 8px; padding: 10px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; }
         .action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
-        #clear-btn { background: #e67e22; }
         #clear-draw-btn { background: #4b5e71; }
+
+        /* 清除按钮行 */
+        .action-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .action-btn-sm {
+            flex: 1;
+            padding: 8px 4px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+        .action-btn-sm:hover { opacity: 0.85; }
+        .action-btn-sm:active { opacity: 0.7; }
+        #clear-btn { background: #eb881d; }
+        #clear-npc-btn { background: #249cc1; }
 
         /* 画布与地图 */
         #viewport { flex-grow: 1; display: flex; background: #1a1a1a; position: relative; overflow: hidden; padding: 15px; }
@@ -96,22 +117,39 @@
             filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(3px 3px 3px rgba(0,0,0,0.7));
         }
 
-        /* NPC 颜色选择器 */
+        /* NPC 卡片 */
+        .npc-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #34495e;
+            padding: 8px 12px;
+            border-radius: 8px;
+            width: 100%;
+        }
+        .npc-card .player-name {
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
         .npc-color-selector {
             display: flex;
             gap: 6px;
-            margin-top: 8px;
             justify-content: center;
         }
         .npc-color {
-            width: 24px; height: 24px;
+            width: 28px; height: 28px;
             border-radius: 4px;
             cursor: pointer;
             border: 2px solid transparent;
-            transition: transform 0.2s, border-color 0.2s;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .npc-color:hover { transform: scale(1.15); }
-        .npc-color.selected { border-color: #f1c40f; transform: scale(1.1); }
+        .npc-color:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 8px rgba(255,255,255,0.5);
+        }
+        .npc-color:active {
+            transform: scale(0.95);
+        }
 
         /* 右侧边栏（骰子） */
         #right-sidebar {
@@ -756,23 +794,24 @@
         <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无玩家加入</p>
         <!-- NPC 角色卡 (仅 DM) -->
         <div class="player-row dm-only" id="row-npc">
-            <button class="player-btn" id="npc-spawn-btn" style="background: #7f8c8d;" onclick="spawnNPC()">
+            <div class="npc-card">
                 <span class="player-name">NPC</span>
-                <span style="font-size: 11px; opacity: 0.8;">点击生成</span>
-            </button>
-            <div class="npc-color-selector">
-                <div class="npc-color selected" style="background: #e74c3c;" onclick="setNpcColor('red', this)" title="红色"></div>
-                <div class="npc-color" style="background: #072af1;" onclick="setNpcColor('darkblue', this)" title="深蓝"></div>
-                <div class="npc-color" style="background: #1a1a1a;" onclick="setNpcColor('black', this)" title="黑色"></div>
-                <div class="npc-color" style="background: #7f8c8d;" onclick="setNpcColor('gray', this)" title="灰色"></div>
-                <div class="npc-color" style="background: #ecf0f1; border: 1px solid #bdc3c7;" onclick="setNpcColor('white', this)" title="白色"></div>
+                <div class="npc-color-selector">
+                    <div class="npc-color" style="background: #e74c3c;" onclick="spawnNPCWithColor('red')" title="红色"></div>
+                    <div class="npc-color" style="background: #072af1;" onclick="spawnNPCWithColor('darkblue')" title="深蓝"></div>
+                    <div class="npc-color" style="background: #1a1a1a;" onclick="spawnNPCWithColor('black')" title="黑色"></div>
+                    <div class="npc-color" style="background: #7f8c8d;" onclick="spawnNPCWithColor('gray')" title="灰色"></div>
+                    <div class="npc-color" style="background: #ecf0f1; border: 1px solid #bdc3c7;" onclick="spawnNPCWithColor('white')" title="白色"></div>
+                </div>
             </div>
         </div>
     </div>
 
     <div id="dm-actions" class="dm-only">
-        <button id="clear-btn" class="action-btn" onclick="clearAllTokens()">清除所有玩家棋子</button>
-        <button id="clear-npc-btn" class="action-btn" style="background: #7f8c8d;" onclick="clearAllNPCs()">清除所有NPC</button>
+        <div class="action-row">
+            <button id="clear-btn" class="action-btn-sm" onclick="clearAllTokens()">清除所有玩家</button>
+            <button id="clear-npc-btn" class="action-btn-sm" onclick="clearAllNPCs()">清除所有NPC</button>
+        </div>
     </div>
 
     <!-- 聊天框 -->
@@ -1513,7 +1552,6 @@
 
     // --- NPC 系统 ---
     let npcCounter = 0;
-    let selectedNpcColor = 'red'; // 默认红色
 
     // NPC 颜色映射
     const npcColorMap = {
@@ -1524,13 +1562,17 @@
         white: '#ecf0f1'
     };
 
-    function setNpcColor(color, element) {
-        selectedNpcColor = color;
-        // 更新选中状态
-        document.querySelectorAll('.npc-color').forEach(el => el.classList.remove('selected'));
-        element.classList.add('selected');
-        // 更新 NPC 按钮背景色预览
-        document.getElementById('npc-spawn-btn').style.background = npcColorMap[color];
+    // 点击色块直接生成对应颜色的 NPC
+    function spawnNPCWithColor(color) {
+        if (!isDM) return;
+        const id = 'npc_' + Date.now() + '_' + (npcCounter++);
+        const rect = mapFrame.getBoundingClientRect();
+        const x = (rect.width/2 - originX)/scale - 15;
+        const y = (rect.height/2 - originY)/scale - 15;
+
+        createNPCElement(id, x, y, color);
+        socket.emit('npc:spawn', { id, x, y, color });
+        markDirty();
     }
 
     function createNPCElement(id, x, y, color = 'gray') {
@@ -1588,19 +1630,7 @@
         return npc;
     }
 
-    function spawnNPC() {
-        if (!isDM) return;
-        const id = 'npc_' + Date.now() + '_' + (npcCounter++);
-        const rect = mapFrame.getBoundingClientRect();
-        const x = (rect.width/2 - originX)/scale - 15;
-        const y = (rect.height/2 - originY)/scale - 15;
-        const color = selectedNpcColor;
-
-        createNPCElement(id, x, y, color);
-        socket.emit('npc:spawn', { id, x, y, color });
-        markDirty();
-    }
-
+    
     function clearAllNPCs() {
         if (!isDM) return;
         mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
