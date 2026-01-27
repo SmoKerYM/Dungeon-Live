@@ -112,14 +112,6 @@ const gameState = {
   mapTransform: { scale: 1, originX: 0, originY: 0 },
   isLocked: false,
   tokens: {},         // color -> { x, y }
-  hp: {               // 各颜色血量
-    orange: { cur: 10, max: 10 },
-    yellow: { cur: 10, max: 10 },
-    green: { cur: 10, max: 10 },
-    blue: { cur: 10, max: 10 },
-    purple: { cur: 10, max: 10 },
-    black: { cur: 10, max: 10 }
-  },
   drawings: [],       // 绘图数据
   npcs: [],           // NPC 数据 { id, x, y }
   notes: loadNotes(), // 共享笔记（从文件加载）
@@ -172,7 +164,6 @@ io.on('connection', (socket) => {
         mapTransform: gameState.mapTransform,
         isLocked: gameState.isLocked,
         tokens: gameState.tokens,
-        hp: gameState.hp,
         players: playersWithHP,
         drawings: gameState.drawings,
         npcs: gameState.npcs,
@@ -278,15 +269,6 @@ io.on('connection', (socket) => {
 
     gameState.tokens = {};
     socket.broadcast.emit('token:clearAll');
-  });
-
-  // 血量变化 (仅 DM)
-  socket.on('hp:update', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    gameState.hp[data.color] = { cur: data.cur, max: data.max };
-    socket.broadcast.emit('hp:update', data);
   });
 
   // 绘图 (仅 DM)

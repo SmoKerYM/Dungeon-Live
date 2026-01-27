@@ -720,37 +720,37 @@
         <div class="player-row" id="row-orange" style="display: none;">
             <button class="player-btn" style="background: #e67e22;" data-color="orange" onclick="spawnToken('orange')">
                 <span class="player-name" id="name-orange">玩家 (橙)</span>
-                <span class="hp-display" onclick="editHP(event, 'orange')"><span id="hp-cur-orange">10</span>/<span id="hp-max-orange">10</span></span>
+                <span class="hp-display"><span id="hp-cur-orange">_</span>/<span id="hp-max-orange">_</span></span>
             </button>
         </div>
         <div class="player-row" id="row-yellow" style="display: none;">
             <button class="player-btn" style="background: #f1c40f; color: black;" data-color="yellow" onclick="spawnToken('yellow')">
                 <span class="player-name" id="name-yellow">玩家 (黄)</span>
-                <span class="hp-display" onclick="editHP(event, 'yellow')"><span id="hp-cur-yellow">10</span>/<span id="hp-max-yellow">10</span></span>
+                <span class="hp-display"><span id="hp-cur-yellow">_</span>/<span id="hp-max-yellow">_</span></span>
             </button>
         </div>
         <div class="player-row" id="row-green" style="display: none;">
             <button class="player-btn" style="background: #27ae60;" data-color="green" onclick="spawnToken('green')">
                 <span class="player-name" id="name-green">玩家 (绿)</span>
-                <span class="hp-display" onclick="editHP(event, 'green')"><span id="hp-cur-green">10</span>/<span id="hp-max-green">10</span></span>
+                <span class="hp-display"><span id="hp-cur-green">_</span>/<span id="hp-max-green">_</span></span>
             </button>
         </div>
         <div class="player-row" id="row-blue" style="display: none;">
             <button class="player-btn" style="background: #3498db;" data-color="blue" onclick="spawnToken('blue')">
                 <span class="player-name" id="name-blue">玩家 (蓝)</span>
-                <span class="hp-display" onclick="editHP(event, 'blue')"><span id="hp-cur-blue">10</span>/<span id="hp-max-blue">10</span></span>
+                <span class="hp-display"><span id="hp-cur-blue">_</span>/<span id="hp-max-blue">_</span></span>
             </button>
         </div>
         <div class="player-row" id="row-purple" style="display: none;">
             <button class="player-btn" style="background: #9b59b6;" data-color="purple" onclick="spawnToken('purple')">
                 <span class="player-name" id="name-purple">玩家 (紫)</span>
-                <span class="hp-display" onclick="editHP(event, 'purple')"><span id="hp-cur-purple">10</span>/<span id="hp-max-purple">10</span></span>
+                <span class="hp-display"><span id="hp-cur-purple">_</span>/<span id="hp-max-purple">_</span></span>
             </button>
         </div>
         <!-- <div class="player-row" id="row-black" style="display: none;">
             <button class="player-btn" style="background: #2c3e50;" data-color="black" onclick="spawnToken('black')">
                 <span class="player-name" id="name-black">玩家 (黑)</span>
-                <span class="hp-display" onclick="editHP(event, 'black')"><span id="hp-cur-black">10</span>/<span id="hp-max-black">10</span></span>
+                <span class="hp-display"><span id="hp-cur-black">_</span>/<span id="hp-max-black">_</span></span>
             </button>
         </div> -->
         <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无玩家加入</p>
@@ -1089,11 +1089,6 @@
         if (savedGameState.isLocked) {
             isLocked = savedGameState.isLocked;
             updateLockButton();
-        }
-        if (savedGameState.hp) {
-            Object.keys(savedGameState.hp).forEach(color => {
-                updateHPDisplay(color, savedGameState.hp[color].cur, savedGameState.hp[color].max);
-            });
         }
         if (savedGameState.tokens) {
             Object.keys(savedGameState.tokens).forEach(color => {
@@ -1810,43 +1805,7 @@
         }
     }
 
-    // --- 血量系统 ---
-    function updateHPDisplay(color, cur, max) {
-        const curEl = document.getElementById(`hp-cur-${color}`);
-        const maxEl = document.getElementById(`hp-max-${color}`);
-        const displayBox = curEl.parentElement;
-
-        curEl.innerText = cur;
-        maxEl.innerText = max;
-
-        const ratio = cur / max;
-        displayBox.classList.remove('hp-warning', 'hp-danger');
-        if (ratio <= 0.334) {
-            displayBox.classList.add('hp-danger');
-        } else if (ratio <= 0.501) {
-            displayBox.classList.add('hp-warning');
-        }
-    }
-
-    function editHP(event, color) {
-        event.stopPropagation();
-        if (!isDM) return;
-
-        const curEl = document.getElementById(`hp-cur-${color}`);
-        const maxEl = document.getElementById(`hp-max-${color}`);
-
-        const newCur = prompt(`修改 ${color} 的当前血量:`, curEl.innerText);
-        if (newCur !== null) {
-            const newMax = prompt(`修改 ${color} 的最高血量:`, maxEl.innerText);
-            if (newMax !== null) {
-                const cur = parseInt(newCur);
-                const max = parseInt(newMax);
-                updateHPDisplay(color, cur, max);
-                socket.emit('hp:update', { color, cur, max });
-            }
-        }
-    }
-
+    
     // --- 骰子系统 ---
     function rollDice(sides, element) {
         const valEl = element.querySelector('.dice-val');
@@ -2090,13 +2049,6 @@
     // socket.on('npc:clearAll', () => {
     //     mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
     // });
-
-    socket.on('hp:update', (data) => {
-        updateHPDisplay(data.color, data.cur, data.max);
-        // 获取玩家名称
-        const playerName = document.getElementById(`name-${data.color}`)?.textContent || data.color;
-        addSystemMessage(`DM 修改了 ${playerName} 的血量: ${data.cur}/${data.max}`);
-    });
 
     socket.on('draw:path', (data) => {
         if (data.type === 'rect') {
