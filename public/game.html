@@ -374,19 +374,16 @@
     </div>
 
     <div id="section-map" class="dm-only">
-        <div class="section-title">1. 地图资源</div>
-        <input type="file" id="file-input" accept="image/*" style="width: 100%; font-size: 12px;">
-        <div class="section-title" style="margin-top: 10px;">地图存档</div>
+        <div class="section-title">地图上传及保存</div>
+        <!-- 隐藏的文件选择器，由空槽位触发 -->
+        <input type="file" id="file-input" accept="image/*" style="display: none;">
         <div id="map-slots">
-            <div class="map-slot empty" data-slot="0"></div>
-            <div class="map-slot empty" data-slot="1"></div>
-            <div class="map-slot empty" data-slot="2"></div>
-            <div class="map-slot empty" data-slot="3"></div>
+            <!-- 动态渲染：已保存地图 + 1个空槽位 -->
         </div>
     </div>
 
     <div id="section-tools" class="dm-only">
-        <div class="section-title">2. 绘图工具</div>
+        <div class="section-title">绘图工具</div>
         <div class="tool-group">
             <div id="btn-move" class="tool-btn active" onclick="setTool('move')">移动</div>
             <div id="btn-draw" class="tool-btn" onclick="setTool('draw')">画笔</div>
@@ -763,27 +760,35 @@
     fileInput.onchange = (e) => {
         if (!isDM) return;
         const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const data = event.target.result;
-                loadMapFromData(data, () => {
-                    updateSaveButtonVisibility();
-                });
-                resetMap();
+        if (!file) return;
 
-                // 清空当前所有棋子、NPC、笔迹
-                mapContainer.querySelectorAll('.token').forEach(t => t.remove());
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                localDrawings = [];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const data = event.target.result;
 
-                socket.emit('map:load', data);
-                socket.emit('token:clearAll');
-                socket.emit('npc:clearAll');
-                socket.emit('draw:clear');
-            };
-            reader.readAsDataURL(file);
-        }
+            // 清空当前所有棋子、NPC、笔迹
+            mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            localDrawings = [];
+
+            // 加载地图到视图
+            loadMapFromData(data, () => {
+                updateSaveButtonVisibility();
+                // 地图加载完成后自动保存
+                saveCurrentMap();
+            });
+
+            resetMap();
+
+            socket.emit('map:load', data);
+            socket.emit('token:clearAll');
+            socket.emit('npc:clearAll');
+            socket.emit('draw:clear');
+        };
+        reader.readAsDataURL(file);
+
+        // 重置 input 以便重复选择同一文件
+        fileInput.value = '';
     };
 
     function resetMap() {
@@ -1194,27 +1199,36 @@
     }
 
     function renderMapSlots() {
-        const slots = document.querySelectorAll('.map-slot');
-        slots.forEach((slot, i) => {
-            slot.innerHTML = '';
-            slot.classList.add('empty');
-            slot.onclick = null;
+        const container = document.getElementById('map-slots');
+        container.innerHTML = '';
 
-            if (localSavedMaps[i]) {
-                slot.classList.remove('empty');
-                const img = document.createElement('img');
-                img.src = localSavedMaps[i].thumbnail;
-                slot.appendChild(img);
+        // 渲染已保存的地图
+        localSavedMaps.forEach((map, i) => {
+            const slot = document.createElement('div');
+            slot.className = 'map-slot';
 
-                const deleteBtn = document.createElement('div');
-                deleteBtn.className = 'delete-btn';
-                deleteBtn.innerHTML = '×';
-                deleteBtn.onclick = (e) => deleteSavedMap(localSavedMaps[i].id, e);
-                slot.appendChild(deleteBtn);
+            const img = document.createElement('img');
+            img.src = map.thumbnail;
+            slot.appendChild(img);
 
-                slot.onclick = () => loadSavedMap(localSavedMaps[i].id);
-            }
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                socket.emit('map:deleteSaved', map.id);
+            };
+            slot.appendChild(deleteBtn);
+
+            slot.onclick = () => loadSavedMap(map.id);
+            container.appendChild(slot);
         });
+
+        // 始终添加一个空槽位
+        const emptySlot = document.createElement('div');
+        emptySlot.className = 'map-slot empty';
+        emptySlot.onclick = () => fileInput.click();  // 点击触发文件选择
+        container.appendChild(emptySlot);
     }
 
     function updateSaveButtonVisibility() {
@@ -1378,9 +1392,9 @@
             });
         }
 
-        // 恢复地图存档槽
-        if (gs.savedMaps && isDM) {
-            localSavedMaps = gs.savedMaps;
+        // 恢复地图存档槽（DM 始终渲染，即使为空也显示一个空槽位）
+        if (isDM) {
+            localSavedMaps = gs.savedMaps || [];
             renderMapSlots();
         }
 

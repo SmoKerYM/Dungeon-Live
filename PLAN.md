@@ -1064,3 +1064,146 @@ socket.on('map:deletedSaved', (mapId) => {
 });
 ```
 
+### 11.11 地图槽位交互优化
+
+#### 需求背景
+简化 DM 的地图上传和保存流程，将两步操作合并为一步。
+
+**原流程：**
+1. 点击「选择文件」上传地图
+2. 地图显示在视图中
+3. 点击「保存地图」保存到槽位
+
+**新流程：**
+1. 点击空白槽位 → 自动弹出文件选择
+2. 选择图片后 → 自动加载并保存到该槽位
+3. 自动显示下一个空白槽位
+
+#### 改动点
+
+1. **删除原上传按钮**：移除 `<input type="file">` 的可见 UI
+2. **取消存档上限**：移除服务端的 4 张限制
+3. **动态槽位渲染**：始终显示「已保存地图 + 1个空槽位」
+4. **空槽位点击**：触发隐藏的文件选择器
+5. **上传后自动保存**：文件加载完成后立即触发 `map:save`
+
+#### 服务端改动
+```javascript
+// 移除 4 张上限检查
+socket.on('map:save', (data) => {
+  // 删除这段代码：
+  // if (gameState.savedMaps.length >= 4) {
+  //   socket.emit('map:saveError', '地图存档已满');
+  //   return;
+  // }
+
+  // 其他逻辑保持不变...
+});
+```
+
+#### 客户端改动
+
+##### HTML
+```html
+<!-- 删除可见的文件上传按钮 -->
+<!-- 保留隐藏的 input 用于触发 -->
+<input type="file" id="file-input" accept="image/*" style="display: none;">
+
+<!-- 地图槽位区域 -->
+<div id="map-slots">
+  <!-- 动态渲染，不再固定 4 个 -->
+</div>
+```
+
+##### 动态渲染逻辑
+```javascript
+function renderMapSlots() {
+  const container = document.getElementById('map-slots');
+  container.innerHTML = '';
+
+  // 渲染已保存的地图
+  localSavedMaps.forEach((map, i) => {
+    const slot = createFilledSlot(map, i);
+    container.appendChild(slot);
+  });
+
+  // 始终添加一个空槽位
+  const emptySlot = createEmptySlot();
+  container.appendChild(emptySlot);
+}
+
+function createEmptySlot() {
+  const slot = document.createElement('div');
+  slot.className = 'map-slot empty';
+  slot.onclick = () => fileInput.click();  // 点击触发文件选择
+  return slot;
+}
+
+function createFilledSlot(map, index) {
+  const slot = document.createElement('div');
+  slot.className = 'map-slot';
+
+  const img = document.createElement('img');
+  img.src = map.thumbnail;
+  slot.appendChild(img);
+
+  const deleteBtn = document.createElement('div');
+  deleteBtn.className = 'delete-btn';
+  deleteBtn.innerHTML = '×';
+  deleteBtn.onclick = (e) => {
+    e.stopPropagation();
+    socket.emit('map:deleteSaved', map.id);
+  };
+  slot.appendChild(deleteBtn);
+
+  slot.onclick = () => loadSavedMap(map.id);
+  return slot;
+}
+```
+
+##### 文件上传后自动保存
+```javascript
+fileInput.onchange = (e) => {
+  if (!isDM) return;
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const data = event.target.result;
+
+    // 加载地图到视图
+    loadMapFromData(data, () => {
+      // 加载完成后自动保存
+      saveCurrentMap();
+    });
+
+    resetMap();
+
+    // 清空当前棋子、NPC、笔迹
+    mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    localDrawings = [];
+
+    socket.emit('map:load', data);
+    socket.emit('token:clearAll');
+    socket.emit('npc:clearAll');
+    socket.emit('draw:clear');
+  };
+  reader.readAsDataURL(file);
+
+  // 重置 input 以便重复选择同一文件
+  fileInput.value = '';
+};
+```
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 首次进入，无地图 | 显示 1 个空槽位 |
+| 有 N 张地图 | 显示 N 个已保存槽位 + 1 个空槽位 |
+| 点击空槽位 | 触发文件选择器 |
+| 上传完成 | 自动保存，Toast 提示，新增空槽位 |
+| 上传已存在的地图 | 更新现有槽位，不新增空槽位 |
+

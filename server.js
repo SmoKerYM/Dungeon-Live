@@ -348,12 +348,7 @@ io.on('connection', (socket) => {
         isUpdate: true
       });
     } else {
-      // 创建新存档
-      if (gameState.savedMaps.length >= 4) {
-        socket.emit('map:saveError', '地图存档已满（最多4张）');
-        return;
-      }
-
+      // 创建新存档（无数量上限）
       const mapArchive = {
         id: 'map_' + Date.now(),
         mapHash,
