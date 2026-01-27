@@ -50,13 +50,20 @@
         .hp-danger { color: #ff4757 !important; font-weight: 900; }
 
         /* 绘图工具 */
-        .tool-group { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; }
-        .tool-btn { padding: 10px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 13px; }
+        .draw-color-selector { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; }
+        .draw-color {
+            width: 28px; height: 28px;
+            border-radius: 50%;  /* 圆形，与 NPC 方形选择器区分 */
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .draw-color:hover { transform: scale(1.15); }
+        .draw-color.selected { border-color: #f1c40f; transform: scale(1.1); }
+        .tool-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 10px; }
+        .tool-btn { padding: 8px 4px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 12px; }
         .tool-btn.active { border-color: #f1c40f; background: #555; }
         .tool-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
-        #color-selectors { display:none; gap: 8px; margin-bottom: 15px; padding: 5px; background: rgba(0,0,0,0.2); border-radius: 5px; flex-wrap: wrap; }
-        .color-btn { width: 30px; height: 30px; cursor: pointer; border-radius: 4px; border: 2px solid transparent; }
-        .color-btn.active { border: 2px solid white; transform: scale(1.1); }
 
         .action-btn { margin-top: 8px; padding: 10px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; }
         .action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
@@ -184,7 +191,7 @@
             flex-shrink: 0;
         }
         .tab {
-            padding: 12px 30px;
+            padding: 12px 50px;
             cursor: pointer;
             color: #aaa;
             font-weight: bold;
@@ -302,7 +309,7 @@
         /* 保存地图按钮 */
         #save-map-btn {
             position: absolute;
-            top: 60px;
+            top: 20px;
             left: 20px;
             z-index: 25;
             padding: 8px 15px;
@@ -313,6 +320,7 @@
             font-weight: bold;
             cursor: pointer;
             display: none;
+            font-size: 13px;
         }
         #save-map-btn:hover {
             background: #2ecc71;
@@ -384,20 +392,28 @@
 
     <div id="section-tools" class="dm-only">
         <div class="section-title">绘图工具</div>
+        <!-- 颜色选择（始终显示，圆形按钮） -->
+        <div class="draw-color-selector">
+            <div class="draw-color selected" style="background:#ff0000;" onclick="setDrawColor('#ff0000', this)" title="红色"></div>
+            <div class="draw-color" style="background:#ffffff; border: 1px solid #bdc3c7;" onclick="setDrawColor('#ffffff', this)" title="白色"></div>            
+            <div class="draw-color" style="background:#1a1a1a;" onclick="setDrawColor('#1a1a1a', this)" title="黑色"></div>
+            <div class="draw-color" style="background:#0000ff;" onclick="setDrawColor('#0000ff', this)" title="蓝色"></div>
+            <div class="draw-color" style="background:#00ff00;" onclick="setDrawColor('#00ff00', this)" title="绿色"></div>
+            <div class="draw-color" style="background:#f1f101;" onclick="setDrawColor('#f1f101', this)" title="黄色"></div>
+        </div>
+        <!-- 工具按钮 -->
         <div class="tool-group">
             <div id="btn-move" class="tool-btn active" onclick="setTool('move')">移动</div>
             <div id="btn-draw" class="tool-btn" onclick="setTool('draw')">画笔</div>
+            <div id="btn-rect" class="tool-btn" onclick="setTool('rect')">矩形</div>
             <div id="btn-erase" class="tool-btn" onclick="setTool('erase')">橡皮</div>
         </div>
-        <div id="color-selectors" style="display:none;">
-            <div class="color-btn active" onclick="setPenColor('#ff0000', this)" style="background:#ff0000;"></div>
-            <div class="color-btn" onclick="setPenColor('#ffffff', this)" style="background:#ffffff;"></div>
-            <div class="color-btn" onclick="setPenColor('#000000', this)" style="background:#000000; border: 1px solid #666;"></div>
-            <div class="color-btn" onclick="setPenColor('#0000ff', this)" style="background:#0000ff;"></div>
-            <div class="color-btn" onclick="setPenColor('#00ff00', this)" style="background:#00ff00;"></div>
-            <div class="color-btn" onclick="setPenColor('#ffff00', this)" style="background:#ffff00;"></div>
-        </div>
     </div>
+
+    <!-- 清空所有笔迹按钮 -->
+    <div id="dm-actions" class="dm-only">
+        <button id="clear-draw-btn" class="action-btn" onclick="clearCanvas()">清空所有笔迹</button>
+    </div> 
 
     <div class="section-title">角色列表</div>
     <div id="player-list">
@@ -457,7 +473,6 @@
     <div id="dm-actions" class="dm-only">
         <button id="clear-btn" class="action-btn" onclick="clearAllTokens()">清除所有玩家棋子</button>
         <button id="clear-npc-btn" class="action-btn" style="background: #7f8c8d;" onclick="clearAllNPCs()">清除所有NPC</button>
-        <button id="clear-draw-btn" class="action-btn" onclick="clearCanvas()">清空所有笔迹</button>
     </div>
 
     <!-- 聊天框 -->
@@ -539,6 +554,8 @@
     let isDraggingMap = false, isLocked = false, startX, startY;
     let currentTool = 'move', isPainting = false, penColor = '#ff0000';
     let lastDrawPoint = null; // 记录上一个绘图点
+    let rectStartPoint = null; // 矩形绘制起始点
+    let rectCanvasState = null; // 矩形绘制前的画布状态（用于预览）
 
     // --- Tab 切换 ---
     const notesTextarea = document.getElementById('notes-textarea');
@@ -739,19 +756,27 @@
     // --- 绘图恢复 ---
     function restoreDrawings(drawings) {
         drawings.forEach(data => {
-            ctx.beginPath();
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.moveTo(data.fromX, data.fromY);
-            if (data.tool === 'draw') {
-                ctx.globalCompositeOperation = 'source-over';
+            if (data.type === 'rect') {
+                // 绘制矩形
                 ctx.strokeStyle = data.color;
+                ctx.lineWidth = data.lineWidth;
+                ctx.strokeRect(data.x, data.y, data.width, data.height);
             } else {
-                ctx.globalCompositeOperation = 'destination-out';
+                // 绘制线段（兼容旧数据，没有 type 字段的默认为 path）
+                ctx.beginPath();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.moveTo(data.fromX, data.fromY);
+                if (data.tool === 'draw') {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = data.color;
+                } else {
+                    ctx.globalCompositeOperation = 'destination-out';
+                }
+                ctx.lineWidth = data.lineWidth;
+                ctx.lineTo(data.toX, data.toY);
+                ctx.stroke();
             }
-            ctx.lineWidth = data.lineWidth;
-            ctx.lineTo(data.toX, data.toY);
-            ctx.stroke();
         });
         // 重置合成模式
         ctx.globalCompositeOperation = 'source-over';
@@ -809,18 +834,29 @@
 
     // --- 工具切换 ---
     function setTool(tool) {
-        if (!isDM && (tool === 'draw' || tool === 'erase')) return;
+        if (!isDM && (tool === 'draw' || tool === 'erase' || tool === 'rect')) return;
         currentTool = tool;
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('btn-' + tool).classList.add('active');
-        document.getElementById('color-selectors').style.display = (tool === 'draw') ? 'flex' : 'none';
         mapFrame.style.cursor = (tool === 'move') ? (isLocked ? 'default' : 'grab') : 'crosshair';
+        // 重置矩形起始点
+        rectStartPoint = null;
     }
 
-    function setPenColor(c, el) {
+    function setDrawColor(c, el) {
         penColor = c;
-        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
-        el.classList.add('active');
+        document.querySelectorAll('.draw-color').forEach(b => b.classList.remove('selected'));
+        el.classList.add('selected');
+
+        // 如果当前工具是"移动"或"橡皮"，自动切换到"画笔"
+        if (currentTool === 'move' || currentTool === 'erase') {
+            setTool('draw');
+        }
+    }
+
+    // 兼容旧函数名
+    function setPenColor(c, el) {
+        setDrawColor(c, el);
     }
 
     function clearCanvas() {
@@ -840,11 +876,19 @@
             startY = e.clientY - originY;
             mapFrame.style.cursor = 'grabbing';
         } else if (isDM) {
-            isPainting = true;
             const rect = mapFrame.getBoundingClientRect();
             const x = (e.clientX - rect.left - originX) / scale;
             const y = (e.clientY - rect.top - originY) / scale;
-            lastDrawPoint = { x, y };
+
+            if (currentTool === 'rect') {
+                // 矩形工具：记录起始点，并保存当前画布状态用于预览
+                rectStartPoint = { x, y };
+                rectCanvasState = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            } else {
+                // 画笔/橡皮：开始绘制
+                isPainting = true;
+                lastDrawPoint = { x, y };
+            }
         }
         e.preventDefault();
     };
@@ -854,7 +898,7 @@
             originX = e.clientX - startX;
             originY = e.clientY - startY;
             updateTransform();
-        } else if (isPainting && isDM && lastDrawPoint) {
+        } else if (isPainting && isDM && lastDrawPoint && (currentTool === 'draw' || currentTool === 'erase')) {
             const rect = mapFrame.getBoundingClientRect();
             const x = (e.clientX - rect.left - originX) / scale;
             const y = (e.clientY - rect.top - originY) / scale;
@@ -876,6 +920,7 @@
 
             // 发送完整线段数据（包含起点和终点）
             const drawData = {
+                type: 'path',
                 fromX: lastDrawPoint.x,
                 fromY: lastDrawPoint.y,
                 toX: x,
@@ -891,13 +936,64 @@
 
             // 重置合成模式，防止影响其他渲染
             ctx.globalCompositeOperation = 'source-over';
+        } else if (currentTool === 'rect' && rectStartPoint && rectCanvasState && isDM) {
+            // 矩形工具：绘制预览
+            const rect = mapFrame.getBoundingClientRect();
+            const x = (e.clientX - rect.left - originX) / scale;
+            const y = (e.clientY - rect.top - originY) / scale;
+            const lineWidth = 5 / scale;
+
+            // 恢复画布到拖动开始时的状态
+            ctx.putImageData(rectCanvasState, 0, 0);
+
+            // 绘制预览矩形
+            ctx.strokeStyle = penColor;
+            ctx.lineWidth = lineWidth;
+            ctx.strokeRect(
+                Math.min(rectStartPoint.x, x),
+                Math.min(rectStartPoint.y, y),
+                Math.abs(x - rectStartPoint.x),
+                Math.abs(y - rectStartPoint.y)
+            );
         }
     };
 
-    window.onmouseup = () => {
+    window.onmouseup = (e) => {
         if (isDraggingMap && isDM) {
             socket.emit('map:transform', { scale, originX, originY });
         }
+
+        // 矩形工具：绘制矩形
+        if (currentTool === 'rect' && rectStartPoint && isDM) {
+            const rect = mapFrame.getBoundingClientRect();
+            const x = (e.clientX - rect.left - originX) / scale;
+            const y = (e.clientY - rect.top - originY) / scale;
+            const lineWidth = 5 / scale;
+
+            // 计算矩形参数（支持任意方向拖动）
+            const rectData = {
+                type: 'rect',
+                x: Math.min(rectStartPoint.x, x),
+                y: Math.min(rectStartPoint.y, y),
+                width: Math.abs(x - rectStartPoint.x),
+                height: Math.abs(y - rectStartPoint.y),
+                color: penColor,
+                lineWidth: lineWidth
+            };
+
+            // 绘制矩形
+            ctx.strokeStyle = penColor;
+            ctx.lineWidth = lineWidth;
+            ctx.strokeRect(rectData.x, rectData.y, rectData.width, rectData.height);
+
+            // 保存并同步
+            localDrawings.push(rectData);
+            socket.emit('draw:path', rectData);
+
+            rectStartPoint = null;
+            rectCanvasState = null;
+        }
+
         isDraggingMap = false;
         isPainting = false;
         lastDrawPoint = null;
@@ -1115,10 +1211,10 @@
         toast.textContent = message;
         toast.className = 'dm-only show' + (isError ? ' error' : '');
 
-        // 1.5 秒后自动消失
+        // 2.0 秒后自动消失
         toastTimeout = setTimeout(() => {
             toast.classList.remove('show');
-        }, 1500);
+        }, 2000);
     }
 
     // --- 地图存档系统 ---
@@ -1529,21 +1625,29 @@
     });
 
     socket.on('draw:path', (data) => {
-        ctx.beginPath();
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.moveTo(data.fromX, data.fromY);
-        if (data.tool === 'draw') {
-            ctx.globalCompositeOperation = 'source-over';
+        if (data.type === 'rect') {
+            // 绘制矩形
             ctx.strokeStyle = data.color;
+            ctx.lineWidth = data.lineWidth;
+            ctx.strokeRect(data.x, data.y, data.width, data.height);
         } else {
-            ctx.globalCompositeOperation = 'destination-out';
+            // 绘制线段
+            ctx.beginPath();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.moveTo(data.fromX, data.fromY);
+            if (data.tool === 'draw') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = data.color;
+            } else {
+                ctx.globalCompositeOperation = 'destination-out';
+            }
+            ctx.lineWidth = data.lineWidth;
+            ctx.lineTo(data.toX, data.toY);
+            ctx.stroke();
+            // 重置合成模式
+            ctx.globalCompositeOperation = 'source-over';
         }
-        ctx.lineWidth = data.lineWidth;
-        ctx.lineTo(data.toX, data.toY);
-        ctx.stroke();
-        // 重置合成模式
-        ctx.globalCompositeOperation = 'source-over';
     });
 
     socket.on('draw:clear', () => {
@@ -1615,6 +1719,7 @@
         }
 
         addSystemMessage('DM 读取了一张地图');
+        showDmToast('✓ 地图读取成功');
     });
 
     socket.on('map:deletedSaved', (mapId) => {

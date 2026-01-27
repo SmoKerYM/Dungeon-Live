@@ -1207,3 +1207,138 @@ fileInput.onchange = (e) => {
 | 上传完成 | 自动保存，Toast 提示，新增空槽位 |
 | 上传已存在的地图 | 更新现有槽位，不新增空槽位 |
 
+### 11.12 绘图工具 UI 重构与矩形绘制功能
+
+#### 需求背景
+优化绘图工具的 UI 布局，并新增矩形绘制功能。
+
+#### UI 改动
+
+**原布局：**
+```
+[移动] [画笔] [橡皮]
+（选择画笔后展开颜色选择器）
+```
+
+**新布局：**
+```
+第一行：颜色选择（始终显示）
+○ ○ ○ ○ ○  （圆形按钮，与 NPC 方形选择器区分）
+
+第二行：工具按钮
+[移动] [画笔] [矩形] [橡皮]
+```
+
+#### 颜色选择器样式
+```css
+.draw-color-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.draw-color {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;  /* 圆形 */
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.draw-color.selected {
+  border-color: #f1c40f;
+  transform: scale(1.1);
+}
+```
+
+#### 矩形绘制功能
+
+##### 交互方式
+1. 选择「矩形」工具
+2. 在地图上按下鼠标 → 记录起始点
+3. 拖动鼠标 → 实时预览矩形（可选）
+4. 释放鼠标 → 绘制空心矩形
+
+##### 数据结构扩展
+```javascript
+// 原笔迹数据（线段）
+{
+  type: 'path',  // 新增 type 字段
+  fromX, fromY, toX, toY,
+  color, tool, lineWidth
+}
+
+// 新增矩形数据
+{
+  type: 'rect',
+  x, y, width, height,
+  color, lineWidth
+}
+```
+
+##### 绘制逻辑
+```javascript
+let rectStartPoint = null;
+
+// 鼠标按下
+if (currentTool === 'rect') {
+  rectStartPoint = { x, y };
+}
+
+// 鼠标释放
+if (currentTool === 'rect' && rectStartPoint) {
+  const rectData = {
+    type: 'rect',
+    x: Math.min(rectStartPoint.x, x),
+    y: Math.min(rectStartPoint.y, y),
+    width: Math.abs(x - rectStartPoint.x),
+    height: Math.abs(y - rectStartPoint.y),
+    color: penColor,
+    lineWidth: 5 / scale
+  };
+
+  // 绘制矩形
+  ctx.strokeStyle = penColor;
+  ctx.lineWidth = rectData.lineWidth;
+  ctx.strokeRect(rectData.x, rectData.y, rectData.width, rectData.height);
+
+  // 保存并同步
+  localDrawings.push(rectData);
+  socket.emit('draw:path', rectData);
+
+  rectStartPoint = null;
+}
+```
+
+##### 恢复绘图时支持矩形
+```javascript
+function restoreDrawings(drawings) {
+  drawings.forEach(data => {
+    if (data.type === 'rect') {
+      // 绘制矩形
+      ctx.strokeStyle = data.color;
+      ctx.lineWidth = data.lineWidth;
+      ctx.strokeRect(data.x, data.y, data.width, data.height);
+    } else {
+      // 绘制线段（原有逻辑）
+      ctx.beginPath();
+      ctx.moveTo(data.fromX, data.fromY);
+      // ...
+    }
+  });
+}
+```
+
+##### 橡皮擦与矩形交互
+橡皮擦使用 `destination-out` 合成模式，可以正常擦除矩形的笔画。
+
+#### Socket 事件
+复用现有 `draw:path` 事件，通过 `type` 字段区分线段和矩形。
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 绘制极小矩形 | 正常绘制（可能只是一个点） |
+| 从右下往左上拖动 | 使用 Math.min/abs 计算正确的 x, y, width, height |
+| 切换工具时未释放鼠标 | 重置 rectStartPoint |
+| 加载存档包含矩形 | restoreDrawings 支持 type 判断 |
+
