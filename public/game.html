@@ -113,12 +113,26 @@
         .npc-color:hover { transform: scale(1.15); }
         .npc-color.selected { border-color: #f1c40f; transform: scale(1.1); }
 
-        #ui-layer { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; z-index: 20; }
-        #dice-column { display: flex; flex-direction: column; gap: 6px; }
-        .dice { width: 50px; height: 50px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        /* 右侧边栏（骰子） */
+        #right-sidebar {
+            width: 70px;
+            background: #34495e;
+            padding: 15px 10px;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.3);
+            z-index: 10;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        #dice-column { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+        .dice { width: 50px; height: 50px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: transform 0.1s; }
+        .dice:hover { transform: scale(1.05); }
+        .dice:active { transform: scale(0.95); }
         .dice-label { font-size: 9px; opacity: 0.8; }
         .dice-val { font-size: 16px; font-weight: bold; }
-        .dice-big { width: 60px; height: 60px; border: 1px solid rgba(255,255,255,0.3); }
+        .dice-big { width: 50px; height: 50px; border: 1px solid rgba(255,255,255,0.3); }
         /* 锁定地图按钮（与保存按钮并排） */
         #lock-btn {
             position: absolute;
@@ -515,17 +529,6 @@
     <button id="save-map-btn" class="dm-only" onclick="handleManualSave()">💾 保存地图</button>
     <button id="lock-btn" class="dm-only" onclick="toggleLock()">🔓 锁定地图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
-    <div id="ui-layer">
-        <div id="dice-column">
-            <div class="dice" style="background: #b2bfc0;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
-            <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
-            <div class="dice" style="background: #16a085;" onclick="rollDice(8, this)"><div class="dice-label">D8</div><div class="dice-val">?</div></div>
-            <div class="dice" style="background: #2980b9;" onclick="rollDice(10, this)"><div class="dice-label">D10</div><div class="dice-val">?</div></div>
-            <div class="dice" style="background: #8e44ad;" onclick="rollDice(12, this)"><div class="dice-label">D12</div><div class="dice-val">?</div></div>
-            <div class="dice dice-big" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val" style="font-size:20px;">?</div></div>
-            <div class="dice dice-big" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
-        </div>
-    </div>
 </div>
 
     <!-- 笔记视图 -->
@@ -533,6 +536,19 @@
         <textarea id="notes-textarea" placeholder="在此输入共享笔记...&#10;&#10;所有人都可以编辑，内容会实时同步给所有玩家。"></textarea>
     </div>
 </div><!-- end main-content -->
+
+<!-- 右侧边栏（骰子） -->
+<div id="right-sidebar">
+    <div id="dice-column">
+        <div class="dice" style="background: #b2bfc0;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
+        <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
+        <div class="dice" style="background: #16a085;" onclick="rollDice(8, this)"><div class="dice-label">D8</div><div class="dice-val">?</div></div>
+        <div class="dice" style="background: #2980b9;" onclick="rollDice(10, this)"><div class="dice-label">D10</div><div class="dice-val">?</div></div>
+        <div class="dice" style="background: #8e44ad;" onclick="rollDice(12, this)"><div class="dice-label">D12</div><div class="dice-val">?</div></div>
+        <div class="dice" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val">?</div></div>
+        <div class="dice" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
+    </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
