@@ -119,8 +119,25 @@
         .dice-label { font-size: 9px; opacity: 0.8; }
         .dice-val { font-size: 16px; font-weight: bold; }
         .dice-big { width: 60px; height: 60px; border: 1px solid rgba(255,255,255,0.3); }
-        #lock-btn { background: #f39c12; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 130px; }
+        /* 锁定地图按钮（与保存按钮并排） */
+        #lock-btn {
+            position: absolute;
+            top: 20px;
+            left: 130px;
+            z-index: 25;
+            padding: 8px 15px;
+            background: #f39c12;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            display: none;
+            font-size: 13px;
+        }
+        #lock-btn:hover { background: #f1c40f; }
         #lock-btn.locked { background: #e74c3c; }
+        #lock-btn.locked:hover { background: #c0392b; }
         #lock-btn.disabled { opacity: 0.5; cursor: not-allowed; }
         #top-controls { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 20px; z-index: 20; font-size: 13px; }
 
@@ -496,6 +513,7 @@
     <div id="viewport">
     <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
     <button id="save-map-btn" class="dm-only" onclick="handleManualSave()">💾 保存地图</button>
+    <button id="lock-btn" class="dm-only" onclick="toggleLock()">🔓 锁定地图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
     <div id="ui-layer">
         <div id="dice-column">
@@ -507,7 +525,6 @@
             <div class="dice dice-big" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val" style="font-size:20px;">?</div></div>
             <div class="dice dice-big" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
         </div>
-        <button id="lock-btn" onclick="toggleLock()">Lock Map</button>
     </div>
 </div>
 
@@ -593,9 +610,8 @@
                 el.style.display = 'none';
             });
 
-            // 隐藏缩放滑块和锁定按钮
+            // 隐藏缩放滑块
             document.getElementById('top-controls').style.display = 'none';
-            lockBtn.style.display = 'none';
 
             // 禁用角色按钮的生成棋子功能（点击不生成棋子）
             document.querySelectorAll('.player-btn').forEach(btn => {
@@ -828,7 +844,7 @@
     }
 
     function updateLockButton() {
-        lockBtn.innerText = isLocked ? "Unlock Map" : "Lock Map";
+        lockBtn.innerText = isLocked ? "🔒 已锁定" : "🔓 锁定地图";
         lockBtn.classList.toggle('locked', isLocked);
     }
 
@@ -1397,10 +1413,13 @@
 
     function updateSaveButtonVisibility() {
         const saveBtn = document.getElementById('save-map-btn');
+        const lockButton = document.getElementById('lock-btn');
         if (isDM && mapImg.src && mapImg.style.display !== 'none') {
             saveBtn.style.display = 'block';
+            lockButton.style.display = 'block';
         } else {
             saveBtn.style.display = 'none';
+            lockButton.style.display = 'none';
         }
     }
 
