@@ -401,6 +401,32 @@ io.on('connection', (socket) => {
     io.emit('map:deletedSaved', mapId);
   });
 
+  // 更新地图状态 (仅 DM，轻量级，不含 mapData)
+  socket.on('map:updateState', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    const archive = gameState.savedMaps.find(m => m.id === data.mapId);
+    if (!archive) return;
+
+    // 仅更新状态字段，不更新 mapData
+    archive.mapTransform = data.mapTransform;
+    archive.tokens = data.tokens;
+    archive.npcs = data.npcs;
+    archive.drawings = data.drawings;
+
+    // 同时更新当前游戏状态
+    gameState.mapTransform = { ...data.mapTransform };
+    gameState.tokens = { ...data.tokens };
+    gameState.npcs = [...data.npcs];
+    gameState.drawings = [...data.drawings];
+
+    // 仅在非静默模式下广播系统消息
+    if (!data.silent) {
+      io.emit('map:stateUpdated', { mapId: data.mapId });
+    }
+  });
+
   // 断开连接
   socket.on('disconnect', () => {
     const player = gameState.players.get(socket.id);

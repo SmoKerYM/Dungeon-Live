@@ -495,7 +495,7 @@
 
     <div id="viewport">
     <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
-    <button id="save-map-btn" class="dm-only" onclick="saveCurrentMap()">💾 保存地图</button>
+    <button id="save-map-btn" class="dm-only" onclick="handleManualSave()">💾 保存地图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
     <div id="ui-layer">
         <div id="dice-column">
@@ -864,6 +864,7 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         localDrawings = [];
         socket.emit('draw:clear');
+        markDirty();
     }
 
     // --- 地图拖动与绘图 ---
@@ -931,6 +932,7 @@
             };
             localDrawings.push(drawData);
             socket.emit('draw:path', drawData);
+            markDirty();
 
             lastDrawPoint = { x, y };
 
@@ -961,6 +963,7 @@
     window.onmouseup = (e) => {
         if (isDraggingMap && isDM) {
             socket.emit('map:transform', { scale, originX, originY });
+            markDirty();
         }
 
         // 矩形工具：绘制矩形
@@ -989,6 +992,7 @@
             // 保存并同步
             localDrawings.push(rectData);
             socket.emit('draw:path', rectData);
+            markDirty();
 
             rectStartPoint = null;
             rectCanvasState = null;
@@ -1007,6 +1011,7 @@
         scale = Math.min(Math.max(0.1, scale), 5);
         updateTransform();
         socket.emit('map:transform', { scale, originX, originY });
+        markDirty();
     };
 
     zoomSlider.oninput = (e) => {
@@ -1015,6 +1020,7 @@
             scale = parseFloat(e.target.value);
             updateTransform();
             socket.emit('map:transform', { scale, originX, originY });
+            markDirty();
         } else {
             zoomSlider.value = scale;
         }
@@ -1075,6 +1081,7 @@
                     x: parseFloat(token.style.left),
                     y: parseFloat(token.style.top)
                 });
+                markDirty();
             };
 
             window.addEventListener('mousemove', move);
@@ -1095,6 +1102,7 @@
 
         createTokenElement(color, x, y);
         socket.emit('token:spawn', { color, x, y });
+        markDirty();
     }
 
     function clearAllTokens() {
@@ -1102,6 +1110,7 @@
         // 只清除玩家棋子，不清除 NPC
         mapContainer.querySelectorAll('.token:not(.npc)').forEach(t => mapContainer.removeChild(t));
         socket.emit('token:clearAll');
+        markDirty();
     }
 
     // --- NPC 系统 ---
@@ -1161,6 +1170,7 @@
                     x: parseFloat(npc.style.left),
                     y: parseFloat(npc.style.top)
                 });
+                markDirty();
             };
 
             window.addEventListener('mousemove', move);
@@ -1173,6 +1183,7 @@
             e.stopPropagation();
             mapContainer.removeChild(npc);
             socket.emit('npc:remove', id);
+            markDirty();
         };
 
         mapContainer.appendChild(npc);
@@ -1189,12 +1200,14 @@
 
         createNPCElement(id, x, y, color);
         socket.emit('npc:spawn', { id, x, y, color });
+        markDirty();
     }
 
     function clearAllNPCs() {
         if (!isDM) return;
         mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
         socket.emit('npc:clearAll');
+        markDirty();
     }
 
     // --- DM Toast 通知系统 ---
@@ -1220,6 +1233,61 @@
     // --- 地图存档系统 ---
     let localSavedMaps = []; // 本地存储的地图存档信息（仅 id 和 thumbnail）
     let localDrawings = [];  // 本地维护的笔迹数据副本
+    let currentMapId = null; // 当前加载的地图 ID
+    let isDirty = false;     // 是否有未保存的变更
+    let autoSaveInterval = null; // 自动保存定时器
+
+    // 标记为脏（有未保存的变更）
+    function markDirty() {
+        if (isDM && currentMapId) {
+            isDirty = true;
+        }
+    }
+
+    // 保存地图状态（轻量级，不含 mapData）
+    function saveMapState(silent = false) {
+        if (!isDM || !currentMapId) return;
+
+        socket.emit('map:updateState', {
+            mapId: currentMapId,
+            mapTransform: { scale, originX, originY },
+            tokens: getCurrentTokens(),
+            npcs: getCurrentNPCs(),
+            drawings: [...localDrawings],
+            silent: silent
+        });
+
+        if (!silent) {
+            showDmToast('✓ 地图更新成功');
+        }
+    }
+
+    // 启动自动保存（每秒检查）
+    function startAutoSave() {
+        if (autoSaveInterval) return;
+        autoSaveInterval = setInterval(() => {
+            if (isDirty && currentMapId) {
+                saveMapState(true);  // silent = true
+                isDirty = false;
+            }
+        }, 1000);
+    }
+
+    // 手动保存按钮处理
+    function handleManualSave() {
+        if (!isDM || !mapImg.src || mapImg.style.display === 'none') {
+            showDmToast('✗ 请先上传地图', true);
+            return;
+        }
+
+        if (currentMapId) {
+            // 已有地图 ID，使用轻量级状态更新
+            saveMapState(false);  // silent = false，显示 toast
+        } else {
+            // 没有地图 ID，使用完整保存（会创建新存档）
+            saveCurrentMap();
+        }
+    }
 
     function generateThumbnail(mapData, callback) {
         const img = new Image();
@@ -1665,6 +1733,10 @@
 
     // --- 地图存档 Socket 事件 ---
     socket.on('map:saved', (data) => {
+        // 记录当前地图 ID，用于自动保存
+        currentMapId = data.id;
+        isDirty = false;  // 重置脏标记
+
         if (data.isUpdate) {
             // 更新现有槽位的缩略图
             localSavedMaps[data.slotIndex].thumbnail = data.thumbnail;
@@ -1677,6 +1749,11 @@
             showDmToast('✓ 地图保存成功');
         }
         renderMapSlots();
+
+        // 启动自动保存
+        if (isDM) {
+            startAutoSave();
+        }
     });
 
     socket.on('map:saveError', (message) => {
@@ -1684,6 +1761,10 @@
     });
 
     socket.on('map:loadedSaved', (archive) => {
+        // 记录当前地图 ID，用于自动保存
+        currentMapId = archive.id;
+        isDirty = false;  // 重置脏标记
+
         // 清空当前棋子和 NPC
         mapContainer.querySelectorAll('.token').forEach(t => t.remove());
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1720,13 +1801,28 @@
 
         addSystemMessage('DM 读取了一张地图');
         showDmToast('✓ 地图读取成功');
+
+        // 启动自动保存
+        if (isDM) {
+            startAutoSave();
+        }
     });
 
     socket.on('map:deletedSaved', (mapId) => {
+        // 如果删除的是当前地图，清空 currentMapId
+        if (currentMapId === mapId) {
+            currentMapId = null;
+            isDirty = false;
+        }
         localSavedMaps = localSavedMaps.filter(m => m.id !== mapId);
         renderMapSlots();
         addSystemMessage('DM 删除了一张地图');
         showDmToast('✓ 地图删除成功');
+    });
+
+    // 地图状态更新（非静默模式时触发）
+    socket.on('map:stateUpdated', (data) => {
+        addSystemMessage('DM 更新了地图存档');
     });
 
     // 初始化

@@ -1342,3 +1342,141 @@ function restoreDrawings(drawings) {
 | 切换工具时未释放鼠标 | 重置 rectStartPoint |
 | 加载存档包含矩形 | restoreDrawings 支持 type 判断 |
 
+### 11.13 地图状态自动保存（增量更新）
+
+#### 需求背景
+DM 在讲解地图时，经常需要移动棋子、添加标记、调整视角。希望这些变更能自动保存，无需手动点击保存按钮，以便快速切换到其他地图后再切回来时保留状态。
+
+#### 性能考量
+
+**问题：** 如果每秒发送完整 `mapData`（1-50MB），会造成网络和服务器压力。
+
+**解决方案：** 增量更新 + 变更检测
+- 仅在状态变更时触发保存（dirty flag）
+- 更新时不重传 `mapData`（地图图片本身没变）
+- 使用防抖机制（最后一次操作后 1 秒才保存）
+
+| 方案 | 每次传输量 |
+|------|-----------|
+| 原方案（完整保存） | 1-50 MB |
+| 优化方案（状态更新） | ~10-50 KB |
+
+#### 实现方案
+
+##### 1. 客户端状态追踪
+
+```javascript
+let isDirty = false;           // 是否有未保存的变更
+let currentMapId = null;       // 当前加载的地图 ID
+let autoSaveInterval = null;   // 自动保存定时器
+
+// 标记为脏的操作
+function markDirty() {
+    if (isDM && currentMapId) {
+        isDirty = true;
+    }
+}
+```
+
+##### 2. 触发 dirty 的操作
+
+| 操作 | 触发位置 |
+|------|----------|
+| 棋子移动 | `token:move` 发送后 |
+| NPC 移动/生成/删除 | `npc:move/spawn/remove` 发送后 |
+| 绘图（画笔/矩形） | `draw:path` 发送后 |
+| 清空笔迹 | `draw:clear` 发送后 |
+| 地图变换（缩放/平移） | `map:transform` 发送后 |
+
+##### 3. 自动保存逻辑
+
+```javascript
+// 启动自动保存（每秒检查）
+function startAutoSave() {
+    if (autoSaveInterval) return;
+    autoSaveInterval = setInterval(() => {
+        if (isDirty && currentMapId) {
+            saveMapState(true);  // silent = true
+            isDirty = false;
+        }
+    }, 1000);
+}
+
+// 保存地图状态（轻量级，不含 mapData）
+function saveMapState(silent = false) {
+    if (!isDM || !currentMapId) return;
+
+    socket.emit('map:updateState', {
+        mapId: currentMapId,
+        mapTransform: { scale, originX, originY },
+        tokens: getCurrentTokens(),
+        npcs: getCurrentNPCs(),
+        drawings: [...localDrawings],
+        silent: silent  // 传给服务端，控制是否广播系统消息
+    });
+}
+```
+
+##### 4. 服务端事件处理
+
+```javascript
+// 更新地图状态（轻量级）
+socket.on('map:updateState', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+
+    const archive = gameState.savedMaps.find(m => m.id === data.mapId);
+    if (!archive) return;
+
+    // 仅更新状态字段，不更新 mapData
+    archive.mapTransform = data.mapTransform;
+    archive.tokens = data.tokens;
+    archive.npcs = data.npcs;
+    archive.drawings = data.drawings;
+
+    // 同时更新当前游戏状态
+    gameState.mapTransform = { ...data.mapTransform };
+    gameState.tokens = { ...data.tokens };
+    gameState.npcs = [...data.npcs];
+    gameState.drawings = [...data.drawings];
+
+    // 仅在非静默模式下广播
+    if (!data.silent) {
+        io.emit('map:stateUpdated', { mapId: data.mapId });
+    }
+});
+```
+
+##### 5. 手动保存 vs 自动保存
+
+| 场景 | 调用方式 | Toast | 系统消息 |
+|------|----------|-------|----------|
+| 自动保存（1秒检测） | `saveMapState(true)` | 无 | 无 |
+| 手动点击保存按钮 | `saveMapState(false)` | ✓ 地图更新成功 | DM 更新了地图存档 |
+
+##### 6. 当前地图 ID 追踪
+
+```javascript
+// 上传新地图后，从 map:saved 回调获取 ID
+socket.on('map:saved', (data) => {
+    currentMapId = data.id;  // 记录当前地图 ID
+    // ...
+});
+
+// 加载已保存地图后，记录 ID
+socket.on('map:loadedSaved', (archive) => {
+    currentMapId = archive.id;  // 记录当前地图 ID
+    // ...
+});
+```
+
+#### Edge Cases
+
+| 场景 | 处理方式 |
+|------|----------|
+| 未加载任何地图 | `currentMapId` 为 null，不触发自动保存 |
+| 上传新地图 | 触发 `map:save`，获取 ID 后开始自动保存 |
+| 切换到另一张地图 | 立即保存当前状态，更新 `currentMapId` |
+| DM 断开连接 | 最后一次 dirty 状态可能丢失（可接受） |
+| 玩家操作 | 玩家移动自己棋子也会触发 DM 端的自动保存 |
+
