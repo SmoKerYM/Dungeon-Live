@@ -2216,3 +2216,248 @@ socket.on('character:hpUpdated', (data) => {
 | 角色卡保存后 | 实时更新同名玩家的侧边栏 HP |
 | 玩家名与角色卡名不一致 | 显示 `_/_`（无法匹配） |
 | 多个玩家同名 | 都会更新（极端情况，一般不会发生） |
+
+---
+
+## 第十三阶段：玩家独立地图探索功能
+
+### 13.1 功能概述
+
+允许玩家独立控制地图的缩放和平移，同时能切换查看 DM 保存的不同地图存档。
+
+**背景分析：**
+- 当前所有元素（Token、NPC、Drawing）的坐标都是**地图坐标系**（相对于地图图片）
+- `mapTransform`（scale, originX, originY）是纯 CSS 显示变换，不影响坐标值
+- 因此玩家可以独立控制视角，而棋子位置仍然正确同步
+
+### 13.2 需求详解
+
+| 功能 | 当前状态 | 目标状态 |
+|------|----------|----------|
+| 玩家查看地图 | 只能看DM当前选择的地图 | 可在侧边栏选择DM保存的任意地图 |
+| 玩家缩放地图 | 禁止，跟随DM视角 | 允许独立缩放（滚轮/滑块） |
+| 玩家平移地图 | 禁止，跟随DM视角 | 允许独立拖动平移 |
+| 棋子/NPC同步 | 正常同步 | 保持正常同步（地图坐标系不变） |
+| 绘图同步 | 正常同步 | 保持正常同步（地图坐标系不变） |
+
+### 13.3 实现方案
+
+#### 13.3.1 玩家侧边栏添加地图缩略图列表
+
+**HTML 结构（game.html）：**
+```html
+<!-- 玩家侧边栏新增区域 -->
+<div id="player-map-list" class="player-only">
+    <h3>地图存档</h3>
+    <div id="player-map-thumbnails"></div>
+</div>
+```
+
+**CSS 样式：**
+```css
+#player-map-list {
+    padding: 10px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+#player-map-thumbnails {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.player-map-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
+}
+.player-map-thumb:hover {
+    border-color: #3498db;
+}
+.player-map-thumb.active {
+    border-color: #2ecc71;
+}
+```
+
+#### 13.3.2 玩家本地 mapTransform 管理
+
+**客户端变量：**
+```javascript
+// 玩家专用的本地 mapTransform
+let playerMapTransforms = {};  // { mapIndex: { scale, originX, originY } }
+let currentPlayerMapIndex = -1;  // -1 表示跟随DM当前地图
+
+// 是否使用玩家独立视角（Player only）
+let usePlayerView = false;
+```
+
+**玩家切换地图：**
+```javascript
+function playerSelectMap(index) {
+    if (userRole !== 'Player') return;
+
+    currentPlayerMapIndex = index;
+    const savedMap = savedMaps[index];
+    if (!savedMap) return;
+
+    // 加载地图图片
+    loadMapFromData(savedMap.mapData, () => {
+        // 恢复绘图
+        restoreDrawings(savedMap.drawings);
+    });
+
+    // 使用或初始化该地图的本地 transform
+    if (!playerMapTransforms[index]) {
+        playerMapTransforms[index] = { scale: 1, originX: 0, originY: 0 };
+    }
+    scale = playerMapTransforms[index].scale;
+    originX = playerMapTransforms[index].originX;
+    originY = playerMapTransforms[index].originY;
+    updateTransform();
+
+    usePlayerView = true;
+    updatePlayerMapThumbnails();
+}
+```
+
+#### 13.3.3 玩家地图控制权限修改
+
+**启用玩家缩放/平移：**
+```javascript
+// 修改 applyPermissions() 函数
+function applyPermissions() {
+    if (userRole === 'DM') {
+        // DM 完整权限...
+    } else {
+        // Player 权限
+        // 移除禁用缩放和平移的代码
+        // 保留其他限制（上传地图、锁定、绘图等）
+    }
+}
+
+// 修改鼠标滚轮事件（允许玩家缩放）
+mapFrame.onwheel = (e) => {
+    if (userRole === 'Player' && !usePlayerView) return;  // 未启用独立视角时禁止
+    // ... 原有缩放逻辑
+
+    // 玩家：保存到本地
+    if (userRole === 'Player') {
+        savePlayerTransform();
+    } else {
+        // DM：广播给所有人
+        socket.emit('map:transform', { scale, originX, originY });
+    }
+};
+
+// 修改拖动平移逻辑（允许玩家平移）
+// 类似处理...
+```
+
+#### 13.3.4 服务端同步逻辑
+
+**新增事件：**
+```javascript
+// 当 DM 保存地图时，广播给所有玩家更新地图列表
+socket.on('map:save', (data) => {
+    // ... 原有保存逻辑
+
+    // 广播地图列表更新给所有玩家
+    io.emit('map:listUpdated', {
+        savedMaps: gameState.savedMaps.map((m, i) => ({
+            index: i,
+            name: m.name || `地图 ${i + 1}`,
+            thumbnail: m.thumbnail  // 可选：缩略图数据
+        }))
+    });
+});
+```
+
+**玩家加入时同步地图列表：**
+```javascript
+// joinSuccess 事件增加 savedMaps 列表
+socket.emit('joinSuccess', {
+    // ... 原有数据
+    savedMaps: gameState.savedMaps.map((m, i) => ({
+        index: i,
+        name: m.name,
+        mapData: m.mapData,  // 完整数据，用于切换
+        drawings: m.drawings
+    }))
+});
+```
+
+#### 13.3.5 DM 地图变化时的玩家同步
+
+**场景处理：**
+
+| DM 操作 | 玩家响应 |
+|---------|----------|
+| DM 切换/加载地图 | 如果玩家 `currentPlayerMapIndex === -1`（跟随模式），同步切换 |
+| DM 缩放/平移 | 如果玩家在跟随模式，同步 transform；否则忽略 |
+| DM 保存地图 | 更新玩家的地图列表，刷新缩略图 |
+| DM 移动棋子 | 所有玩家同步（地图坐标不变） |
+
+**客户端处理：**
+```javascript
+// 玩家接收 DM 的 transform 广播
+socket.on('map:transform', (data) => {
+    if (userRole === 'Player' && usePlayerView) {
+        // 玩家在独立视角模式，忽略 DM 的 transform
+        return;
+    }
+    scale = data.scale;
+    originX = data.originX;
+    originY = data.originY;
+    updateTransform();
+});
+
+// 玩家接收地图列表更新
+socket.on('map:listUpdated', (data) => {
+    if (userRole !== 'Player') return;
+    updatePlayerMapThumbnails(data.savedMaps);
+});
+```
+
+### 13.4 UI 交互设计
+
+#### 玩家侧边栏布局
+```
+┌─────────────────────┐
+│ 🗺️ 地图存档         │
+├─────────────────────┤
+│ ┌─────────────────┐ │
+│ │ [缩略图1]       │ │  ← 点击切换到该地图
+│ │ 地图名称        │ │
+│ └─────────────────┘ │
+│ ┌─────────────────┐ │
+│ │ [缩略图2] ✓     │ │  ← 当前选中（绿色边框）
+│ │ 地图名称        │ │
+│ └─────────────────┘ │
+│ ┌─────────────────┐ │
+│ │ [跟随DM]        │ │  ← 特殊选项：跟随DM当前视角
+│ └─────────────────┘ │
+└─────────────────────┘
+```
+
+### 13.5 实现步骤
+
+1. **HTML/CSS**：在玩家侧边栏添加地图列表区域和样式
+2. **客户端变量**：添加 `playerMapTransforms`、`currentPlayerMapIndex`、`usePlayerView`
+3. **权限修改**：允许玩家在独立视角模式下缩放和平移
+4. **地图切换**：实现 `playerSelectMap()` 函数
+5. **Transform 保存**：玩家操作时保存到 `playerMapTransforms`
+6. **服务端**：`map:save` 时广播 `map:listUpdated`
+7. **同步逻辑**：修改 `map:transform` 接收逻辑，支持跟随/独立模式
+8. **缩略图**：实现地图缩略图生成和显示
+
+### 13.6 注意事项
+
+- **坐标系统**：所有坐标保持地图坐标系，无需修改
+- **棋子同步**：棋子移动广播不受影响，所有玩家都能正确显示
+- **绘图同步**：绘图使用地图坐标，在不同 transform 下显示正确
+- **性能**：缩略图可使用降采样或懒加载优化
+- **存储**：`playerMapTransforms` 只在客户端内存，刷新后重置

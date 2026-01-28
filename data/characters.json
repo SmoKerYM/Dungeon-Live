@@ -23,6 +23,12 @@
       "perception",
       "sleightOfHand",
       "stealth"
+    ],
+    "feats": [
+      {
+        "name": "冷静剖析",
+        "description": "每天两次，在一次失败的感知相关检定后，可立刻重骰一次并取较高结果"
+      }
     ]
   },
   "Player1": {
@@ -49,6 +55,16 @@
       "investigation",
       "athletics",
       "acrobatics"
+    ],
+    "feats": [
+      {
+        "name": "fewa",
+        "description": "12f二期"
+      },
+      {
+        "name": "分为v啊",
+        "description": "1111"
+      }
     ]
   },
   "Player2": {

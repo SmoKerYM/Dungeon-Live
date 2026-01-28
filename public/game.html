@@ -572,6 +572,89 @@
             width: 60px;
         }
 
+        /* 专长区域样式 */
+        .feats-section {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .feat-item {
+            background: rgba(255,255,255,0.1);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .feat-item .feat-name-input {
+            width: 100%;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            color: #3498db;
+            font-size: 14px;
+            font-weight: bold;
+            padding: 6px 10px;
+            margin-bottom: 8px;
+            box-sizing: border-box;
+        }
+        .feat-item .feat-desc-input {
+            width: 100%;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            color: #ccc;
+            font-size: 13px;
+            padding: 6px 10px;
+            resize: vertical;
+            min-height: 60px;
+            box-sizing: border-box;
+        }
+        .feat-item input:disabled,
+        .feat-item textarea:disabled {
+            border-color: transparent;
+        }
+        .feat-item input:focus,
+        .feat-item textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        .feat-item .remove-feat-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #c0392b;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 24px;
+            text-align: center;
+            display: none;
+        }
+        .feat-item .remove-feat-btn:hover {
+            background: #e74c3c;
+        }
+        .add-feat-btn {
+            width: 100%;
+            padding: 10px;
+            background: rgba(52, 152, 219, 0.3);
+            border: 1px dashed #3498db;
+            border-radius: 6px;
+            color: #3498db;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .add-feat-btn:hover:not(:disabled) {
+            background: rgba(52, 152, 219, 0.5);
+        }
+        .add-feat-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .attr-grid {
             display: grid;
             grid-template-columns: 1fr;
@@ -896,7 +979,14 @@
 
                     <div class="char-section proficiency-section">
                         <div class="section-title">熟练项加值</div>
-                        <input type="number" id="proficiency-bonus" class="char-input" style="width: 20%" disabled value="2">
+                        <input type="number" id="proficiency-bonus" class="char-input" style="width: 15%" disabled value="2">
+                    </div>
+
+                    <!-- 专长区域 -->
+                    <div class="char-section feats-section">
+                        <div class="section-title">专长列表</div>
+                        <div id="feats-list"></div>
+                        <button id="add-feat-btn" class="add-feat-btn" onclick="addFeat()" disabled>+ 添加专长</button>
                     </div>
                 </div>
 
@@ -1399,8 +1489,8 @@
 
     window.onmouseup = (e) => {
         if (isDraggingMap && isDM) {
-            socket.emit('map:transform', { scale, originX, originY });
-            markDirty();
+                socket.emit('map:transform', { scale, originX, originY });
+                markDirty();
         }
 
         // 矩形工具：绘制矩形
@@ -1447,8 +1537,8 @@
         scale *= (e.deltaY > 0 ? 0.9 : 1.1);
         scale = Math.min(Math.max(0.1, scale), 5);
         updateTransform();
-        socket.emit('map:transform', { scale, originX, originY });
-        markDirty();
+            socket.emit('map:transform', { scale, originX, originY });
+            markDirty();
     };
 
     zoomSlider.oninput = (e) => {
@@ -1456,8 +1546,8 @@
         if (!isLocked) {
             scale = parseFloat(e.target.value);
             updateTransform();
-            socket.emit('map:transform', { scale, originX, originY });
-            markDirty();
+                socket.emit('map:transform', { scale, originX, originY });
+                markDirty();
         } else {
             zoomSlider.value = scale;
         }
@@ -2404,6 +2494,85 @@
         updateSkillsDisplay();
     }
 
+    // ========== 专长系统 ==========
+
+    // 更新专长显示
+    function updateFeatsDisplay() {
+        const container = document.getElementById('feats-list');
+        container.innerHTML = '';
+        const feats = currentCharacter?.feats || [];
+        feats.forEach((feat, index) => {
+            const item = createFeatElement(feat, index);
+            container.appendChild(item);
+        });
+        // 更新输入框和按钮的禁用状态
+        const disabled = !isCharEditMode;
+        container.querySelectorAll('.feat-name-input, .feat-desc-input').forEach(input => {
+            input.disabled = disabled;
+        });
+        container.querySelectorAll('.remove-feat-btn').forEach(btn => {
+            btn.style.display = isCharEditMode ? 'block' : 'none';
+        });
+    }
+
+    // 创建专长元素
+    function createFeatElement(feat, index) {
+        const item = document.createElement('div');
+        item.className = 'feat-item';
+        item.dataset.index = index;
+        item.innerHTML = `
+            <input type="text" class="feat-name-input" placeholder="专长名称" value="${escapeHtml(feat.name || '')}" disabled>
+            <textarea class="feat-desc-input" placeholder="专长描述" disabled>${escapeHtml(feat.description || '')}</textarea>
+            <button class="remove-feat-btn" onclick="removeFeat(${index})" style="display: none;">×</button>
+        `;
+        return item;
+    }
+
+    // HTML转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 同步UI中的专长内容到currentCharacter
+    function syncFeatsFromUI() {
+        if (!currentCharacter) return;
+        currentCharacter.feats = getFeatsFromUI();
+    }
+
+    // 添加专长
+    function addFeat() {
+        if (!currentCharacter || !isCharEditMode) return;
+        // 先保存当前UI中已填写的内容
+        syncFeatsFromUI();
+        currentCharacter.feats.push({ name: '', description: '' });
+        updateFeatsDisplay();
+    }
+
+    // 删除专长
+    function removeFeat(index) {
+        if (!currentCharacter || !isCharEditMode) return;
+        // 先保存当前UI中已填写的内容
+        syncFeatsFromUI();
+        currentCharacter.feats.splice(index, 1);
+        updateFeatsDisplay();
+    }
+
+    // 从 UI 获取专长数据
+    function getFeatsFromUI() {
+        const feats = [];
+        document.querySelectorAll('.feat-item').forEach(item => {
+            const name = item.querySelector('.feat-name-input').value.trim();
+            const description = item.querySelector('.feat-desc-input').value.trim();
+            // 只保存非空的专长
+            if (name || description) {
+                feats.push({ name, description });
+            }
+        });
+        return feats;
+    }
+
     // 属性输入变化时更新派生值
     function onAttributeChange() {
         if (!currentCharacter) return;
@@ -2435,7 +2604,8 @@
                 charisma: 0
             },
             savingThrows: [],
-            skills: []
+            skills: [],
+            feats: []
         };
         loadCharacterToUI();
         document.getElementById('char-sheet').classList.add('visible');
@@ -2458,6 +2628,7 @@
         document.getElementById('attr-cha').value = currentCharacter.attributes.charisma;
         updateSavingThrowsDisplay();
         updateSkillsDisplay();
+        updateFeatsDisplay();
     }
 
     // 从 UI 获取角色卡数据
@@ -2478,7 +2649,8 @@
                 charisma: parseInt(document.getElementById('attr-cha').value) || 0
             },
             savingThrows: currentCharacter ? [...currentCharacter.savingThrows] : [],
-            skills: currentCharacter ? [...currentCharacter.skills] : []
+            skills: currentCharacter ? [...currentCharacter.skills] : [],
+            feats: getFeatsFromUI()
         };
     }
 
@@ -2497,6 +2669,15 @@
         document.querySelectorAll('.char-checkbox').forEach(cb => {
             cb.disabled = disabled;
         });
+        // 专长相关的输入框和按钮
+        document.querySelectorAll('.feat-name-input, .feat-desc-input').forEach(input => {
+            input.disabled = disabled;
+        });
+        document.querySelectorAll('.remove-feat-btn').forEach(btn => {
+            btn.style.display = isCharEditMode ? 'block' : 'none';
+        });
+        const addFeatBtn = document.getElementById('add-feat-btn');
+        if (addFeatBtn) addFeatBtn.disabled = disabled;
         document.getElementById('char-edit-btn').textContent = isCharEditMode ? '取消' : '编辑';
     }
 
