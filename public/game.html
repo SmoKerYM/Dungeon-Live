@@ -283,6 +283,19 @@
             flex-grow: 1;
             padding: 20px;
             background: #1a1a1a;
+            gap: 20px;
+        }
+        #notes-left {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        #notes-right {
+            width: 360px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
         }
         #notes-textarea {
             width: 100%;
@@ -303,6 +316,71 @@
         }
         #notes-textarea::placeholder {
             color: #666;
+        }
+
+        /* 人物记录表格 */
+        #char-notes-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #char-notes-table th {
+            background: rgba(52, 152, 219, 0.3);
+            padding: 8px;
+            text-align: left;
+            font-size: 13px;
+            color: #aaa;
+        }
+        #char-notes-table th:first-child { width: 80px; }
+        #char-notes-table th:last-child { width: 30px; }
+        #char-notes-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            vertical-align: top;
+        }
+        #char-notes-table input,
+        #char-notes-table textarea {
+            background: transparent;
+            border: none;
+            color: white;
+            width: 100%;
+            outline: none;
+            font-size: 13px;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        #char-notes-table textarea {
+            resize: vertical;
+            min-height: 24px;
+            line-height: 1.4;
+            overflow: hidden;
+        }
+        #char-notes-table input::placeholder,
+        #char-notes-table textarea::placeholder {
+            color: #555;
+        }
+        .char-notes-remove-btn {
+            background: none;
+            border: none;
+            color: #e74c3c;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 6px;
+            opacity: 0.6;
+        }
+        .char-notes-remove-btn:hover {
+            opacity: 1;
+        }
+        .char-notes-add-btn {
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: rgba(46, 204, 113, 0.2);
+            border: 1px solid rgba(46, 204, 113, 0.4);
+            border-radius: 6px;
+            color: #2ecc71;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .char-notes-add-btn:hover {
+            background: rgba(46, 204, 113, 0.3);
         }
 
         /* 主内容区域 */
@@ -972,7 +1050,17 @@
 
     <!-- 笔记视图 -->
     <div id="notes-view">
-        <textarea id="notes-textarea" placeholder="在此输入共享笔记...&#10;&#10;所有人都可以编辑，内容会实时同步给所有玩家。"></textarea>
+        <div id="notes-left">
+            <textarea id="notes-textarea" placeholder="在此输入共享笔记...&#10;&#10;所有人都可以编辑，内容会实时同步给所有玩家。"></textarea>
+        </div>
+        <div id="notes-right">
+            <div class="section-title">登场人物</div>
+            <table id="char-notes-table">
+                <thead><tr><th>人物名字</th><th>人物信息</th><th></th></tr></thead>
+                <tbody id="char-notes-body"></tbody>
+            </table>
+            <button class="char-notes-add-btn" onclick="addCharacterNote()">+ 添加人物</button>
+        </div>
     </div>
 
     <!-- 角色卡视图 -->
@@ -1152,6 +1240,68 @@
 
     socket.on('notes:sync', (content) => {
         notesTextarea.value = content;
+    });
+
+    // --- 人物记录 ---
+    let localCharacterNotes = [];
+    let charNotesTimeout = null;
+
+    function renderCharacterNotes() {
+        const tbody = document.getElementById('char-notes-body');
+        tbody.innerHTML = '';
+        localCharacterNotes.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            const escapedInfo = (item.info || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            tr.innerHTML = `
+                <td><input type="text" value="${(item.name || '').replace(/"/g, '&quot;')}" placeholder="名字" oninput="onCharacterNoteChange()"></td>
+                <td><textarea placeholder="信息" oninput="onCharacterNoteChange(); autoResizeTextarea(this)" rows="1">${escapedInfo}</textarea></td>
+                <td><button class="char-notes-remove-btn" onclick="removeCharacterNote(${index})">✕</button></td>
+            `;
+            tbody.appendChild(tr);
+            // 初始自适应高度
+            const ta = tr.querySelector('textarea');
+            if (ta) autoResizeTextarea(ta);
+        });
+    }
+
+    function autoResizeTextarea(el) {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+    }
+
+    function addCharacterNote() {
+        localCharacterNotes.push({ name: '', info: '' });
+        renderCharacterNotes();
+        emitCharacterNotes();
+    }
+
+    function removeCharacterNote(index) {
+        localCharacterNotes.splice(index, 1);
+        renderCharacterNotes();
+        emitCharacterNotes();
+    }
+
+    function onCharacterNoteChange() {
+        clearTimeout(charNotesTimeout);
+        charNotesTimeout = setTimeout(() => {
+            // 从 DOM 读取所有输入值
+            const rows = document.querySelectorAll('#char-notes-body tr');
+            localCharacterNotes = Array.from(rows).map(row => {
+                const nameInput = row.querySelector('input');
+                const infoTextarea = row.querySelector('textarea');
+                return { name: nameInput.value, info: infoTextarea.value };
+            });
+            emitCharacterNotes();
+        }, 500);
+    }
+
+    function emitCharacterNotes() {
+        socket.emit('characterNotes:update', localCharacterNotes);
+    }
+
+    socket.on('characterNotes:sync', (data) => {
+        localCharacterNotes = data;
+        renderCharacterNotes();
     });
 
     // --- 权限控制 ---
@@ -2153,6 +2303,10 @@
         if (gs.notes) {
             notesTextarea.value = gs.notes;
         }
+
+        // 恢复人物记录
+        localCharacterNotes = gs.characterNotes || [];
+        renderCharacterNotes();
 
         // 【核心修复】：恢复所有已加入玩家的侧边栏卡片
         if (gs.players) {

@@ -8,7 +8,7 @@ Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial 
 ## Tech Stack
 - **Backend**: Node.js + Express 5 + Socket.IO 4
 - **Frontend**: Vanilla HTML/CSS/JavaScript + Canvas API
-- **Data**: JSON files (characters) + text files (notes), no database
+- **Data**: JSON files (characters, character notes) + text files (notes), no database
 - **Dev**: nodemon for hot reload
 
 ## File Structure
@@ -21,8 +21,9 @@ coc_app/
 │   ├── index.html         # Login page (~229 lines)
 │   └── game.html          # Main game UI (~3035 lines, inline CSS+JS)
 ├── data/
-│   ├── characters.json    # Character card data (name-keyed object)
-│   └── notes.txt          # Shared notes (plain text)
+│   ├── characters.json        # Character card data (name-keyed object)
+│   ├── characters_notes.json  # Character records table [{name, info}]
+│   └── notes.txt              # Shared notes (plain text)
 └── images/                # Map images (gitignored)
 ```
 
@@ -57,6 +58,7 @@ coc_app/
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
 | Player | `player:viewMap`, `player:loadMap` |
 | Character | `character:list`, `character:load`, `character:save` |
+| CharacterNotes | `characterNotes:update` |
 | Other | `chat:message`, `dice:roll`, `notes:update` |
 
 ### Server -> Client (new events)
@@ -64,6 +66,7 @@ coc_app/
 |-------|-------------|
 | `player:mapData` | Full map data sent to a single player on request |
 | `dm:mapSwitched` | Notifies all players that DM switched active map |
+| `characterNotes:sync` | Broadcasts updated character records to other clients |
 
 ## Data Models
 
@@ -79,6 +82,7 @@ coc_app/
   drawings: [],
   npcs: [{ id, x, y, color }],
   notes: "string",
+  characterNotes: [{ name, info }],
   savedMaps: [],
   activeMapId: "map_xxx"
 }
@@ -108,7 +112,8 @@ npm start       # Production server
 ## Important Notes
 - Map images are Base64-encoded and can be large (50MB max buffer)
 - Map deduplication uses hash: `substring(0, 1000) + '_' + length`
-- Notes updates are debounced at 500ms
+- Notes and character records updates are debounced at 500ms
+- Notes tab split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
 - DM-only UI elements use `.dm-only` CSS class, player-only use `.player-only`
 - game.html has ~780 lines of inline CSS in `<head>`, JS starts around line 1090

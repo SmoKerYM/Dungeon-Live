@@ -8,6 +8,9 @@ const fs = require('fs');
 const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
 // 角色卡文件路径
 const CHARACTERS_FILE = process.env.NODE_ENV === 'production' ? '/data/characters.json' : './data/characters.json';
+// 人物记录文件路径
+const CHARACTERS_NOTES_FILE = process.env.NODE_ENV === 'production'
+  ? '/data/characters_notes.json' : './data/characters_notes.json';
 
 // 读取笔记
 function loadNotes() {
@@ -32,6 +35,31 @@ function saveNotes(content) {
     fs.writeFileSync(NOTES_FILE, content, 'utf8');
   } catch (err) {
     console.error('保存笔记失败:', err);
+  }
+}
+
+// 读取人物记录
+function loadCharacterNotes() {
+  try {
+    if (fs.existsSync(CHARACTERS_NOTES_FILE)) {
+      return JSON.parse(fs.readFileSync(CHARACTERS_NOTES_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取人物记录失败:', err);
+  }
+  return [];
+}
+
+// 保存人物记录
+function saveCharacterNotes(data) {
+  try {
+    const dir = path.dirname(CHARACTERS_NOTES_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CHARACTERS_NOTES_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('保存人物记录失败:', err);
   }
 }
 
@@ -115,6 +143,7 @@ const gameState = {
   drawings: [],       // 绘图数据
   npcs: [],           // NPC 数据 { id, x, y }
   notes: loadNotes(), // 共享笔记（从文件加载）
+  characterNotes: loadCharacterNotes(), // 登场人物记录 [{name, info}]
   savedMaps: [],      // 地图存档
   activeMapId: null   // DM 当前编辑的地图 ID
 };
@@ -183,6 +212,7 @@ io.on('connection', (socket) => {
         drawings: gameState.drawings,
         npcs: gameState.npcs,
         notes: gameState.notes,
+        characterNotes: gameState.characterNotes,
         savedMaps: gameState.savedMaps.map(m => ({ id: m.id, thumbnail: m.thumbnail })),
         activeMapId: gameState.activeMapId
       }
@@ -422,6 +452,15 @@ io.on('connection', (socket) => {
     gameState.notes = content;
     saveNotes(content);
     socket.broadcast.emit('notes:sync', content);
+  });
+
+  // 人物记录更新 (所有人可编辑)
+  socket.on('characterNotes:update', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+    gameState.characterNotes = data;
+    saveCharacterNotes(data);
+    socket.broadcast.emit('characterNotes:sync', data);
   });
 
   // 角色卡列表 (所有人)

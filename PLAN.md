@@ -2583,3 +2583,166 @@ function playerLoadMap(mapId) {
 6. DM 保存新地图 → 玩家侧边栏更新
 7. DM 删除玩家正在看的地图 → 玩家视图优雅处理
 8. 新玩家中途加入 → 收到缩略图列表，可加载任意地图
+
+---
+
+## Phase 14: 笔记分区与登场人物记录表
+
+### 14.1 概述
+
+将笔记 Tab 界面分为左右两栏：
+- **左侧**: 保持现有共享 textarea 不变
+- **右侧**: 可编辑表格，用于记录登场人物（NPC/角色），两列："人物名字" 和 "人物信息"
+
+表格采用与 textarea 相同的同步和持久化模型：500ms 防抖更新 → 广播到所有客户端 → 保存到文件。
+
+### 14.2 涉及文件
+
+| 文件 | 改动量 |
+|------|--------|
+| `server.js` | ~5 处改动 |
+| `public/game.html` | ~4 个区域 (CSS, HTML, JS 状态/函数, Socket 处理) |
+| `data/characters_notes.json` | 新文件，首次保存时自动创建 |
+
+### 14.3 数据模型
+
+`data/characters_notes.json`:
+```json
+[
+  { "name": "老张", "info": "村长，50岁，和蔼可亲" },
+  { "name": "神秘人", "info": "黑袍，声音低沉" }
+]
+```
+
+### 14.4 Server 改动 (server.js)
+
+#### 14.4.1 新增文件路径常量（在现有 NOTES_FILE 附近）
+
+```javascript
+const CHARACTERS_NOTES_FILE = process.env.NODE_ENV === 'production'
+  ? '/data/characters_notes.json' : './data/characters_notes.json';
+```
+
+#### 14.4.2 新增 load/save 函数（在 saveNotes 之后）
+
+```javascript
+function loadCharacterNotes() {
+  try {
+    if (fs.existsSync(CHARACTERS_NOTES_FILE)) {
+      return JSON.parse(fs.readFileSync(CHARACTERS_NOTES_FILE, 'utf8'));
+    }
+  } catch (err) { console.error('读取人物记录失败:', err); }
+  return [];
+}
+
+function saveCharacterNotes(data) {
+  try {
+    const dir = path.dirname(CHARACTERS_NOTES_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CHARACTERS_NOTES_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) { console.error('保存人物记录失败:', err); }
+}
+```
+
+#### 14.4.3 gameState 新增字段（在 `notes: loadNotes()` 之后）
+
+```javascript
+characterNotes: loadCharacterNotes(),  // [{name, info}]
+```
+
+#### 14.4.4 joinSuccess 载荷新增（在 `notes: gameState.notes` 之后）
+
+```javascript
+characterNotes: gameState.characterNotes,
+```
+
+#### 14.4.5 新增 Socket 事件（在 notes:update 处理附近）
+
+```javascript
+socket.on('characterNotes:update', (data) => {
+  const player = gameState.players.get(socket.id);
+  if (!player) return;
+  gameState.characterNotes = data;
+  saveCharacterNotes(data);
+  socket.broadcast.emit('characterNotes:sync', data);
+});
+```
+
+### 14.5 Client 改动 (game.html)
+
+#### 14.5.1 CSS: 笔记视图分栏布局
+
+修改 `#notes-view` 为 flexbox 行布局，新增左右面板和表格样式：
+
+```css
+#notes-view {
+  display: none;
+  flex-grow: 1;
+  padding: 20px;
+  background: #1a1a1a;
+  gap: 20px;
+}
+#notes-left { flex: 1; display: flex; flex-direction: column; }
+#notes-right { width: 360px; flex-shrink: 0; display: flex; flex-direction: column; }
+
+#char-notes-table { width: 100%; border-collapse: collapse; }
+#char-notes-table th { background: rgba(52,152,219,0.3); padding: 8px; text-align: left; }
+#char-notes-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+#char-notes-table input { background: transparent; border: none; color: white; width: 100%; outline: none; }
+.char-notes-add-btn { margin-top: 8px; /* 绿色按钮样式 */ }
+```
+
+#### 14.5.2 HTML: 重构 #notes-view 结构
+
+```html
+<div id="notes-view">
+  <div id="notes-left">
+    <textarea id="notes-textarea" ...></textarea>
+  </div>
+  <div id="notes-right">
+    <div class="section-title">登场人物</div>
+    <table id="char-notes-table">
+      <thead><tr><th>人物名字</th><th>人物信息</th><th></th></tr></thead>
+      <tbody id="char-notes-body"></tbody>
+    </table>
+    <button class="char-notes-add-btn" onclick="addCharacterNote()">+ 添加人物</button>
+  </div>
+</div>
+```
+
+#### 14.5.3 JS: 状态变量与函数
+
+```javascript
+let localCharacterNotes = [];  // [{name, info}]
+let charNotesTimeout = null;
+
+function renderCharacterNotes() { /* 从 localCharacterNotes 重建 tbody */ }
+function addCharacterNote() { /* push 空行, render, emit */ }
+function removeCharacterNote(index) { /* splice, render, emit */ }
+function onCharacterNoteChange() { /* 500ms 防抖, 读取所有 input, emit */ }
+function emitCharacterNotes() { /* socket.emit('characterNotes:update', localCharacterNotes) */ }
+```
+
+#### 14.5.4 Socket 事件处理
+
+```javascript
+// joinSuccess 时恢复表格
+localCharacterNotes = gs.characterNotes || [];
+renderCharacterNotes();
+
+// 接收其他客户端的同步
+socket.on('characterNotes:sync', (data) => {
+  localCharacterNotes = data;
+  renderCharacterNotes();
+});
+```
+
+### 14.6 验证清单
+
+1. `npm run dev` → 打开 DM + Player 两个客户端
+2. 切换到笔记 Tab → 验证左侧 textarea + 右侧表格并排显示
+3. 添加一行人物 → 验证另一个客户端同步显示
+4. 编辑人物名字/信息 → 验证 500ms 防抖同步
+5. 删除一行 → 验证同步删除
+6. 重启服务器 → 验证 `data/characters_notes.json` 数据持久化
+7. 新玩家中途加入 → 验证表格数据正确加载
