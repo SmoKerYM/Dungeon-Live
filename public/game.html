@@ -376,6 +376,46 @@
             background: #c0392b;
         }
 
+        /* 玩家地图列表 */
+        #player-map-slots {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .player-map-slot {
+            aspect-ratio: 1;
+            background: rgba(0,0,0,0.3);
+            border: 2px solid #555;
+            border-radius: 8px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .player-map-slot:hover {
+            border-color: #3498db;
+        }
+        .player-map-slot.active {
+            border-color: #2ecc71;
+            box-shadow: 0 0 8px rgba(46, 204, 113, 0.4);
+        }
+        .player-map-slot img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .player-map-slot .dm-active-badge {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 10px;
+            height: 10px;
+            background: #e74c3c;
+            border-radius: 50%;
+            box-shadow: 0 0 4px rgba(231, 76, 60, 0.6);
+        }
+
         /* 保存地图按钮 */
         #save-map-btn {
             position: absolute;
@@ -811,6 +851,13 @@
         </div>
     </div>
 
+    <div id="section-player-maps" class="player-only" style="display: none;">
+        <div class="section-title">地图列表</div>
+        <div id="player-map-slots">
+            <!-- 动态渲染：玩家地图缩略图列表 -->
+        </div>
+    </div>
+
     <div id="section-tools" class="dm-only">
         <div class="section-title">绘图工具</div>
         <!-- 颜色选择（始终显示，圆形按钮） -->
@@ -1115,8 +1162,13 @@
                 el.style.display = 'none';
             });
 
-            // 隐藏缩放滑块
-            document.getElementById('top-controls').style.display = 'none';
+            // 显示玩家专用区域
+            document.querySelectorAll('.player-only').forEach(el => {
+                el.style.display = 'block';
+            });
+
+            // 保留缩放滑块（玩家可自行缩放）
+            // document.getElementById('top-controls').style.display = 'none';
 
             // 禁用角色按钮的生成棋子功能（点击不生成棋子）
             document.querySelectorAll('.player-btn').forEach(btn => {
@@ -1365,7 +1417,11 @@
         currentTool = tool;
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('btn-' + tool).classList.add('active');
-        mapFrame.style.cursor = (tool === 'move') ? (isLocked ? 'default' : 'grab') : 'crosshair';
+        if (tool === 'move') {
+            mapFrame.style.cursor = (isDM && isLocked) ? 'default' : 'grab';
+        } else {
+            mapFrame.style.cursor = 'crosshair';
+        }
         // 重置矩形起始点
         rectStartPoint = null;
     }
@@ -1398,7 +1454,8 @@
     mapFrame.onmousedown = (e) => {
         if (e.target.classList.contains('token')) return;
         if (currentTool === 'move') {
-            if (isLocked || !isDM) return;
+            if (isDM && isLocked) return;
+            if (!isDM && !playerViewingMapId) return; // 玩家未选择地图时不允许
             isDraggingMap = true;
             startX = e.clientX - originX;
             startY = e.clientY - originY;
@@ -1422,7 +1479,7 @@
     };
 
     window.onmousemove = (e) => {
-        if (isDraggingMap && isDM) {
+        if (isDraggingMap) {
             originX = e.clientX - startX;
             originY = e.clientY - startY;
             updateTransform();
@@ -1488,9 +1545,11 @@
     };
 
     window.onmouseup = (e) => {
-        if (isDraggingMap && isDM) {
+        if (isDraggingMap) {
+            if (isDM) {
                 socket.emit('map:transform', { scale, originX, originY });
                 markDirty();
+            }
         }
 
         // 矩形工具：绘制矩形
@@ -1528,28 +1587,36 @@
         isDraggingMap = false;
         isPainting = false;
         lastDrawPoint = null;
-        if (currentTool === 'move' && !isLocked && isDM) mapFrame.style.cursor = 'grab';
+        if (currentTool === 'move') {
+            if (isDM && !isLocked) mapFrame.style.cursor = 'grab';
+            else if (!isDM && playerViewingMapId) mapFrame.style.cursor = 'grab';
+        }
     };
 
     mapFrame.onwheel = (e) => {
-        if (isLocked || !isDM) return;
+        if (isDM && isLocked) return;
+        if (!isDM && !playerViewingMapId) return;
         e.preventDefault();
         scale *= (e.deltaY > 0 ? 0.9 : 1.1);
         scale = Math.min(Math.max(0.1, scale), 5);
         updateTransform();
+        if (isDM) {
             socket.emit('map:transform', { scale, originX, originY });
             markDirty();
+        }
     };
 
     zoomSlider.oninput = (e) => {
-        if (!isDM) return;
-        if (!isLocked) {
-            scale = parseFloat(e.target.value);
-            updateTransform();
-                socket.emit('map:transform', { scale, originX, originY });
-                markDirty();
-        } else {
+        if (isDM && isLocked) {
             zoomSlider.value = scale;
+            return;
+        }
+        if (!isDM && !playerViewingMapId) return;
+        scale = parseFloat(e.target.value);
+        updateTransform();
+        if (isDM) {
+            socket.emit('map:transform', { scale, originX, originY });
+            markDirty();
         }
     };
 
@@ -1585,8 +1652,9 @@
 
         // 拖动逻辑
         token.onmousedown = (e) => {
-            // 玩家只能拖动自己颜色的棋子
+            // 玩家只能拖动自己颜色的棋子，且必须在 DM 活跃地图上
             if (!isDM && userColor !== color) return;
+            if (!isDM && playerViewingMapId !== dmActiveMapId) return;
 
             e.stopPropagation(); e.preventDefault();
             let tsX = e.clientX - token.offsetLeft * scale;
@@ -1622,6 +1690,7 @@
     function spawnToken(color) {
         // DM 可以生成所有，玩家只能生成自己的
         if (!isDM && userColor !== color) return;
+        if (!isDM && playerViewingMapId !== dmActiveMapId) return;
 
         const rect = mapFrame.getBoundingClientRect();
         const x = (rect.width/2 - originX)/scale - 18;
@@ -1754,6 +1823,12 @@
     let currentMapId = null; // 当前加载的地图 ID
     let isDirty = false;     // 是否有未保存的变更
     let autoSaveInterval = null; // 自动保存定时器
+
+    // --- 玩家独立地图浏览 ---
+    let playerViewingMapId = null;  // 玩家当前查看的地图 ID
+    let dmActiveMapId = null;       // DM 当前编辑的地图 ID
+    const mapDataCache = {};        // { mapId: base64 } 缓存已加载的地图图片
+    const playerTransforms = {};    // { mapId: { scale, originX, originY } }
 
     // 标记为脏（有未保存的变更）
     function markDirty() {
@@ -1913,6 +1988,53 @@
         container.appendChild(emptySlot);
     }
 
+    // --- 玩家地图列表渲染 ---
+    function renderPlayerMapSlots() {
+        const container = document.getElementById('player-map-slots');
+        if (!container) return;
+        container.innerHTML = '';
+
+        localSavedMaps.forEach((map) => {
+            const slot = document.createElement('div');
+            slot.className = 'player-map-slot';
+            if (map.id === playerViewingMapId) {
+                slot.classList.add('active');
+            }
+
+            const img = document.createElement('img');
+            img.src = map.thumbnail;
+            slot.appendChild(img);
+
+            // DM 活跃地图标识（红点）
+            if (map.id === dmActiveMapId) {
+                const badge = document.createElement('div');
+                badge.className = 'dm-active-badge';
+                badge.title = 'DM 当前地图';
+                slot.appendChild(badge);
+            }
+
+            slot.onclick = () => playerLoadMap(map.id);
+            container.appendChild(slot);
+        });
+    }
+
+    // 玩家点击地图缩略图加载地图
+    function playerLoadMap(mapId) {
+        if (isDM) return;
+
+        // 保存当前地图的 transform
+        if (playerViewingMapId) {
+            playerTransforms[playerViewingMapId] = { scale, originX, originY };
+        }
+
+        playerViewingMapId = mapId;
+        socket.emit('player:viewMap', mapId);
+        socket.emit('player:loadMap', mapId);
+
+        // 更新侧边栏高亮
+        renderPlayerMapSlots();
+    }
+
     function updateSaveButtonVisibility() {
         const saveBtn = document.getElementById('save-map-btn');
         const lockButton = document.getElementById('lock-btn');
@@ -1992,37 +2114,40 @@
         // 【修复】：先清空当前棋子，防止重复渲染
         mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
 
-        // 恢复地图、缩放、笔迹（与之前一致）
-        if (gs.mapData) {
-            loadMapFromData(gs.mapData, () => {
-                if (gs.drawings) {
-                    restoreDrawings(gs.drawings);
-                    localDrawings = [...gs.drawings];
-                }
-            });
-        }
-        if (gs.mapTransform) {
-            scale = gs.mapTransform.scale;
-            originX = gs.mapTransform.originX;
-            originY = gs.mapTransform.originY;
-            updateTransform();
-        }
-        if (gs.isLocked !== undefined) {
-            isLocked = gs.isLocked;
-            updateLockButton();
-        }
+        if (isDM) {
+            // DM: 恢复地图、缩放、笔迹（与之前一致）
+            if (gs.mapData) {
+                loadMapFromData(gs.mapData, () => {
+                    if (gs.drawings) {
+                        restoreDrawings(gs.drawings);
+                        localDrawings = [...gs.drawings];
+                    }
+                });
+            }
+            if (gs.mapTransform) {
+                scale = gs.mapTransform.scale;
+                originX = gs.mapTransform.originX;
+                originY = gs.mapTransform.originY;
+                updateTransform();
+            }
+            if (gs.isLocked !== undefined) {
+                isLocked = gs.isLocked;
+                updateLockButton();
+            }
 
-        // 恢复玩家棋子
-        if (gs.tokens) {
-            Object.keys(gs.tokens).forEach(color => {
-                createTokenElement(color, gs.tokens[color].x, gs.tokens[color].y);
-            });
-        }
+            // 恢复玩家棋子
+            if (gs.tokens) {
+                Object.keys(gs.tokens).forEach(color => {
+                    createTokenElement(color, gs.tokens[color].x, gs.tokens[color].y);
+                });
+            }
 
-        // 恢复 NPC
-        if (gs.npcs) {
-            gs.npcs.forEach(npc => createNPCElement(npc.id, npc.x, npc.y, npc.color));
+            // 恢复 NPC
+            if (gs.npcs) {
+                gs.npcs.forEach(npc => createNPCElement(npc.id, npc.x, npc.y, npc.color));
+            }
         }
+        // 玩家不自动加载地图，通过侧边栏缩略图手动选择
 
         // 恢复笔记
         if (gs.notes) {
@@ -2041,10 +2166,15 @@
             });
         }
 
-        // 恢复地图存档槽（DM 始终渲染，即使为空也显示一个空槽位）
+        // 恢复地图存档槽
+        localSavedMaps = gs.savedMaps || [];
+        dmActiveMapId = gs.activeMapId || null;
+
         if (isDM) {
-            localSavedMaps = gs.savedMaps || [];
             renderMapSlots();
+        } else {
+            // 玩家渲染地图缩略图列表
+            renderPlayerMapSlots();
         }
 
         // 更新保存按钮可见性
@@ -2085,20 +2215,84 @@
         alert(message);
     });
 
+    // DM 仍接收自己的 map:load 回显（如有需要），玩家不再接收
     socket.on('map:load', (data) => {
-        loadMapFromData(data);
+        if (isDM) loadMapFromData(data);
     });
 
+    // 玩家不再接收 DM 的 transform（各自独立控制）
     socket.on('map:transform', (data) => {
-        scale = data.scale;
-        originX = data.originX;
-        originY = data.originY;
-        updateTransform();
+        if (isDM) {
+            scale = data.scale;
+            originX = data.originX;
+            originY = data.originY;
+            updateTransform();
+        }
     });
 
+    // 锁定现在是 DM 本地功能
     socket.on('map:lock', (locked) => {
-        isLocked = locked;
-        updateLockButton();
+        if (isDM) {
+            isLocked = locked;
+            updateLockButton();
+        }
+    });
+
+    // --- 玩家地图数据接收 ---
+    socket.on('player:mapData', (data) => {
+        if (isDM) return;
+
+        // 缓存地图图片
+        mapDataCache[data.mapId] = data.mapData;
+
+        // 清空当前棋子和画布
+        mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 加载地图
+        loadMapFromData(data.mapData, () => {
+            if (data.drawings) {
+                restoreDrawings(data.drawings);
+                localDrawings = [...data.drawings];
+            }
+        });
+
+        // 恢复棋子
+        if (data.tokens) {
+            Object.keys(data.tokens).forEach(color => {
+                createTokenElement(color, data.tokens[color].x, data.tokens[color].y);
+            });
+        }
+
+        // 恢复 NPC
+        if (data.npcs) {
+            data.npcs.forEach(npc => {
+                createNPCElement(npc.id, npc.x, npc.y, npc.color);
+            });
+        }
+
+        // 恢复该地图的 transform（客户端本地存储）
+        const savedTransform = playerTransforms[data.mapId];
+        if (savedTransform) {
+            scale = savedTransform.scale;
+            originX = savedTransform.originX;
+            originY = savedTransform.originY;
+        } else {
+            scale = 1; originX = 0; originY = 0;
+        }
+        updateTransform();
+
+        // 设置 grab 光标
+        if (currentTool === 'move') mapFrame.style.cursor = 'grab';
+    });
+
+    // --- DM 切换地图通知 ---
+    socket.on('dm:mapSwitched', (data) => {
+        dmActiveMapId = data.activeMapId;
+        if (!isDM) {
+            renderPlayerMapSlots();
+            addSystemMessage('DM 切换了地图');
+        }
     });
 
     socket.on('token:spawn', (data) => {
@@ -2211,26 +2405,38 @@
 
     // --- 地图存档 Socket 事件 ---
     socket.on('map:saved', (data) => {
-        // 记录当前地图 ID，用于自动保存
-        currentMapId = data.id;
-        isDirty = false;  // 重置脏标记
+        if (isDM) {
+            // DM: 记录当前地图 ID，用于自动保存
+            currentMapId = data.id;
+            isDirty = false;
+        }
+
+        dmActiveMapId = data.id;
 
         if (data.isUpdate) {
             // 更新现有槽位的缩略图
-            localSavedMaps[data.slotIndex].thumbnail = data.thumbnail;
+            if (localSavedMaps[data.slotIndex]) {
+                localSavedMaps[data.slotIndex].thumbnail = data.thumbnail;
+            }
+            if (isDM) {
+                showDmToast('✓ 地图更新成功');
+            }
             addSystemMessage('DM 更新了地图存档');
-            showDmToast('✓ 地图更新成功');
         } else {
             // 添加新槽位
             localSavedMaps.push({ id: data.id, thumbnail: data.thumbnail });
+            if (isDM) {
+                showDmToast('✓ 地图保存成功');
+            }
             addSystemMessage('DM 保存了一张新地图');
-            showDmToast('✓ 地图保存成功');
         }
-        renderMapSlots();
 
-        // 启动自动保存
+        // 更新对应角色的地图槽位 UI
         if (isDM) {
+            renderMapSlots();
             startAutoSave();
+        } else {
+            renderPlayerMapSlots();
         }
     });
 
@@ -2239,9 +2445,11 @@
     });
 
     socket.on('map:loadedSaved', (archive) => {
+        if (!isDM) return; // 现在仅 DM 接收此事件
+
         // 记录当前地图 ID，用于自动保存
         currentMapId = archive.id;
-        isDirty = false;  // 重置脏标记
+        isDirty = false;
 
         // 清空当前棋子和 NPC
         mapContainer.querySelectorAll('.token').forEach(t => t.remove());
@@ -2249,7 +2457,6 @@
 
         // 加载地图
         loadMapFromData(archive.mapData, () => {
-            // 恢复笔迹
             if (archive.drawings) {
                 restoreDrawings(archive.drawings);
                 localDrawings = [...archive.drawings];
@@ -2277,25 +2484,38 @@
             });
         }
 
-        addSystemMessage('DM 读取了一张地图');
         showDmToast('✓ 地图读取成功');
-
-        // 启动自动保存
-        if (isDM) {
-            startAutoSave();
-        }
+        startAutoSave();
     });
 
     socket.on('map:deletedSaved', (mapId) => {
-        // 如果删除的是当前地图，清空 currentMapId
-        if (currentMapId === mapId) {
-            currentMapId = null;
-            isDirty = false;
+        if (isDM) {
+            if (currentMapId === mapId) {
+                currentMapId = null;
+                isDirty = false;
+            }
+            showDmToast('✓ 地图删除成功');
+        } else {
+            // 玩家：如果正在查看被删除的地图，重置视图
+            if (playerViewingMapId === mapId) {
+                playerViewingMapId = null;
+                mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                mapImg.style.display = 'none';
+            }
+            // 清理缓存
+            delete mapDataCache[mapId];
+            delete playerTransforms[mapId];
         }
+
         localSavedMaps = localSavedMaps.filter(m => m.id !== mapId);
-        renderMapSlots();
+
+        if (isDM) {
+            renderMapSlots();
+        } else {
+            renderPlayerMapSlots();
+        }
         addSystemMessage('DM 删除了一张地图');
-        showDmToast('✓ 地图删除成功');
     });
 
     // 地图状态更新（非静默模式时触发）

@@ -2461,3 +2461,125 @@ socket.on('map:listUpdated', (data) => {
 - **绘图同步**：绘图使用地图坐标，在不同 transform 下显示正确
 - **性能**：缩略图可使用降采样或懒加载优化
 - **存储**：`playerMapTransforms` 只在客户端内存，刷新后重置
+
+---
+
+## 第十三阶段（修订版）：玩家独立地图浏览与缩放
+
+> 替代上方原始 13 阶段方案。核心变更：服务端追踪每个玩家正在查看的地图，实时事件过滤广播。
+
+### 13R.1 核心设计变更
+
+| 原方案 | 修订方案 |
+|--------|----------|
+| Join 时发送所有 mapData | Join 仅发 `[{id, thumbnail}]`，按需加载 |
+| 客户端过滤 transform 广播 | 服务端过滤所有实时事件（token/npc/draw） |
+| 跟随DM模式 | 移除跟随概念，玩家完全独立 |
+| transform 广播给所有人 | transform 不再广播，各端独立控制 |
+
+### 13R.2 服务端变更
+
+#### 新增状态
+
+```javascript
+gameState.activeMapId = null;  // DM 当前编辑的地图 ID
+
+// 每个 player 新增 currentMapId
+gameState.players.set(socketId, { name, role, color, currentMapId: null });
+```
+
+#### 过滤广播函数
+
+```javascript
+function broadcastToMapViewers(excludeSocketId, event, data) {
+    if (!gameState.activeMapId) return;
+    gameState.players.forEach((player, socketId) => {
+        if (socketId !== excludeSocketId &&
+            player.currentMapId === gameState.activeMapId) {
+            io.to(socketId).emit(event, data);
+        }
+    });
+}
+```
+
+#### 改为过滤广播的事件
+
+`token:spawn`, `token:move`, `token:clearAll`, `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll`, `draw:path`, `draw:clear`
+
+全部从 `socket.broadcast.emit` 改为 `broadcastToMapViewers(socket.id, event, data)`
+
+#### 不再广播的事件
+
+- `map:transform` → 不广播（玩家独立控制缩放）
+- `map:load` → 不广播（DM 上传新地图不强制切换玩家视图）
+
+#### 新增事件
+
+- `player:viewMap(mapId)` → 更新 player.currentMapId
+- `player:loadMap(mapId)` → 返回完整地图数据给请求者
+  - 活跃地图读 gameState（最新），非活跃读 savedMaps 存档
+  - 响应: `player:mapData { mapId, mapData, tokens, npcs, drawings }`（不含 transform）
+- `dm:mapSwitched { activeMapId }` → DM 切换地图时广播给所有人
+
+#### 修改的事件
+
+- `map:loadSaved` → 仅回复 DM（socket.emit），更新 activeMapId，广播 dm:mapSwitched
+- `map:save` → 设置 activeMapId，其余不变
+- `joinSuccess` → 新增 activeMapId 字段
+
+### 13R.3 客户端变更
+
+#### 新增变量
+
+```javascript
+let playerViewingMapId = null;
+const mapDataCache = {};        // { mapId: base64 }
+const playerTransforms = {};    // { mapId: { scale, originX, originY } }
+```
+
+#### 玩家地图侧边栏
+
+HTML: `#section-player-maps.player-only`，2列网格缩略图
+- 绿色边框 = 当前查看
+- 红色角标 = DM 活跃地图
+- 无删除按钮、无上传槽位
+
+#### 玩家地图切换
+
+```javascript
+function playerLoadMap(mapId) {
+    if (playerViewingMapId) {
+        playerTransforms[playerViewingMapId] = { scale, originX, originY };
+    }
+    playerViewingMapId = mapId;
+    socket.emit('player:viewMap', mapId);
+    socket.emit('player:loadMap', mapId);
+}
+```
+
+#### 启用玩家缩放/平移
+
+- `mapFrame.onwheel`: 移除 `!isDM` 守卫，玩家允许缩放，但不 emit transform
+- `mapFrame.onmousedown` move 模式: 移除 `!isDM` 守卫，允许拖动
+- `zoomSlider`: 玩家可用
+- DM 的操作不变（仍 emit transform + markDirty）
+
+#### Socket 事件处理
+
+- 移除 `map:transform` 监听（玩家不再接收 DM 的 transform）
+- 移除 `map:load` 监听（玩家不再接收 DM 的地图上传）
+- 新增 `player:mapData` 处理（加载地图 + 恢复棋子/NPC/绘图 + 恢复本地 transform）
+- 新增 `dm:mapSwitched` 处理（更新侧边栏 DM 活跃标识）
+- `map:loadedSaved` 仅 DM 处理
+- `map:saved/deletedSaved` 所有人处理（更新侧边栏缩略图）
+
+### 13R.4 验证清单
+
+1. DM 上传并保存 2+ 张地图 → 玩家侧边栏显示缩略图
+2. 玩家点击缩略图 → 地图加载，含棋子/NPC/绘图
+3. DM 在地图A移动棋子 → 地图A的玩家看到，地图B的玩家看不到
+4. 玩家缩放/平移 → DM 不受影响，其他玩家不受影响
+5. 玩家切换地图 → transform 保存并恢复
+6. DM 保存新地图 → 玩家侧边栏更新
+7. DM 删除玩家正在看的地图 → 玩家视图优雅处理
+8. 新玩家中途加入 → 收到缩略图列表，可加载任意地图
