@@ -2096,6 +2096,7 @@
 
     function loadSavedMap(mapId) {
         if (!isDM) return;
+        switchTab('map');
         socket.emit('map:loadSaved', mapId);
     }
 
@@ -2171,6 +2172,7 @@
     // 玩家点击地图缩略图加载地图
     function playerLoadMap(mapId) {
         if (isDM) return;
+        switchTab('map');
 
         // 保存当前地图的 transform
         if (playerViewingMapId) {
