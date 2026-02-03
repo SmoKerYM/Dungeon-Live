@@ -12,10 +12,11 @@
 ## ✨ 功能特性
 
 ### 🗺️ 地图系统
-- **实时地图上传与同步** - DM 可上传地图图片，所有玩家实时查看
-- **地图缩放与平移** - DM 可自由缩放/拖动地图，玩家跟随视图
+- **实时地图上传** - DM 可上传地图图片，保存为地图存档
+- **地图缩放与平移** - DM 和玩家均可自由缩放/拖动地图，各自独立控制
+- **玩家独立地图浏览** - 玩家可通过侧边栏缩略图自主切换查看不同地图
 - **地图存档管理** - 支持保存多张地图状态，快速切换场景
-- **自动状态保存** - 地图状态变更自动保存，无需手动操作
+- **智能事件过滤** - 棋子/NPC/绘图等实时事件仅同步给查看 DM 活跃地图的玩家
 
 ### 🎭 角色与权限
 - **DM/玩家双角色系统** - DM 拥有完整控制权，玩家权限受限
@@ -37,14 +38,16 @@
 
 ### 📋 角色卡系统
 - **D&D 5e 标准角色卡** - 支持六大属性、豁免检定、技能
+- **特质记录** - 支持添加多条角色特质（名称+详细描述）
 - **熟练项加值** - 自动计算熟练项加成
 - **数据持久化** - 角色卡保存到 JSON 文件
 - **自动加载** - 玩家自动加载同名角色卡
 
 ### 📝 共享笔记
 - **实时协作编辑** - 所有用户可同时编辑笔记
+- **登场人物记录** - 右侧表格记录人物名字和信息，支持换行，独立持久化
 - **防抖同步** - 500ms 防抖减少网络流量
-- **持久化存储** - 笔记保存到文本文件
+- **持久化存储** - 笔记和人物记录分别保存到文件
 
 ### 🎲 骰子系统
 - **标准骰子集** - D4, D6, D8, D10, D12, D20, D100
@@ -115,16 +118,17 @@ npm start
 - **地图锁定**：点击 🔓 按钮锁定/解锁地图
 
 #### 玩家操作
-- **查看地图**：只能查看，不能缩放/平移
-- **移动棋子**：只能拖动自己颜色的棋子
+- **浏览地图**：通过侧边栏缩略图自主切换查看不同地图
+- **缩放/平移**：自由缩放和拖动地图，每张地图独立记忆视角
+- **移动棋子**：只能在 DM 活跃地图上拖动自己颜色的棋子
 - **生成棋子**：点击侧边栏自己颜色的按钮
 - **投掷骰子**：点击右侧骰子栏
 - **编辑角色卡**：切换到角色卡标签页
 
 ### 标签页系统
 - **地图**：主游戏界面，显示地图和棋子
-- **笔记**：共享笔记编辑区域
-- **角色卡**：角色卡创建和编辑界面
+- **笔记**：左侧共享笔记 + 右侧登场人物记录表
+- **角色卡**：角色卡创建和编辑界面（含特质记录）
 
 ## 🏗️ 项目结构
 
@@ -133,16 +137,15 @@ coc_app/
 ├── server.js              # 主服务器文件 (Express + Socket.IO)
 ├── package.json           # 项目依赖配置
 ├── README.md             # 项目说明文档
-├── PLAN.md               # 详细实施计划 (12阶段)
+├── PLAN.md               # 详细实施计划
 ├── public/               # 静态文件目录
 │   ├── index.html        # 登录/注册页面
-│   ├── game.html         # 主游戏界面 (2636行)
-│   ├── css/              # 样式文件目录
-│   └── js/               # JavaScript 文件目录
+│   └── game.html         # 主游戏界面 (CSS+JS 内联)
 ├── data/                 # 数据存储目录
-│   ├── characters.json   # 角色卡数据 (JSON格式)
-│   └── notes.txt         # 共享笔记内容
-└── coc_app.html          # 原始单页面版本
+│   ├── characters.json        # 角色卡数据 (JSON格式)
+│   ├── characters_notes.json  # 登场人物记录 (JSON格式)
+│   └── notes.txt              # 共享笔记内容
+└── images/               # 地图图片目录 (gitignored)
 ```
 
 ## 🔧 技术架构
@@ -169,7 +172,7 @@ coc_app/
 ```javascript
 {
   dm: { socketId, name },
-  players: Map<socketId, { name, role, color }>,
+  players: Map<socketId, { name, role, color, currentMapId }>,
   mapData: "base64_string",
   mapTransform: { scale, originX, originY },
   isLocked: boolean,
@@ -177,7 +180,9 @@ coc_app/
   drawings: Array<DrawingData>,
   npcs: Array<{ id, x, y, color }>,
   notes: "string",
-  savedMaps: Array<MapArchive>
+  characterNotes: Array<{ name, info }>,
+  savedMaps: Array<MapArchive>,
+  activeMapId: "map_xxx"
 }
 ```
 
@@ -196,7 +201,8 @@ coc_app/
     charisma: 0       // 魅力
   },
   savingThrows: ["dexterity", "intelligence"],  // 最多2个
-  skills: ["stealth", "perception"]             // 最多4个
+  skills: ["stealth", "perception"],            // 最多4个
+  feats: [{ name: "特质名", description: "详细描述" }]
 }
 ```
 
@@ -212,6 +218,9 @@ coc_app/
 | `token:move` | `{ color, x, y }` | 移动棋子 |
 | `draw:path` | `DrawingData` | 绘图操作 |
 | `character:save` | `CharacterData` | 保存角色卡 |
+| `characterNotes:update` | `[{name, info}]` | 更新登场人物记录 |
+| `player:viewMap` | `mapId` | 玩家切换查看地图 |
+| `player:loadMap` | `mapId` | 玩家请求加载地图数据 |
 
 ### 服务端 → 客户端
 | 事件 | 数据 | 说明 |
@@ -222,6 +231,9 @@ coc_app/
 | `token:move` | `{ color, x, y }` | 棋子移动同步 |
 | `dice:result` | `{ player, sides, result }` | 骰子结果 |
 | `character:loaded` | `CharacterData` | 角色卡加载完成 |
+| `characterNotes:sync` | `[{name, info}]` | 登场人物记录同步 |
+| `player:mapData` | `{mapId, mapData, ...}` | 玩家请求的地图数据 |
+| `dm:mapSwitched` | `{activeMapId}` | DM 切换了活跃地图 |
 
 ## 🚢 部署选项
 
@@ -265,10 +277,11 @@ railway up
 
 ## 📈 性能优化
 
-- **增量更新**：地图状态变更时只同步变化部分
-- **防抖处理**：笔记编辑使用 500ms 防抖
+- **按需加载**：玩家地图数据按需请求，避免一次性传输所有地图
+- **事件过滤**：实时事件仅发送给查看活跃地图的玩家，减少无效广播
+- **防抖处理**：笔记和人物记录编辑使用 500ms 防抖
 - **缩略图生成**：地图存档使用压缩缩略图
-- **脏标记检测**：避免不必要的状态保存
+- **客户端缓存**：玩家地图数据和视角变换本地缓存，切换时无需重新加载
 
 ## 🐛 故障排除
 
