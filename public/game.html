@@ -2306,6 +2306,19 @@
             notesTextarea.value = gs.notes;
         }
 
+        // 回放聊天历史（玩家聊天 + 骰子结果，服务端限制最多 100 条）
+        if (Array.isArray(gs.chatHistory) && gs.chatHistory.length > 0) {
+            chatMessages.innerHTML = '';
+            gs.chatHistory.forEach(entry => {
+                if (entry.type === 'chat') {
+                    addChatMessage(entry.name, entry.role, entry.message);
+                } else if (entry.type === 'dice') {
+                    const who = entry.role === 'DM' ? 'DM' : entry.name;
+                    addSystemMessage(`${who} 投掷了 D${entry.sides}，结果是 ${entry.result}`);
+                }
+            });
+        }
+
         // 恢复人物记录
         localCharacterNotes = gs.characterNotes || [];
         renderCharacterNotes();

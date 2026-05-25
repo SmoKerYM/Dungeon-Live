@@ -11,6 +11,11 @@ const CHARACTERS_FILE = process.env.NODE_ENV === 'production' ? '/data/character
 // 人物记录文件路径
 const CHARACTERS_NOTES_FILE = process.env.NODE_ENV === 'production'
   ? '/data/characters_notes.json' : './data/characters_notes.json';
+// 聊天历史文件路径
+const CHAT_HISTORY_FILE = process.env.NODE_ENV === 'production'
+  ? '/data/chat_history.json' : './data/chat_history.json';
+// 聊天历史最大保留条数
+const MAX_CHAT_HISTORY = 100;
 
 // 读取笔记
 function loadNotes() {
@@ -61,6 +66,44 @@ function saveCharacterNotes(data) {
   } catch (err) {
     console.error('保存人物记录失败:', err);
   }
+}
+
+// 读取聊天历史
+function loadChatHistory() {
+  try {
+    if (fs.existsSync(CHAT_HISTORY_FILE)) {
+      return JSON.parse(fs.readFileSync(CHAT_HISTORY_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取聊天历史失败:', err);
+  }
+  return [];
+}
+
+// 保存聊天历史
+function saveChatHistory(data) {
+  try {
+    const dir = path.dirname(CHAT_HISTORY_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CHAT_HISTORY_FILE, JSON.stringify(data), 'utf8');
+  } catch (err) {
+    console.error('保存聊天历史失败:', err);
+  }
+}
+
+// 追加一条聊天/骰子记录到历史（自动截断 + debounce 落盘）
+let chatSaveTimer = null;
+function appendChatHistory(entry) {
+  gameState.chatHistory.push(entry);
+  if (gameState.chatHistory.length > MAX_CHAT_HISTORY) {
+    gameState.chatHistory.splice(0, gameState.chatHistory.length - MAX_CHAT_HISTORY);
+  }
+  clearTimeout(chatSaveTimer);
+  chatSaveTimer = setTimeout(() => {
+    saveChatHistory(gameState.chatHistory);
+  }, 500);
 }
 
 // 读取所有角色卡
@@ -144,6 +187,7 @@ const gameState = {
   npcs: [],           // NPC 数据 { id, x, y }
   notes: loadNotes(), // 共享笔记（从文件加载）
   characterNotes: loadCharacterNotes(), // 登场人物记录 [{name, info}]
+  chatHistory: loadChatHistory(), // 聊天 + 骰子历史（最多 100 条，从文件加载）
   savedMaps: [],      // 地图存档
   activeMapId: null   // DM 当前编辑的地图 ID
 };
@@ -213,6 +257,7 @@ io.on('connection', (socket) => {
         npcs: gameState.npcs,
         notes: gameState.notes,
         characterNotes: gameState.characterNotes,
+        chatHistory: gameState.chatHistory,
         savedMaps: gameState.savedMaps.map(m => ({ id: m.id, thumbnail: m.thumbnail })),
         activeMapId: gameState.activeMapId
       }
@@ -428,6 +473,14 @@ io.on('connection', (socket) => {
       sides: data.sides,
       result: data.result
     };
+    appendChatHistory({
+      type: 'dice',
+      name: player.name,
+      role: player.role,
+      sides: data.sides,
+      result: data.result,
+      timestamp: Date.now()
+    });
     io.emit('dice:result', result);
   });
 
@@ -436,12 +489,14 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
 
-    io.emit('chat:message', {
+    const payload = {
       name: player.name,
       role: player.role,
       message,
       timestamp: Date.now()
-    });
+    };
+    appendChatHistory({ type: 'chat', ...payload });
+    io.emit('chat:message', payload);
   });
 
   // 笔记更新 (所有人可编辑)
