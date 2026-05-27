@@ -163,24 +163,7 @@
         #add-world-map-btn { background: #16a085; }
         #add-world-map-btn:hover { background: #1abc9c; }
 
-        .token {
-            position: absolute; width: 0; height: 0;
-            border-left: 18px solid transparent; border-right: 18px solid transparent;
-            border-bottom: 36px solid; cursor: move; z-index: 100;
-            filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(4px 4px 4px rgba(0,0,0,0.7));
-            will-change: transform, left, top;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
-        }
-        .token.disabled { cursor: not-allowed; }
-        .token.npc {
-            width: 30px; height: 30px;
-            background: #7f8c8d;
-            border: 2px solid #555;
-            border-radius: 4px;
-            border-left: none; border-right: none; border-bottom: none;
-            filter: drop-shadow(0 0 1px white) drop-shadow(0 0 2px black) drop-shadow(3px 3px 3px rgba(0,0,0,0.7));
-        }
+        /* .token / .token.npc DOM 样式已在 Phase 4 移除，棋子/NPC 改为 Konva.Circle */
 
         /* NPC 卡片 */
         .npc-card {
@@ -215,6 +198,18 @@
         .npc-color:active {
             transform: scale(0.95);
         }
+        /* 自定义颜色输入（调色盘按钮） */
+        input.npc-color {
+            padding: 0;
+            cursor: pointer;
+            -webkit-appearance: none;
+            overflow: hidden;
+            width: 28px; height: 28px;
+            border-radius: 4px;
+            border: 2px solid transparent;
+        }
+        input.npc-color::-webkit-color-swatch-wrapper { padding: 0; }
+        input.npc-color::-webkit-color-swatch { border: none; border-radius: 2px; }
 
         /* 右侧边栏（骰子） */
         #right-sidebar {
@@ -1095,11 +1090,12 @@
             <div class="npc-card">
                 <span class="player-name">NPC</span>
                 <div class="npc-color-selector">
-                    <div class="npc-color" style="background: #e74c3c;" onclick="spawnNPCWithColor('red')" title="红色"></div>
-                    <div class="npc-color" style="background: #072af1;" onclick="spawnNPCWithColor('darkblue')" title="深蓝"></div>
-                    <div class="npc-color" style="background: #1a1a1a;" onclick="spawnNPCWithColor('black')" title="黑色"></div>
-                    <div class="npc-color" style="background: #7f8c8d;" onclick="spawnNPCWithColor('gray')" title="灰色"></div>
-                    <div class="npc-color" style="background: #ecf0f1; border: 1px solid #bdc3c7;" onclick="spawnNPCWithColor('white')" title="白色"></div>
+                    <div class="npc-color" style="background: #e74c3c;" onclick="spawnNPCWithColor('#e74c3c')" title="红色"></div>
+                    <div class="npc-color" style="background: #072af1;" onclick="spawnNPCWithColor('#072af1')" title="深蓝"></div>
+                    <div class="npc-color" style="background: #1a1a1a;" onclick="spawnNPCWithColor('#1a1a1a')" title="黑色"></div>
+                    <div class="npc-color" style="background: #7f8c8d;" onclick="spawnNPCWithColor('#7f8c8d')" title="灰色（默认）"></div>
+                    <div class="npc-color" style="background: #ecf0f1; border: 1px solid #bdc3c7;" onclick="spawnNPCWithColor('#ecf0f1')" title="白色"></div>
+                    <input type="color" id="npc-custom-color-input" class="npc-color" value="#7f8c8d" title="自定义颜色">
                 </div>
             </div>
         </div>
@@ -1513,17 +1509,6 @@
             isLocked = savedGameState.isLocked;
             updateLockButton();
         }
-        if (savedGameState.tokens) {
-            Object.keys(savedGameState.tokens).forEach(color => {
-                createTokenElement(color, savedGameState.tokens[color].x, savedGameState.tokens[color].y);
-            });
-        }
-        // 恢复 NPC
-        if (savedGameState.npcs) {
-            savedGameState.npcs.forEach(npc => {
-                createNPCElement(npc.id, npc.x, npc.y, npc.color);
-            });
-        }
         // 恢复笔记
         if (savedGameState.notes) {
             notesTextarea.value = savedGameState.notes;
@@ -1612,8 +1597,7 @@
         reader.onload = (event) => {
             const data = event.target.result;
 
-            // 清空当前所有棋子、NPC、笔迹
-            mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+            // 清空旧地图系统的笔迹（世界 tokens/NPCs 独立于地图，不清除）
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             localDrawings = [];
 
@@ -1627,8 +1611,6 @@
             resetMap();
 
             socket.emit('map:load', data);
-            socket.emit('token:clearAll');
-            socket.emit('npc:clearAll');
             socket.emit('draw:clear');
         };
         reader.readAsDataURL(file);
@@ -1869,8 +1851,8 @@
         socket.emit('map:lock', isLocked);
     }
 
-    // --- 棋子系统 ---
-    // 颜色映射：与角色卡颜色保持一致
+    // --- 棋子系统（Phase 4：Konva.Circle，旧 DOM token 已移除） ---
+    // 玩家颜色 -> 十六进制（与侧边栏按钮颜色保持一致）
     const colorMap = {
         orange: '#e67e22',
         yellow: '#f1c40f',
@@ -1880,164 +1862,46 @@
         black: '#2c3e50'
     };
 
-    function createTokenElement(color, x, y) {
-        // 移除已存在的同色棋子
-        const existing = mapContainer.querySelectorAll(`.token[data-color="${color}"]`);
-        existing.forEach(t => mapContainer.removeChild(t));
-
-        const token = document.createElement('div');
-        token.className = 'token';
-        token.style.borderBottomColor = colorMap[color] || color;
-        token.setAttribute('data-color', color);
-        token.style.left = x + 'px';
-        token.style.top = y + 'px';
-
-        // 拖动逻辑
-        token.onmousedown = (e) => {
-            // 玩家只能拖动自己颜色的棋子，且必须在 DM 活跃地图上
-            if (!isDM && userColor !== color) return;
-            if (!isDM && playerViewingMapId !== dmActiveMapId) return;
-
-            e.stopPropagation(); e.preventDefault();
-            let tsX = e.clientX - token.offsetLeft * scale;
-            let tsY = e.clientY - token.offsetTop * scale;
-
-            const move = (me) => {
-                const newX = (me.clientX - tsX) / scale;
-                const newY = (me.clientY - tsY) / scale;
-                token.style.left = newX + 'px';
-                token.style.top = newY + 'px';
-            };
-
-            const stop = () => {
-                window.removeEventListener('mousemove', move);
-                window.removeEventListener('mouseup', stop);
-                // 发送位置更新
-                socket.emit('token:move', {
-                    color,
-                    x: parseFloat(token.style.left),
-                    y: parseFloat(token.style.top)
-                });
-                markDirty();
-            };
-
-            window.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', stop);
-        };
-
-        mapContainer.appendChild(token);
-        return token;
-    }
-
+    // 点击侧边栏玩家按钮 → 在世界视图中央生成棋子
     function spawnToken(color) {
-        // DM 可以生成所有，玩家只能生成自己的
         if (!isDM && userColor !== color) return;
-        if (!isDM && playerViewingMapId !== dmActiveMapId) return;
-
-        const rect = mapFrame.getBoundingClientRect();
-        const x = (rect.width/2 - originX)/scale - 18;
-        const y = (rect.height/2 - originY)/scale - 18;
-
-        createTokenElement(color, x, y);
-        socket.emit('token:spawn', { color, x, y });
-        markDirty();
+        // toggleWorldView 负责初始化 stage（container 可见后才能拿到正确尺寸）
+        if (!isWorldViewActive) toggleWorldView();
+        if (!konvaStage) return;
+        const s = konvaStage.scaleX();
+        const gx = Math.round((konvaStage.width() / 2 - konvaStage.x()) / s / GRID_SIZE);
+        const gy = Math.round((konvaStage.height() / 2 - konvaStage.y()) / s / GRID_SIZE);
+        socket.emit('token:spawn', { color, gridX: gx, gridY: gy });
     }
 
     function clearAllTokens() {
         if (!isDM) return;
-        // 只清除玩家棋子，不清除 NPC
-        mapContainer.querySelectorAll('.token:not(.npc)').forEach(t => mapContainer.removeChild(t));
         socket.emit('token:clearAll');
-        markDirty();
     }
 
-    // --- NPC 系统 ---
+    // --- NPC 系统（Phase 4：Konva.Circle） ---
     let npcCounter = 0;
 
-    // NPC 颜色映射
-    const npcColorMap = {
-        red: '#e74c3c',
-        darkblue: '#072af1',
-        black: '#1a1a1a',
-        gray: '#7f8c8d',
-        white: '#ecf0f1'
-    };
-
-    // 点击色块直接生成对应颜色的 NPC
+    // 点击色块 → 在世界视图中央生成对应颜色的 NPC
     function spawnNPCWithColor(color) {
         if (!isDM) return;
+        if (!isWorldViewActive) toggleWorldView();
+        if (!konvaStage) return;
         const id = 'npc_' + Date.now() + '_' + (npcCounter++);
-        const rect = mapFrame.getBoundingClientRect();
-        const x = (rect.width/2 - originX)/scale - 15;
-        const y = (rect.height/2 - originY)/scale - 15;
-
-        createNPCElement(id, x, y, color);
-        socket.emit('npc:spawn', { id, x, y, color });
-        markDirty();
+        const s = konvaStage.scaleX();
+        const gx = Math.round((konvaStage.width() / 2 - konvaStage.x()) / s / GRID_SIZE);
+        const gy = Math.round((konvaStage.height() / 2 - konvaStage.y()) / s / GRID_SIZE);
+        socket.emit('npc:spawn', { id, gridX: gx, gridY: gy, color });
     }
 
-    function createNPCElement(id, x, y, color = 'gray') {
-        const npc = document.createElement('div');
-        npc.className = 'token npc';
-        npc.setAttribute('data-npc-id', id);
-        npc.setAttribute('data-npc-color', color);
-        npc.style.left = x + 'px';
-        npc.style.top = y + 'px';
-        npc.style.background = npcColorMap[color] || color;
-        // 白色 NPC 需要深色边框
-        if (color === 'white') {
-            npc.style.border = '2px solid #bdc3c7';
-        }
-
-        // 拖动逻辑 (仅 DM)
-        npc.onmousedown = (e) => {
-            if (!isDM) return;
-            e.stopPropagation(); e.preventDefault();
-            let tsX = e.clientX - npc.offsetLeft * scale;
-            let tsY = e.clientY - npc.offsetTop * scale;
-
-            const move = (me) => {
-                const newX = (me.clientX - tsX) / scale;
-                const newY = (me.clientY - tsY) / scale;
-                npc.style.left = newX + 'px';
-                npc.style.top = newY + 'px';
-            };
-
-            const stop = () => {
-                window.removeEventListener('mousemove', move);
-                window.removeEventListener('mouseup', stop);
-                socket.emit('npc:move', {
-                    id,
-                    x: parseFloat(npc.style.left),
-                    y: parseFloat(npc.style.top)
-                });
-                markDirty();
-            };
-
-            window.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', stop);
-        };
-
-        // 双击删除 (仅 DM)
-        npc.ondblclick = (e) => {
-            if (!isDM) return;
-            e.stopPropagation();
-            mapContainer.removeChild(npc);
-            socket.emit('npc:remove', id);
-            markDirty();
-        };
-
-        mapContainer.appendChild(npc);
-        return npc;
-    }
-
-    
     function clearAllNPCs() {
         if (!isDM) return;
-        mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
         socket.emit('npc:clearAll');
-        markDirty();
     }
+
+    // 供 map:updateState 等旧地图系统读取（旧系统保留至 Phase 7）
+    function getCurrentTokens() { return {}; }
+    function getCurrentNPCs() { return []; }
 
     // --- DM Toast 通知系统 ---
     let toastTimeout = null;
@@ -2137,31 +2001,6 @@
             callback(thumbCanvas.toDataURL('image/jpeg', 0.6));
         };
         img.src = mapData;
-    }
-
-    function getCurrentTokens() {
-        const tokens = {};
-        mapContainer.querySelectorAll('.token:not(.npc)').forEach(t => {
-            const color = t.getAttribute('data-color');
-            tokens[color] = {
-                x: parseFloat(t.style.left),
-                y: parseFloat(t.style.top)
-            };
-        });
-        return tokens;
-    }
-
-    function getCurrentNPCs() {
-        const npcs = [];
-        mapContainer.querySelectorAll('.token.npc').forEach(t => {
-            npcs.push({
-                id: t.getAttribute('data-npc-id'),
-                x: parseFloat(t.style.left),
-                y: parseFloat(t.style.top),
-                color: t.getAttribute('data-npc-color')
-            });
-        });
-        return npcs;
     }
 
     function saveCurrentMap() {
@@ -2355,11 +2194,8 @@
         const gs = data.gameState;
         if (!gs) return;
 
-        // 【修复】：先清空当前棋子，防止重复渲染
-        mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
-
         if (isDM) {
-            // DM: 恢复地图、缩放、笔迹（与之前一致）
+            // DM: 恢复地图、缩放、笔迹（旧地图系统）
             if (gs.mapData) {
                 loadMapFromData(gs.mapData, () => {
                     if (gs.drawings) {
@@ -2377,18 +2213,6 @@
             if (gs.isLocked !== undefined) {
                 isLocked = gs.isLocked;
                 updateLockButton();
-            }
-
-            // 恢复玩家棋子
-            if (gs.tokens) {
-                Object.keys(gs.tokens).forEach(color => {
-                    createTokenElement(color, gs.tokens[color].x, gs.tokens[color].y);
-                });
-            }
-
-            // 恢复 NPC
-            if (gs.npcs) {
-                gs.npcs.forEach(npc => createNPCElement(npc.id, npc.x, npc.y, npc.color));
             }
         }
         // 玩家不自动加载地图，通过侧边栏缩略图手动选择
@@ -2441,11 +2265,19 @@
         // 更新保存按钮可见性
         updateSaveButtonVisibility();
 
-        // 恢复 Konva 世界状态（Phase 3）：拉取放置地图的图片资产，渲染在开启世界视图时触发
-        if (gs.world && Array.isArray(gs.world.placedMaps) && gs.world.placedMaps.length > 0) {
-            gs.world.placedMaps.forEach(pm => placedMapsData.push(pm));
-            const assetIds = [...new Set(gs.world.placedMaps.map(pm => pm.assetId))];
-            assetIds.forEach(assetId => socket.emit('mapAsset:fetch', assetId));
+        // 恢复 Konva 世界状态：拉取地图资产 + 初始化 tokens/npcs（渲染在开启世界视图时触发）
+        if (gs.world) {
+            if (Array.isArray(gs.world.placedMaps) && gs.world.placedMaps.length > 0) {
+                gs.world.placedMaps.forEach(pm => placedMapsData.push(pm));
+                const assetIds = [...new Set(gs.world.placedMaps.map(pm => pm.assetId))];
+                assetIds.forEach(assetId => socket.emit('mapAsset:fetch', assetId));
+            }
+            if (Array.isArray(gs.world.tokens)) {
+                gs.world.tokens.forEach(t => worldTokensData.push(t));
+            }
+            if (Array.isArray(gs.world.npcs)) {
+                gs.world.npcs.forEach(n => worldNpcsData.push(n));
+            }
         }
     });
 
@@ -2513,8 +2345,7 @@
         // 缓存地图图片
         mapDataCache[data.mapId] = data.mapData;
 
-        // 清空当前棋子和画布
-        mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+        // 清空画布（旧地图系统，tokens/NPCs 在世界视图中独立存在）
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // 加载地图
@@ -2524,20 +2355,6 @@
                 localDrawings = [...data.drawings];
             }
         });
-
-        // 恢复棋子
-        if (data.tokens) {
-            Object.keys(data.tokens).forEach(color => {
-                createTokenElement(color, data.tokens[color].x, data.tokens[color].y);
-            });
-        }
-
-        // 恢复 NPC
-        if (data.npcs) {
-            data.npcs.forEach(npc => {
-                createNPCElement(npc.id, npc.x, npc.y, npc.color);
-            });
-        }
 
         // 恢复该地图的 transform（客户端本地存储）
         const savedTransform = playerTransforms[data.mapId];
@@ -2563,74 +2380,74 @@
         }
     });
 
-    socket.on('token:spawn', (data) => {
-        createTokenElement(data.color, data.x, data.y);
+    // --- Phase 4 Socket 事件：世界 token/NPC 同步（Konva.Circle） ---
+    socket.on('token:spawn', ({ color, gridX, gridY }) => {
+        const idx = worldTokensData.findIndex(t => t.color === color);
+        if (idx !== -1) {
+            worldTokensData.splice(idx, 1);
+            const old = worldTokenNodes.get(color);
+            if (old) { old.destroy(); worldTokenNodes.delete(color); }
+        }
+        const tokenData = { color, gridX, gridY };
+        worldTokensData.push(tokenData);
+        if (dynamicLayer) renderWorldToken(tokenData);
     });
 
-    socket.on('token:move', (data) => {
-        const token = mapContainer.querySelector(`.token[data-color="${data.color}"]`);
-        if (token) {
-            token.style.left = data.x + 'px';
-            token.style.top = data.y + 'px';
+    socket.on('token:move', ({ color, gridX, gridY }) => {
+        const t = worldTokensData.find(t => t.color === color);
+        if (t) { t.gridX = gridX; t.gridY = gridY; }
+        const circle = worldTokenNodes.get(color);
+        if (circle) {
+            circle.position({ x: (gridX + 0.5) * GRID_SIZE, y: (gridY + 0.5) * GRID_SIZE });
+            if (dynamicLayer) dynamicLayer.batchDraw();
         }
     });
 
-    // socket.on('token:clearAll', () => {
-    //     mapContainer.querySelectorAll('.token').forEach(t => mapContainer.removeChild(t));
-    // });
-    // --- 修复后的清除玩家棋子逻辑 ---
     socket.on('token:clearAll', () => {
-        // 使用 :not(.npc) 过滤掉 NPC 棋子，只删除纯玩家棋子
-        const playerTokens = mapContainer.querySelectorAll('.token:not(.npc)');
-        playerTokens.forEach(t => {
-            if (mapContainer.contains(t)) {
-                mapContainer.removeChild(t);
-            }
-        });
-        console.log('已清除所有玩家棋子，保留 NPC');
-    });
-
-    // --- 确保 NPC 清除逻辑也是独立的 ---
-    socket.on('npc:clearAll', () => {
-        const npcTokens = mapContainer.querySelectorAll('.token.npc');
-        npcTokens.forEach(t => {
-            if (mapContainer.contains(t)) {
-                mapContainer.removeChild(t);
-            }
-        });
-        console.log('已清除所有 NPC 棋子');
+        worldTokensData.length = 0;
+        worldTokenNodes.forEach(node => node.destroy());
+        worldTokenNodes.clear();
+        if (dynamicLayer) dynamicLayer.batchDraw();
     });
 
     socket.on('token:remove', (color) => {
-        const token = mapContainer.querySelector(`.token[data-color="${color}"]`);
-        if (token) {
-            mapContainer.removeChild(token);
-        }
+        const idx = worldTokensData.findIndex(t => t.color === color);
+        if (idx !== -1) worldTokensData.splice(idx, 1);
+        const circle = worldTokenNodes.get(color);
+        if (circle) { circle.destroy(); worldTokenNodes.delete(color); }
+        if (dynamicLayer) dynamicLayer.batchDraw();
     });
 
-    // --- NPC Socket 事件 ---
-    socket.on('npc:spawn', (data) => {
-        createNPCElement(data.id, data.x, data.y, data.color);
+    socket.on('npc:spawn', ({ id, gridX, gridY, color }) => {
+        const npcData = { id, gridX, gridY, color };
+        worldNpcsData.push(npcData);
+        if (dynamicLayer) renderWorldNpc(npcData);
     });
 
-    socket.on('npc:move', (data) => {
-        const npc = mapContainer.querySelector(`.token.npc[data-npc-id="${data.id}"]`);
-        if (npc) {
-            npc.style.left = data.x + 'px';
-            npc.style.top = data.y + 'px';
+    socket.on('npc:move', ({ id, gridX, gridY }) => {
+        const n = worldNpcsData.find(n => n.id === id);
+        if (n) { n.gridX = gridX; n.gridY = gridY; }
+        const circle = worldNpcNodes.get(id);
+        if (circle) {
+            circle.position({ x: (gridX + 0.5) * GRID_SIZE, y: (gridY + 0.5) * GRID_SIZE });
+            if (dynamicLayer) dynamicLayer.batchDraw();
         }
     });
 
     socket.on('npc:remove', (id) => {
-        const npc = mapContainer.querySelector(`.token.npc[data-npc-id="${id}"]`);
-        if (npc) {
-            mapContainer.removeChild(npc);
-        }
+        const idx = worldNpcsData.findIndex(n => n.id === id);
+        if (idx !== -1) worldNpcsData.splice(idx, 1);
+        const circle = worldNpcNodes.get(id);
+        if (circle) { circle.destroy(); worldNpcNodes.delete(id); }
+        if (dynamicLayer) dynamicLayer.batchDraw();
     });
 
-    // socket.on('npc:clearAll', () => {
-    //     mapContainer.querySelectorAll('.token.npc').forEach(t => mapContainer.removeChild(t));
-    // });
+    socket.on('npc:clearAll', () => {
+        worldNpcsData.length = 0;
+        worldNpcNodes.forEach(node => node.destroy());
+        worldNpcNodes.clear();
+        if (dynamicLayer) dynamicLayer.batchDraw();
+    });
 
     socket.on('draw:path', (data) => {
         if (data.type === 'rect') {
@@ -2719,8 +2536,7 @@
         currentMapId = archive.id;
         isDirty = false;
 
-        // 清空当前棋子和 NPC
-        mapContainer.querySelectorAll('.token').forEach(t => t.remove());
+        // 清空旧地图系统画布（tokens/NPCs 在世界视图中，不受影响）
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // 加载地图
@@ -2738,20 +2554,6 @@
         originY = archive.mapTransform.originY;
         updateTransform();
 
-        // 恢复棋子
-        if (archive.tokens) {
-            Object.keys(archive.tokens).forEach(color => {
-                createTokenElement(color, archive.tokens[color].x, archive.tokens[color].y);
-            });
-        }
-
-        // 恢复 NPC
-        if (archive.npcs) {
-            archive.npcs.forEach(npc => {
-                createNPCElement(npc.id, npc.x, npc.y, npc.color);
-            });
-        }
-
         showDmToast('✓ 地图读取成功');
         startAutoSave();
     });
@@ -2764,10 +2566,9 @@
             }
             showDmToast('✓ 地图删除成功');
         } else {
-            // 玩家：如果正在查看被删除的地图，重置视图
+            // 玩家：如果正在查看被删除的地图，重置旧地图视图
             if (playerViewingMapId === mapId) {
                 playerViewingMapId = null;
-                mapContainer.querySelectorAll('.token').forEach(t => t.remove());
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 mapImg.style.display = 'none';
             }
@@ -3327,6 +3128,14 @@
     let mapAssetSeq = 0;
     const pendingAssetUpload = new Map(); // assetId -> callback（等待服务端 mapAsset:uploaded 后执行）
 
+    // ===== Phase 4 世界 token/NPC 状态 =====
+    const worldTokensData = [];          // [{ color, gridX, gridY }]（镜像 world.tokens）
+    const worldNpcsData = [];            // [{ id, gridX, gridY, color }]（镜像 world.npcs）
+    const worldTokenNodes = new Map();   // color -> Konva.Circle
+    const worldNpcNodes = new Map();     // id -> Konva.Circle
+    const TOKEN_RADIUS = GRID_SIZE * 0.4;
+    let hpTooltip = null;                // 共享 HP tooltip 节点
+
     function initKonvaWorld() {
         if (konvaStage) return;
         const rect = worldContainer.getBoundingClientRect();
@@ -3361,6 +3170,7 @@
         }).observe(worldContainer);
 
         onStageTransformChanged();
+        initHpTooltip();
     }
 
     function onStageWheel(e) {
@@ -3445,6 +3255,180 @@
         });
     }
 
+    // ===== Phase 4：世界 token/NPC Konva 渲染 =====
+
+    function initHpTooltip() {
+        if (hpTooltip) return;
+        const tag = new Konva.Tag({ fill: 'rgba(0,0,0,0.78)', cornerRadius: 4, pointerEnabled: false });
+        const text = new Konva.Text({
+            text: '', fill: 'white', fontSize: 12, padding: 5,
+            fontFamily: 'Segoe UI, sans-serif',
+        });
+        hpTooltip = new Konva.Label({ x: 0, y: 0, visible: false, listening: false });
+        hpTooltip.add(tag);
+        hpTooltip.add(text);
+        dynamicLayer.add(hpTooltip);
+    }
+
+    function getTokenHP(color) {
+        const curEl = document.getElementById(`hp-cur-${color}`);
+        const maxEl = document.getElementById(`hp-max-${color}`);
+        if (!curEl || !maxEl) return null;
+        const cur = curEl.textContent;
+        const max = maxEl.textContent;
+        if (cur === '_' || max === '_') return null;
+        return { cur, max };
+    }
+
+    function showTokenTooltip(color, circle) {
+        const hp = getTokenHP(color);
+        if (!hp || !hpTooltip) return;
+        const textNode = hpTooltip.getText();
+        textNode.text(`❤️ ${hp.cur} / ${hp.max}`);
+        const tw = textNode.width();
+        hpTooltip.position({
+            x: circle.x() - tw / 2,
+            y: circle.y() + TOKEN_RADIUS + 6,
+        });
+        hpTooltip.visible(true);
+        hpTooltip.moveToTop();
+        dynamicLayer.batchDraw();
+    }
+
+    function hideTokenTooltip() {
+        if (!hpTooltip) return;
+        hpTooltip.visible(false);
+        dynamicLayer.batchDraw();
+    }
+
+    function renderWorldToken(tokenData) {
+        // 移除已有同色节点
+        const existing = worldTokenNodes.get(tokenData.color);
+        if (existing) { existing.destroy(); worldTokenNodes.delete(tokenData.color); }
+
+        const cx = (tokenData.gridX + 0.5) * GRID_SIZE;
+        const cy = (tokenData.gridY + 0.5) * GRID_SIZE;
+        const fill = colorMap[tokenData.color] || tokenData.color;
+        const canDrag = isDM || (userColor === tokenData.color);
+
+        const circle = new Konva.Circle({
+            x: cx, y: cy,
+            radius: TOKEN_RADIUS,
+            fill,
+            stroke: 'rgba(0,0,0,0.55)',
+            strokeWidth: 2.5,
+            shadowColor: 'black',
+            shadowBlur: 6,
+            shadowOpacity: 0.5,
+            draggable: canDrag,
+            listening: true,
+        });
+
+        if (canDrag) {
+            // 开始拖动时立即显示 tooltip（hover 可能被 dragstart 打断）
+            circle.on('dragstart', () => showTokenTooltip(tokenData.color, circle));
+            // 拖动过程中 tooltip 跟随
+            circle.on('dragmove', () => {
+                if (!hpTooltip || !hpTooltip.visible()) return;
+                const tw = hpTooltip.getText().width();
+                hpTooltip.position({
+                    x: circle.x() - tw / 2,
+                    y: circle.y() + TOKEN_RADIUS + 6,
+                });
+                dynamicLayer.batchDraw();
+            });
+            circle.on('dragend', () => {
+                hideTokenTooltip();
+                const gx = Math.round((circle.x() - GRID_SIZE / 2) / GRID_SIZE);
+                const gy = Math.round((circle.y() - GRID_SIZE / 2) / GRID_SIZE);
+                circle.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+                dynamicLayer.batchDraw();
+                socket.emit('token:move', { color: tokenData.color, gridX: gx, gridY: gy });
+            });
+        }
+
+        circle.on('mouseenter', () => showTokenTooltip(tokenData.color, circle));
+        // 拖动时不触发 mouseleave 隐藏（isDragging() 为 true 时跳过）
+        circle.on('mouseleave', () => { if (!circle.isDragging()) hideTokenTooltip(); });
+
+        dynamicLayer.add(circle);
+        worldTokenNodes.set(tokenData.color, circle);
+        dynamicLayer.batchDraw();
+    }
+
+    function renderWorldNpc(npcData) {
+        const existing = worldNpcNodes.get(npcData.id);
+        if (existing) { existing.destroy(); worldNpcNodes.delete(npcData.id); }
+
+        const cx = (npcData.gridX + 0.5) * GRID_SIZE;
+        const cy = (npcData.gridY + 0.5) * GRID_SIZE;
+        const size = TOKEN_RADIUS * 2; // 与玩家棋子直径相同
+
+        // NPC 用圆角矩形 + "NPC" 标签，以 Group 承载，方便统一定位
+        const group = new Konva.Group({
+            x: cx, y: cy,
+            draggable: isDM,
+            listening: isDM,
+        });
+
+        const rect = new Konva.Rect({
+            x: -size / 2, y: -size / 2,
+            width: size, height: size,
+            cornerRadius: Math.round(size * 0.2),
+            fill: npcData.color || '#7f8c8d',
+            stroke: 'rgba(0,0,0,0.55)',
+            strokeWidth: 2.5,
+            shadowColor: 'black',
+            shadowBlur: 6,
+            shadowOpacity: 0.5,
+        });
+
+        const label = new Konva.Text({
+            x: -size / 2, y: -size / 2,
+            width: size, height: size,
+            text: 'NPC',
+            fontSize: Math.round(size * 0.28),
+            fontFamily: 'Segoe UI, sans-serif',
+            fontStyle: 'bold',
+            fill: 'rgba(255,255,255,0.92)',
+            align: 'center',
+            verticalAlign: 'middle',
+            listening: false,
+        });
+
+        group.add(rect);
+        group.add(label);
+
+        if (isDM) {
+            group.on('dragend', () => {
+                const gx = Math.round((group.x() - GRID_SIZE / 2) / GRID_SIZE);
+                const gy = Math.round((group.y() - GRID_SIZE / 2) / GRID_SIZE);
+                group.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+                dynamicLayer.batchDraw();
+                socket.emit('npc:move', { id: npcData.id, gridX: gx, gridY: gy });
+            });
+            // 双击删除
+            group.on('dblclick dbltap', () => {
+                socket.emit('npc:remove', npcData.id);
+            });
+        }
+
+        dynamicLayer.add(group);
+        worldNpcNodes.set(npcData.id, group);
+        dynamicLayer.batchDraw();
+    }
+
+    // 开启世界视图时一次性渲染所有待渲染的世界对象
+    function renderPendingWorldObjects() {
+        renderPendingPlacedMaps();
+        worldTokensData.forEach(t => {
+            if (!worldTokenNodes.has(t.color)) renderWorldToken(t);
+        });
+        worldNpcsData.forEach(n => {
+            if (!worldNpcNodes.has(n.id)) renderWorldNpc(n);
+        });
+    }
+
     function toggleWorldView() {
         isWorldViewActive = !isWorldViewActive;
         if (isWorldViewActive) {
@@ -3453,12 +3437,12 @@
             worldToggleBtn.textContent = '🗺️ 回到旧地图';
             if (!konvaStage) {
                 initKonvaWorld();
-                renderPendingPlacedMaps();
+                renderPendingWorldObjects();
             } else {
                 const r = worldContainer.getBoundingClientRect();
                 konvaStage.size({ width: r.width, height: r.height });
                 onStageTransformChanged();
-                renderPendingPlacedMaps();
+                renderPendingWorldObjects();
             }
         } else {
             worldContainer.style.display = 'none';
@@ -3817,6 +3801,12 @@
             overlay.lockBtn.classList.toggle('locked', isLocked);
             if (selectedPlacedMapId === id) setPlacedMapSelectionUI(id, true);
         }
+    });
+
+    // 自定义 NPC 颜色输入（change 而非 input，避免每次滑动都生成）
+    document.getElementById('npc-custom-color-input').addEventListener('change', (e) => {
+        if (!isDM) return;
+        spawnNPCWithColor(e.target.value);
     });
 
     socket.on('placedMap:removed', (id) => {

@@ -189,12 +189,15 @@ function saveMapAssets(data) {
 function loadWorld() {
   try {
     if (fs.existsSync(WORLD_FILE)) {
-      return JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8'));
+      if (!Array.isArray(data.tokens)) data.tokens = [];
+      if (!Array.isArray(data.npcs)) data.npcs = [];
+      return data;
     }
   } catch (err) {
     console.error('读取世界状态失败:', err);
   }
-  return { placedMaps: [] };
+  return { placedMaps: [], tokens: [], npcs: [] };
 }
 
 // 保存世界状态
@@ -239,9 +242,7 @@ const gameState = {
   mapData: null,      // Base64 地图数据
   mapTransform: { scale: 1, originX: 0, originY: 0 },
   isLocked: false,
-  tokens: {},         // color -> { x, y }
-  drawings: [],       // 绘图数据
-  npcs: [],           // NPC 数据 { id, x, y }
+  drawings: [],       // 绘图数据（旧地图系统，Phase 7 清理）
   notes: loadNotes(), // 共享笔记（从文件加载）
   characterNotes: loadCharacterNotes(), // 登场人物记录 [{name, info}]
   chatHistory: loadChatHistory(), // 聊天 + 骰子历史（最多 100 条，从文件加载）
@@ -310,16 +311,14 @@ io.on('connection', (socket) => {
         mapData: gameState.mapData,
         mapTransform: gameState.mapTransform,
         isLocked: gameState.isLocked,
-        tokens: gameState.tokens,
         players: playersWithHP,
         drawings: gameState.drawings,
-        npcs: gameState.npcs,
         notes: gameState.notes,
         characterNotes: gameState.characterNotes,
         chatHistory: gameState.chatHistory,
         savedMaps: gameState.savedMaps.map(m => ({ id: m.id, thumbnail: m.thumbnail })),
         activeMapId: gameState.activeMapId,
-        world: gameState.world
+        world: gameState.world  // 包含 placedMaps / tokens / npcs
       }
     });
 
@@ -389,32 +388,30 @@ io.on('connection', (socket) => {
     // 不广播：锁定是 DM 本地控制
   });
 
-  // 棋子生成 (DM 可生成所有，玩家只能生成自己的，且必须在活跃地图上)
-  socket.on('token:spawn', (data) => {
+  // 棋子生成 (DM 可生成所有，玩家只能生成自己的)
+  socket.on('token:spawn', ({ color, gridX, gridY }) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
+    if (player.role === 'Player' && player.color !== color) return;
 
-    // 玩家只能生成自己颜色的棋子
-    if (player.role === 'Player' && player.color !== data.color) return;
-    // 玩家必须在 DM 活跃地图上才能操作棋子
-    if (player.role === 'Player' && player.currentMapId !== gameState.activeMapId) return;
-
-    gameState.tokens[data.color] = { x: data.x, y: data.y };
-    broadcastToMapViewers(socket.id, 'token:spawn', data);
+    // 同颜色只保留一个棋子
+    const idx = gameState.world.tokens.findIndex(t => t.color === color);
+    if (idx !== -1) gameState.world.tokens.splice(idx, 1);
+    gameState.world.tokens.push({ id: color, color, gridX, gridY });
+    io.emit('token:spawn', { color, gridX, gridY });
+    scheduleWorldSave();
   });
 
-  // 棋子移动 (DM 可移动所有，玩家只能移动自己的，且必须在活跃地图上)
-  socket.on('token:move', (data) => {
+  // 棋子移动 (DM 可移动所有，玩家只能移动自己的)
+  socket.on('token:move', ({ color, gridX, gridY }) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
+    if (player.role === 'Player' && player.color !== color) return;
 
-    // 玩家只能移动自己颜色的棋子
-    if (player.role === 'Player' && player.color !== data.color) return;
-    // 玩家必须在 DM 活跃地图上才能操作棋子
-    if (player.role === 'Player' && player.currentMapId !== gameState.activeMapId) return;
-
-    gameState.tokens[data.color] = { x: data.x, y: data.y };
-    broadcastToMapViewers(socket.id, 'token:move', data);
+    const token = gameState.world.tokens.find(t => t.color === color);
+    if (token) { token.gridX = gridX; token.gridY = gridY; }
+    io.emit('token:move', { color, gridX, gridY });
+    scheduleWorldSave();
   });
 
   // 清除所有棋子 (仅 DM)
@@ -422,8 +419,9 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
-    gameState.tokens = {};
-    broadcastToMapViewers(socket.id, 'token:clearAll', null);
+    gameState.world.tokens = [];
+    io.emit('token:clearAll');
+    scheduleWorldSave();
   });
 
   // 绘图 (仅 DM)
@@ -445,25 +443,25 @@ io.on('connection', (socket) => {
   });
 
   // NPC 生成 (仅 DM)
-  socket.on('npc:spawn', (data) => {
+  socket.on('npc:spawn', ({ id, gridX, gridY, color }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
-    gameState.npcs.push({ id: data.id, x: data.x, y: data.y, color: data.color || 'gray' });
-    broadcastToMapViewers(socket.id, 'npc:spawn', data);
+    const npcColor = color || '#7f8c8d';
+    gameState.world.npcs.push({ id, gridX, gridY, color: npcColor });
+    io.emit('npc:spawn', { id, gridX, gridY, color: npcColor });
+    scheduleWorldSave();
   });
 
   // NPC 移动 (仅 DM)
-  socket.on('npc:move', (data) => {
+  socket.on('npc:move', ({ id, gridX, gridY }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
-    const npc = gameState.npcs.find(n => n.id === data.id);
-    if (npc) {
-      npc.x = data.x;
-      npc.y = data.y;
-    }
-    broadcastToMapViewers(socket.id, 'npc:move', data);
+    const npc = gameState.world.npcs.find(n => n.id === id);
+    if (npc) { npc.gridX = gridX; npc.gridY = gridY; }
+    io.emit('npc:move', { id, gridX, gridY });
+    scheduleWorldSave();
   });
 
   // NPC 删除 (仅 DM)
@@ -471,8 +469,10 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
-    gameState.npcs = gameState.npcs.filter(n => n.id !== id);
-    broadcastToMapViewers(socket.id, 'npc:remove', id);
+    const idx = gameState.world.npcs.findIndex(n => n.id === id);
+    if (idx !== -1) gameState.world.npcs.splice(idx, 1);
+    io.emit('npc:remove', id);
+    scheduleWorldSave();
   });
 
   // 清除所有 NPC (仅 DM)
@@ -480,8 +480,9 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
-    gameState.npcs = [];
-    broadcastToMapViewers(socket.id, 'npc:clearAll', null);
+    gameState.world.npcs = [];
+    io.emit('npc:clearAll');
+    scheduleWorldSave();
   });
 
   // 玩家告知服务端正在查看的地图
@@ -496,29 +497,25 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
 
-    let mapData, tokens, npcs, drawings;
+    let mapData, drawings;
 
     // 如果请求的是 DM 活跃地图，从 gameState 读取最新数据
     if (mapId === gameState.activeMapId) {
       const archive = gameState.savedMaps.find(m => m.id === mapId);
       mapData = archive ? archive.mapData : gameState.mapData;
-      tokens = gameState.tokens;
-      npcs = gameState.npcs;
       drawings = gameState.drawings;
     } else {
       // 非活跃地图从存档读取
       const archive = gameState.savedMaps.find(m => m.id === mapId);
       if (!archive) return;
       mapData = archive.mapData;
-      tokens = archive.tokens;
-      npcs = archive.npcs;
-      drawings = archive.drawings;
+      drawings = archive.drawings || [];
     }
 
     player.currentMapId = mapId;
     socket.emit('player:mapData', {
-      mapId, mapData, tokens, npcs, drawings
-      // 不含 mapTransform，玩家自己控制缩放/平移
+      mapId, mapData, drawings
+      // tokens/npcs 现在在 world 中，不含 mapTransform（玩家自己控制缩放/平移）
     });
   });
 
@@ -682,9 +679,7 @@ io.on('connection', (socket) => {
     // 更新当前游戏状态
     gameState.mapData = archive.mapData;
     gameState.mapTransform = { ...archive.mapTransform };
-    gameState.tokens = { ...archive.tokens };
-    gameState.npcs = [...archive.npcs];
-    gameState.drawings = [...archive.drawings];
+    gameState.drawings = [...(archive.drawings || [])];
     gameState.activeMapId = mapId;
 
     // 仅回复给 DM
@@ -722,9 +717,7 @@ io.on('connection', (socket) => {
 
     // 同时更新当前游戏状态
     gameState.mapTransform = { ...data.mapTransform };
-    gameState.tokens = { ...data.tokens };
-    gameState.npcs = [...data.npcs];
-    gameState.drawings = [...data.drawings];
+    gameState.drawings = [...(data.drawings || [])];
 
     // 仅在非静默模式下广播系统消息
     if (!data.silent) {
@@ -820,9 +813,13 @@ io.on('connection', (socket) => {
       const leftColor = player.color;
 
       // 删除该玩家的棋子并广播
-      if (leftColor && gameState.tokens[leftColor]) {
-        delete gameState.tokens[leftColor];
-        io.emit('token:remove', leftColor);
+      if (leftColor) {
+        const tokenIdx = gameState.world.tokens.findIndex(t => t.color === leftColor);
+        if (tokenIdx !== -1) {
+          gameState.world.tokens.splice(tokenIdx, 1);
+          scheduleWorldSave();
+          io.emit('token:remove', leftColor);
+        }
       }
 
       gameState.players.delete(socket.id);

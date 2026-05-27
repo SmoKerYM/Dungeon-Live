@@ -1,7 +1,7 @@
 # Progress (for plan-extend.md)
 
 ## 当前状态
-- **当前阶段**：Phase 3 完成（已人工验收），待进入 Phase 4
+- **当前阶段**：Phase 4 完成（已人工验收），待进入 Phase 5
 - **最后更新**：2026-05-27
 
 ## 已完成的 Phase
@@ -48,8 +48,18 @@
   - [public/game.html](public/game.html)：新增 `renderPendingPlacedMaps()`，在 `toggleWorldView` 开启世界视图时调用（覆盖加入时资产已缓存但 stage 未初始化的情况）
   - [public/game.html](public/game.html)：新增 socket 监听：`mapAsset:uploaded/fetched`、`placedMap:added/moved/resized/lockSet/removed`；`joinSuccess` 末尾处理 `gs.world`（填充 `placedMapsData` + 批量 emit `mapAsset:fetch`）
 
+- **Phase 4** (2026-05-27)：
+  - [server.js](server.js)：`loadWorld()` 默认值加入 `tokens: [], npcs: []`；`gameState` 移除顶级 `tokens/npcs` 字段，迁入 `world`；`token:spawn/move/clearAll` + `npc:spawn/move/remove/clearAll` 全部改用 `world.tokens/npcs` + `io.emit` + `scheduleWorldSave()`；`disconnect` 改从 `world.tokens` 删除断线棋子；`map:loadSaved/updateState/player:loadMap` 移除对旧 `tokens/npcs` 字段的读写
+  - [public/game.html](public/game.html)：移除旧 DOM token/NPC 函数（`createTokenElement`、`createNPCElement` 等）；新增 `renderWorldToken`（`Konva.Circle`，半径 `0.4*GRID_SIZE`）/`renderWorldNpc`（`Konva.Group` = 圆角矩形 `Konva.Rect` + 居中 "NPC" `Konva.Text`，宽高同玩家棋子直径）；两者均 `dynamicLayer`，`dragend` 吸附到格子中心并 emit；新增 `initHpTooltip`/`showTokenTooltip`/`hideTokenTooltip`（`Konva.Label`，悬停显示 `❤️ cur/max`，拖动时 `dragmove` 跟随、`dragstart` 重新激活、`mouseleave` 检查 `isDragging()` 防止拖动中误隐藏）；新增 `renderPendingWorldObjects()`（开启世界视图时一次性渲染待渲染的 tokens/npcs/placedMaps）；`toggleWorldView` 改调 `renderPendingWorldObjects`；`joinSuccess` 末尾新增 `gs.world.tokens/npcs` 初始化到 `worldTokensData/worldNpcsData`；旧 token/NPC socket handler 替换为 Konva 版本；NPC 颜色 onclick 改用十六进制，新增 `<input type="color">` 自定义颜色输入
+
 ## 下一步
-进入 Phase 4：棋子 & NPC 迁移到 Konva（网格坐标）（详见 [plan-extend.md](plan-extend.md#L146)）。
+进入 Phase 5：笔迹（自由）+ 矩形工具（吸附）（详见 [plan-extend.md](plan-extend.md#L179)）。
+
+## Phase 7 清理时需注意（Phase 4 产生的变化）
+- `getCurrentTokens()`/`getCurrentNPCs()` 现已是返回空值的 stub，Phase 7 连同调用方一起删除
+- 旧地图系统 `map:save` payload 中 `tokens/npcs` 字段已为空，Phase 7 删除这些字段
+- `fileInput.onchange` 中不再 emit `token:clearAll`/`npc:clearAll`（Phase 7 清理整个旧地图上传流程）
+- `getCurrentTokens`/`getCurrentNPCs` stubs 在 `saveMapState`/`saveCurrentMap` 中仍被调用，Phase 7 一并移除
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
