@@ -52,8 +52,23 @@
   - [server.js](server.js)：`loadWorld()` 默认值加入 `tokens: [], npcs: []`；`gameState` 移除顶级 `tokens/npcs` 字段，迁入 `world`；`token:spawn/move/clearAll` + `npc:spawn/move/remove/clearAll` 全部改用 `world.tokens/npcs` + `io.emit` + `scheduleWorldSave()`；`disconnect` 改从 `world.tokens` 删除断线棋子；`map:loadSaved/updateState/player:loadMap` 移除对旧 `tokens/npcs` 字段的读写
   - [public/game.html](public/game.html)：移除旧 DOM token/NPC 函数（`createTokenElement`、`createNPCElement` 等）；新增 `renderWorldToken`（`Konva.Circle`，半径 `0.4*GRID_SIZE`）/`renderWorldNpc`（`Konva.Group` = 圆角矩形 `Konva.Rect` + 居中 "NPC" `Konva.Text`，宽高同玩家棋子直径）；两者均 `dynamicLayer`，`dragend` 吸附到格子中心并 emit；新增 `initHpTooltip`/`showTokenTooltip`/`hideTokenTooltip`（`Konva.Label`，悬停显示 `❤️ cur/max`，拖动时 `dragmove` 跟随、`dragstart` 重新激活、`mouseleave` 检查 `isDragging()` 防止拖动中误隐藏）；新增 `renderPendingWorldObjects()`（开启世界视图时一次性渲染待渲染的 tokens/npcs/placedMaps）；`toggleWorldView` 改调 `renderPendingWorldObjects`；`joinSuccess` 末尾新增 `gs.world.tokens/npcs` 初始化到 `worldTokensData/worldNpcsData`；旧 token/NPC socket handler 替换为 Konva 版本；NPC 颜色 onclick 改用十六进制，新增 `<input type="color">` 自定义颜色输入
 
+- **Phase 5** (2026-05-27)：
+  - [server.js](server.js)：`loadWorld()` 默认值加入 `freeDrawings: [], rects: []`，同时对从文件读取的旧数据做 null-check 补全；新增 4 个 socket handler（均有 DM guard）：`draw:freeStroke`（保存笔画 + `socket.broadcast.emit` 实现乐观渲染，DM 不收回播）、`draw:rect`（保存矩形 + `socket.broadcast.emit`）、`draw:remove`（按 id 从两个数组中删除 + `io.emit`）、`draw:clearAll`（清空两个数组 + `io.emit`）；所有写操作均调用 `scheduleWorldSave()`
+  - [public/game.html](public/game.html)：新增 Phase 5 状态变量（`worldDrawingsData`/`worldRectsData` 数据数组，`worldDrawingNodes`/`worldRectNodes` 节点 Map，`drawingSeq` 序号，`isKonvaDrawing`/`konvaDrawPoints`/`konvaTempLine`/`isKonvaRect`/`konvaRectStartGrid`/`konvaTempRect` 中间状态）；`genDrawId(prefix)` 生成客户端 ID
+  - [public/game.html](public/game.html)：新增纯渲染函数 `renderWorldFreeStroke`（Konva.Line 到 staticLayer）和 `renderWorldRect`（Konva.Rect 到 staticLayer），两者均为纯渲染、不写数据数组，避免 `renderPendingWorldObjects` 重复 push
+  - [public/game.html](public/game.html)：新增 `clearWorldDrawings()`（销毁所有节点 + 清空数组 + emit `draw:clearAll`）；`clearCanvas()` 在 `isWorldViewActive` 时转发给 `clearWorldDrawings()`
+  - [public/game.html](public/game.html)：`setTool()` 末尾同步 Konva stage `draggable`（移动工具才启用平移）和 stage container 光标；`initKonvaWorld()` 注册 `onStageDrawMouseDown`/`onStageDrawMouseMove`/`finalizeWorldDraw` 三个 stage 事件；`window.addEventListener('mouseup', finalizeWorldDraw)` 兜底（鼠标在 stage 外松开时仍能结束绘制）
+  - [public/game.html](public/game.html)：`finalizeWorldDraw()` 实现乐观渲染：将 dynamicLayer 临时节点移入 staticLayer → 写入数据数组 → emit；`onStageDrawMouseDown` 只在 `e.target === konvaStage`（空白处）时开始绘制，避免与棋子/地图拖拽冲突；`finalizeWorldDraw` 幂等（第二次调用时 flag 已重置，无副作用）
+  - [public/game.html](public/game.html)：`renderPendingWorldObjects()` 加入 `worldDrawingsData`/`worldRectsData` 的延迟渲染；`joinSuccess` handler 加入 `gs.world.freeDrawings`/`gs.world.rects` 初始化；socket 事件 `draw:freeStroke`/`draw:rect` 先写数据数组（含去重检查）再渲染，`draw:remove`/`draw:clearAll` 同步销毁节点
+
 ## 下一步
-进入 Phase 5：笔迹（自由）+ 矩形工具（吸附）（详见 [plan-extend.md](plan-extend.md#L179)）。
+进入 Phase 6：撤销/重做（Ctrl/Cmd+Z / Ctrl+Shift+Z，详见 [plan-extend.md](plan-extend.md#L208)）。
+
+## Phase 7 清理时需注意（Phase 5 产生的变化）
+- 旧 `draw:path` / `draw:clear` socket handler（服务端和客户端）仍保留，Phase 7 连同旧 canvas 系统一起删除
+- `clearCanvas()` 中的 `isWorldViewActive` 分支在 Phase 7 移除（届时只有世界视图，直接调 `clearWorldDrawings`）
+- `<canvas id="drawing-canvas">` 及其 JS 引用（`canvas`、`ctx`、`localDrawings`、`restoreDrawings`、`rectStartPoint` 等旧画布变量）在 Phase 7 统一删除
+- `世界视图` 切换按钮 `#world-toggle-btn` 在 Phase 7 删除（届时默认即世界视图）
 
 ## Phase 7 清理时需注意（Phase 4 产生的变化）
 - `getCurrentTokens()`/`getCurrentNPCs()` 现已是返回空值的 stub，Phase 7 连同调用方一起删除

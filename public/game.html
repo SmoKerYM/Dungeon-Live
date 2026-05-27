@@ -1648,6 +1648,44 @@
         }
         // 重置矩形起始点
         rectStartPoint = null;
+        // 同步 Konva stage
+        if (konvaStage) {
+            konvaStage.draggable(tool === 'move');
+            const konvaCursor = tool === 'move' ? 'grab' : (tool === 'erase' ? 'default' : 'crosshair');
+            konvaStage.container().style.cursor = konvaCursor;
+            updateNodeListening();
+        }
+    }
+
+    // 根据当前工具更新所有 Konva 节点的 listening/draggable 状态
+    // 画笔/矩形工具：禁用棋子/地图的事件，使点击穿透到 stage；橡皮工具：启用笔画节点的点击
+    function updateNodeListening() {
+        if (!konvaStage) return;
+        const isErase = currentTool === 'erase';
+        const isMove = currentTool === 'move';
+
+        // 已放置地图：仅 DM + 移动工具时可选中/拖动
+        placedMapNodes.forEach((node, id) => {
+            const placed = placedMapsData.find(p => p.id === id);
+            const canInteract = isDM && isMove;
+            node.listening(canInteract);
+            node.draggable(canInteract && !!placed && !placed.isLocked);
+        });
+        // 棋子：移动工具时基于角色权限可拖动
+        worldTokenNodes.forEach((node, color) => {
+            const canDrag = isMove && (isDM || color === userColor);
+            node.listening(canDrag);
+            node.draggable(canDrag);
+        });
+        // NPC：DM + 移动工具时可拖动
+        worldNpcNodes.forEach(node => {
+            node.listening(isMove && isDM);
+            node.draggable(isMove && isDM);
+        });
+        // 笔画/矩形节点：橡皮工具时可交互（点击删除 + 悬停高亮）
+        worldDrawingNodes.forEach(node => node.listening(isErase));
+        worldRectNodes.forEach(node => node.listening(isErase));
+        konvaStage.batchDraw();
     }
 
     function setDrawColor(c, el) {
@@ -1668,6 +1706,10 @@
 
     function clearCanvas() {
         if (!isDM) return;
+        if (isWorldViewActive) {
+            clearWorldDrawings();
+            return;
+        }
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         localDrawings = [];
         socket.emit('draw:clear');
@@ -2278,6 +2320,12 @@
             if (Array.isArray(gs.world.npcs)) {
                 gs.world.npcs.forEach(n => worldNpcsData.push(n));
             }
+            if (Array.isArray(gs.world.freeDrawings)) {
+                gs.world.freeDrawings.forEach(d => worldDrawingsData.push(d));
+            }
+            if (Array.isArray(gs.world.rects)) {
+                gs.world.rects.forEach(r => worldRectsData.push(r));
+            }
         }
     });
 
@@ -2477,6 +2525,60 @@
 
     socket.on('draw:clear', () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+
+    // Konva 世界笔画/矩形事件（Phase 5）
+    socket.on('draw:liveStroke', ({ id, points, color, strokeWidth }) => {
+        if (!drawingLayer) return;
+        let liveLine = liveStrokeNodes.get(id);
+        if (!liveLine) {
+            liveLine = new Konva.Line({
+                points, stroke: color, strokeWidth,
+                lineCap: 'round', lineJoin: 'round',
+                listening: false, opacity: 0.65,
+            });
+            drawingLayer.add(liveLine);
+            liveStrokeNodes.set(id, liveLine);
+        } else {
+            liveLine.points(points);
+        }
+        drawingLayer.batchDraw();
+    });
+
+    socket.on('draw:freeStroke', (data) => {
+        // 收到最终笔画时移除实时预览节点
+        const liveNode = liveStrokeNodes.get(data.id);
+        if (liveNode) { liveNode.destroy(); liveStrokeNodes.delete(data.id); }
+        if (!worldDrawingsData.some(d => d.id === data.id)) worldDrawingsData.push(data);
+        if (drawingLayer) renderWorldFreeStroke(data);
+    });
+
+    socket.on('draw:rect', (data) => {
+        if (!worldRectsData.some(r => r.id === data.id)) worldRectsData.push(data);
+        if (drawingLayer) renderWorldRect(data);
+    });
+
+    socket.on('draw:remove', (id) => {
+        const dIdx = worldDrawingsData.findIndex(d => d.id === id);
+        if (dIdx !== -1) worldDrawingsData.splice(dIdx, 1);
+        const dNode = worldDrawingNodes.get(id);
+        if (dNode) { dNode.destroy(); worldDrawingNodes.delete(id); if (drawingLayer) drawingLayer.batchDraw(); }
+        const rIdx = worldRectsData.findIndex(r => r.id === id);
+        if (rIdx !== -1) worldRectsData.splice(rIdx, 1);
+        const rNode = worldRectNodes.get(id);
+        if (rNode) { rNode.destroy(); worldRectNodes.delete(id); if (drawingLayer) drawingLayer.batchDraw(); }
+    });
+
+    socket.on('draw:clearAll', () => {
+        worldDrawingsData.length = 0;
+        worldRectsData.length = 0;
+        worldDrawingNodes.forEach(node => node.destroy());
+        worldDrawingNodes.clear();
+        worldRectNodes.forEach(node => node.destroy());
+        worldRectNodes.clear();
+        liveStrokeNodes.forEach(node => node.destroy());
+        liveStrokeNodes.clear();
+        if (drawingLayer) drawingLayer.batchDraw();
     });
 
     socket.on('dice:result', (data) => {
@@ -3114,8 +3216,9 @@
 
     let konvaStage = null;
     let gridLayer = null;
-    let staticLayer = null;
-    let dynamicLayer = null;
+    let staticLayer = null;   // 放置地图（最底层）
+    let dynamicLayer = null;  // 棋子 + NPC（中间层）
+    let drawingLayer = null;  // 笔画/矩形 + 实时预览 + HP tooltip（顶层）
     let isWorldViewActive = false;
 
     // ===== Phase 3 服务端同步状态 =====
@@ -3136,6 +3239,28 @@
     const TOKEN_RADIUS = GRID_SIZE * 0.4;
     let hpTooltip = null;                // 共享 HP tooltip 节点
 
+    // ===== Phase 5 世界笔画/矩形状态 =====
+    const worldDrawingsData = [];        // [{ id, points, color, strokeWidth }]（镜像 world.freeDrawings）
+    const worldRectsData = [];           // [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]（镜像 world.rects）
+    const worldDrawingNodes = new Map(); // id -> Konva.Line（staticLayer）
+    const worldRectNodes = new Map();    // id -> Konva.Rect（staticLayer）
+    let drawingSeq = 0;
+    function genDrawId(prefix) { return `${prefix}_${Date.now()}_${++drawingSeq}`; }
+    // 自由笔画绘制中间状态
+    let isKonvaDrawing = false;
+    let konvaDrawPoints = [];
+    let konvaTempLine = null;
+    let currentStrokeId = null;   // 当前笔画的 id（mousedown 时生成，用于实时同步）
+    let lastLiveEmit = 0;         // 上次 draw:liveStroke emit 时间戳（节流）
+    // 矩形绘制中间状态
+    let isKonvaRect = false;
+    let konvaRectStartGrid = null;  // { gx, gy }（吸附后）
+    let konvaTempRect = null;
+    // 实时笔画节点（接收其他人绘制中的预览，id -> Konva.Line）
+    const liveStrokeNodes = new Map();
+    // 橡皮拖拽状态
+    let isErasing = false;
+
     function initKonvaWorld() {
         if (konvaStage) return;
         const rect = worldContainer.getBoundingClientRect();
@@ -3146,11 +3271,13 @@
             draggable: true,
         });
         gridLayer = new Konva.Layer({ listening: false });
-        staticLayer = new Konva.Layer();
-        dynamicLayer = new Konva.Layer();
+        staticLayer = new Konva.Layer();  // 放置地图
+        dynamicLayer = new Konva.Layer(); // 棋子 + NPC
+        drawingLayer = new Konva.Layer(); // 笔画/矩形（最顶，覆盖棋子）
         konvaStage.add(gridLayer);
         konvaStage.add(staticLayer);
         konvaStage.add(dynamicLayer);
+        konvaStage.add(drawingLayer);
 
         konvaStage.on('wheel', onStageWheel);
         konvaStage.on('dragmove', onStageTransformChanged);
@@ -3160,6 +3287,10 @@
             if (!isDM) return;
             if (e.target === konvaStage) deselectPlacedMap();
         });
+        // 绘图工具事件（Phase 5）
+        konvaStage.on('mousedown', onStageDrawMouseDown);
+        konvaStage.on('mousemove', onStageDrawMouseMove);
+        konvaStage.on('mouseup', finalizeWorldDraw);
 
         // 容器尺寸变化时同步 stage 与网格
         new ResizeObserver(() => {
@@ -3267,7 +3398,7 @@
         hpTooltip = new Konva.Label({ x: 0, y: 0, visible: false, listening: false });
         hpTooltip.add(tag);
         hpTooltip.add(text);
-        dynamicLayer.add(hpTooltip);
+        drawingLayer.add(hpTooltip); // HP tooltip 需在最顶层（drawingLayer）以免被笔画遮挡
     }
 
     function getTokenHP(color) {
@@ -3292,13 +3423,13 @@
         });
         hpTooltip.visible(true);
         hpTooltip.moveToTop();
-        dynamicLayer.batchDraw();
+        drawingLayer.batchDraw();
     }
 
     function hideTokenTooltip() {
         if (!hpTooltip) return;
         hpTooltip.visible(false);
-        dynamicLayer.batchDraw();
+        drawingLayer.batchDraw();
     }
 
     function renderWorldToken(tokenData) {
@@ -3336,6 +3467,7 @@
                     y: circle.y() + TOKEN_RADIUS + 6,
                 });
                 dynamicLayer.batchDraw();
+                drawingLayer.batchDraw(); // tooltip 在 drawingLayer，需一并刷新
             });
             circle.on('dragend', () => {
                 hideTokenTooltip();
@@ -3418,6 +3550,213 @@
         dynamicLayer.batchDraw();
     }
 
+    // ===== Phase 5: 世界笔画/矩形 渲染 =====
+
+    // 纯渲染函数：只创建 Konva 节点，不修改数据数组（避免 renderPendingWorldObjects 重复 push）
+    // hitStrokeWidth 放大命中区域，使橡皮拖擦时更容易触碰到线条
+    function renderWorldFreeStroke(data) {
+        if (worldDrawingNodes.has(data.id)) return;
+        const line = new Konva.Line({
+            points: data.points,
+            stroke: data.color,
+            strokeWidth: data.strokeWidth,
+            lineCap: 'round',
+            lineJoin: 'round',
+            listening: false,
+            hitStrokeWidth: 20,
+        });
+        drawingLayer.add(line);
+        worldDrawingNodes.set(data.id, line);
+        drawingLayer.batchDraw();
+    }
+
+    function renderWorldRect(data) {
+        if (worldRectNodes.has(data.id)) return;
+        const rect = new Konva.Rect({
+            x: data.gridX * GRID_SIZE,
+            y: data.gridY * GRID_SIZE,
+            width: data.gridW * GRID_SIZE,
+            height: data.gridH * GRID_SIZE,
+            stroke: data.color,
+            strokeWidth: data.strokeWidth,
+            fill: 'transparent',
+            listening: false,
+        });
+        drawingLayer.add(rect);
+        worldRectNodes.set(data.id, rect);
+        drawingLayer.batchDraw();
+    }
+
+    // 橡皮拖擦：在 drawingLayer 中做命中检测，将触碰到的笔画/矩形立即删除
+    function eraseAtPointer() {
+        if (!drawingLayer) return;
+        const pointer = konvaStage.getPointerPosition();
+        if (!pointer) return;
+        const hit = drawingLayer.getIntersection(pointer);
+        if (!hit) return;
+
+        let erasedId = null;
+        worldDrawingNodes.forEach((node, id) => { if (node === hit && !erasedId) erasedId = id; });
+        worldRectNodes.forEach((node, id) => { if (node === hit && !erasedId) erasedId = id; });
+        if (!erasedId) return;
+
+        // 乐观删除（立即销毁节点，再通知服务端）
+        const dIdx = worldDrawingsData.findIndex(d => d.id === erasedId);
+        if (dIdx !== -1) worldDrawingsData.splice(dIdx, 1);
+        const dNode = worldDrawingNodes.get(erasedId);
+        if (dNode) { dNode.destroy(); worldDrawingNodes.delete(erasedId); }
+        const rIdx = worldRectsData.findIndex(r => r.id === erasedId);
+        if (rIdx !== -1) worldRectsData.splice(rIdx, 1);
+        const rNode = worldRectNodes.get(erasedId);
+        if (rNode) { rNode.destroy(); worldRectNodes.delete(erasedId); }
+        drawingLayer.batchDraw();
+        socket.emit('draw:remove', erasedId);
+    }
+
+    function clearWorldDrawings() {
+        if (!isDM) return;
+        worldDrawingsData.length = 0;
+        worldRectsData.length = 0;
+        worldDrawingNodes.forEach(node => node.destroy());
+        worldDrawingNodes.clear();
+        worldRectNodes.forEach(node => node.destroy());
+        worldRectNodes.clear();
+        liveStrokeNodes.forEach(node => node.destroy());
+        liveStrokeNodes.clear();
+        if (drawingLayer) drawingLayer.batchDraw();
+        socket.emit('draw:clearAll');
+    }
+
+    // 世界绘图事件处理（由 initKonvaWorld 注册，全局函数方便 window mouseup 引用）
+    function onStageDrawMouseDown(e) {
+        if (!isDM || !isWorldViewActive) return;
+        if (currentTool === 'erase') { isErasing = true; eraseAtPointer(); return; }
+        if (currentTool !== 'draw' && currentTool !== 'rect') return;
+        // updateNodeListening 已禁用棋子/地图节点的事件，点击会穿透到 stage，无需检查 e.target
+        const pos = getMousePosInWorld();
+        if (!pos) return;
+
+        if (currentTool === 'draw') {
+            isKonvaDrawing = true;
+            currentStrokeId = genDrawId('dw');
+            lastLiveEmit = 0;
+            konvaDrawPoints = [pos.x, pos.y];
+            konvaTempLine = new Konva.Line({
+                points: konvaDrawPoints,
+                stroke: penColor,
+                strokeWidth: 3,
+                lineCap: 'round',
+                lineJoin: 'round',
+                listening: false,
+            });
+            drawingLayer.add(konvaTempLine);
+            drawingLayer.batchDraw();
+        } else if (currentTool === 'rect') {
+            const snapped = snapToGrid(pos.x / GRID_SIZE, pos.y / GRID_SIZE);
+            isKonvaRect = true;
+            konvaRectStartGrid = snapped;
+            konvaTempRect = new Konva.Rect({
+                x: snapped.gx * GRID_SIZE, y: snapped.gy * GRID_SIZE,
+                width: 0, height: 0,
+                stroke: penColor,
+                strokeWidth: 3,
+                fill: 'transparent',
+                listening: false,
+            });
+            drawingLayer.add(konvaTempRect);
+            drawingLayer.batchDraw();
+        }
+    }
+
+    function onStageDrawMouseMove(e) {
+        if (!isDM || !isWorldViewActive) return;
+        if (isErasing) { eraseAtPointer(); return; }
+        const pos = getMousePosInWorld();
+        if (!pos) return;
+
+        if (isKonvaDrawing && konvaTempLine) {
+            konvaDrawPoints.push(pos.x, pos.y);
+            konvaTempLine.points(konvaDrawPoints);
+            drawingLayer.batchDraw();
+            // 实时广播给其他人（50ms 节流）
+            const now = Date.now();
+            if (now - lastLiveEmit >= 50) {
+                socket.emit('draw:liveStroke', {
+                    id: currentStrokeId,
+                    points: konvaDrawPoints.slice(),
+                    color: penColor,
+                    strokeWidth: 3,
+                });
+                lastLiveEmit = now;
+            }
+        } else if (isKonvaRect && konvaTempRect && konvaRectStartGrid) {
+            const snapped = snapToGrid(pos.x / GRID_SIZE, pos.y / GRID_SIZE);
+            const x1 = Math.min(konvaRectStartGrid.gx, snapped.gx);
+            const y1 = Math.min(konvaRectStartGrid.gy, snapped.gy);
+            const x2 = Math.max(konvaRectStartGrid.gx, snapped.gx);
+            const y2 = Math.max(konvaRectStartGrid.gy, snapped.gy);
+            konvaTempRect.setAttrs({
+                x: x1 * GRID_SIZE, y: y1 * GRID_SIZE,
+                width: (x2 - x1) * GRID_SIZE,
+                height: (y2 - y1) * GRID_SIZE,
+            });
+            drawingLayer.batchDraw();
+        }
+    }
+
+    function finalizeWorldDraw() {
+        if (isErasing) { isErasing = false; return; }
+        if (isKonvaDrawing && konvaTempLine) {
+            if (konvaDrawPoints.length >= 4) {
+                const data = {
+                    id: currentStrokeId,
+                    points: konvaDrawPoints.slice(),
+                    color: penColor,
+                    strokeWidth: 3,
+                };
+                // 乐观渲染：konvaTempLine 已在 drawingLayer，直接注册 id
+                worldDrawingNodes.set(data.id, konvaTempLine);
+                worldDrawingsData.push(data);
+                drawingLayer.batchDraw();
+                socket.emit('draw:freeStroke', data);
+            } else {
+                konvaTempLine.destroy();
+                drawingLayer.batchDraw();
+            }
+            konvaTempLine = null;
+            konvaDrawPoints = [];
+            currentStrokeId = null;
+            isKonvaDrawing = false;
+        }
+
+        if (isKonvaRect && konvaTempRect && konvaRectStartGrid) {
+            const pos = getMousePosInWorld();
+            const endGrid = pos
+                ? snapToGrid(pos.x / GRID_SIZE, pos.y / GRID_SIZE)
+                : konvaRectStartGrid;
+            const x1 = Math.min(konvaRectStartGrid.gx, endGrid.gx);
+            const y1 = Math.min(konvaRectStartGrid.gy, endGrid.gy);
+            const gridW = Math.max(konvaRectStartGrid.gx, endGrid.gx) - x1;
+            const gridH = Math.max(konvaRectStartGrid.gy, endGrid.gy) - y1;
+
+            if (gridW > 0 && gridH > 0) {
+                const id = genDrawId('dr');
+                const data = { id, gridX: x1, gridY: y1, gridW, gridH, color: penColor, strokeWidth: 3 };
+                // konvaTempRect 已在 drawingLayer，直接注册
+                worldRectNodes.set(id, konvaTempRect);
+                worldRectsData.push(data);
+                drawingLayer.batchDraw();
+                socket.emit('draw:rect', data);
+            } else {
+                konvaTempRect.destroy();
+                drawingLayer.batchDraw();
+            }
+            konvaTempRect = null;
+            konvaRectStartGrid = null;
+            isKonvaRect = false;
+        }
+    }
+
     // 开启世界视图时一次性渲染所有待渲染的世界对象
     function renderPendingWorldObjects() {
         renderPendingPlacedMaps();
@@ -3426,6 +3765,12 @@
         });
         worldNpcsData.forEach(n => {
             if (!worldNpcNodes.has(n.id)) renderWorldNpc(n);
+        });
+        worldDrawingsData.forEach(d => {
+            if (!worldDrawingNodes.has(d.id)) renderWorldFreeStroke(d);
+        });
+        worldRectsData.forEach(r => {
+            if (!worldRectNodes.has(r.id)) renderWorldRect(r);
         });
     }
 
@@ -3450,6 +3795,9 @@
             worldToggleBtn.textContent = '🌍 新世界视图';
         }
     }
+
+    // 鼠标在 stage 外松开时也能正常结束绘制（window 级兜底）
+    window.addEventListener('mouseup', finalizeWorldDraw);
 
     // ===== Phase 2: DM 地图放置 / 拖动吸附 / 锁定 / 删除（仅本地） =====
     function genPlacedMapId() { return `pm_${Date.now()}_${++placedMapSeq}`; }
@@ -3551,6 +3899,7 @@
                 socket.emit('placedMap:move', { id: placed.id, gridX: placed.gridX, gridY: placed.gridY });
             });
             staticLayer.add(node);
+            node.moveToBottom(); // 地图始终在 staticLayer 最底部（图片异步加载，防止覆盖网格）
             placedMapNodes.set(placed.id, node);
             if (isDM) createOverlayForPlacedMap(placed);
             updatePlacedMapOverlay(placed.id);

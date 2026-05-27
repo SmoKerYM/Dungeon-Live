@@ -192,12 +192,14 @@ function loadWorld() {
       const data = JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8'));
       if (!Array.isArray(data.tokens)) data.tokens = [];
       if (!Array.isArray(data.npcs)) data.npcs = [];
+      if (!Array.isArray(data.freeDrawings)) data.freeDrawings = [];
+      if (!Array.isArray(data.rects)) data.rects = [];
       return data;
     }
   } catch (err) {
     console.error('读取世界状态失败:', err);
   }
-  return { placedMaps: [], tokens: [], npcs: [] };
+  return { placedMaps: [], tokens: [], npcs: [], freeDrawings: [], rects: [] };
 }
 
 // 保存世界状态
@@ -795,6 +797,53 @@ io.on('connection', (socket) => {
     if (idx === -1) return;
     gameState.world.placedMaps.splice(idx, 1);
     io.emit('placedMap:removed', id);
+    scheduleWorldSave();
+  });
+
+  // 实时笔画广播（不存档，仅转发给其他人用于实时预览）
+  socket.on('draw:liveStroke', ({ id, points, color, strokeWidth }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    socket.broadcast.emit('draw:liveStroke', { id, points, color, strokeWidth });
+  });
+
+  // 添加自由笔画 (仅 DM，乐观渲染：只广播给其他人)
+  socket.on('draw:freeStroke', ({ id, points, color, strokeWidth }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    gameState.world.freeDrawings.push({ id, points, color, strokeWidth });
+    socket.broadcast.emit('draw:freeStroke', { id, points, color, strokeWidth });
+    scheduleWorldSave();
+  });
+
+  // 添加矩形 (仅 DM，乐观渲染：只广播给其他人)
+  socket.on('draw:rect', ({ id, gridX, gridY, gridW, gridH, color, strokeWidth }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    gameState.world.rects.push({ id, gridX, gridY, gridW, gridH, color, strokeWidth });
+    socket.broadcast.emit('draw:rect', { id, gridX, gridY, gridW, gridH, color, strokeWidth });
+    scheduleWorldSave();
+  });
+
+  // 删除单个绘图对象 (仅 DM)
+  socket.on('draw:remove', (id) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const di = gameState.world.freeDrawings.findIndex(d => d.id === id);
+    if (di !== -1) gameState.world.freeDrawings.splice(di, 1);
+    const ri = gameState.world.rects.findIndex(r => r.id === id);
+    if (ri !== -1) gameState.world.rects.splice(ri, 1);
+    io.emit('draw:remove', id);
+    scheduleWorldSave();
+  });
+
+  // 清空世界所有笔画和矩形 (仅 DM)
+  socket.on('draw:clearAll', () => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    gameState.world.freeDrawings = [];
+    gameState.world.rects = [];
+    io.emit('draw:clearAll');
     scheduleWorldSave();
   });
 
