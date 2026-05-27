@@ -124,8 +124,8 @@ world: {            // 世界状态（落盘）
   - `gameState` 加入 `mapAssets` 和 `world`，启动时从文件加载
   - 新事件 handler（仅 DM 可调用）：
     - `mapAsset:upload`：保存 Base64 到 `mapAssets`，回复 `mapAsset:uploaded`，落盘 mapAssets
-    - `placedMap:add` / `placedMap:move` / `placedMap:setLock` / `placedMap:remove`：修改 `world.placedMaps`，广播给所有人，debounce 500ms 落盘 world
-  - `joinSuccess` payload 新增 `mapAssets` 和 `world` 字段（mapAssets 体积可能大，考虑只发 assetIds 列表 + 按需 fetch）
+    - `placedMap:add` / `placedMap:move` / `placedMap:resize` / `placedMap:setLock` / `placedMap:remove`：修改 `world.placedMaps`，广播给所有人，debounce 500ms 落盘 world（`placedMap:resize` payload: `{ id, gridWidth }`，高由客户端按原图比例重算）
+  - `joinSuccess` payload 新增 `world`（完整）和 `mapAssetIds`（仅 id 列表，不含 Base64）；客户端收到后对 `world.placedMaps` 中每个 assetId 发 `mapAsset:fetch`，服务端返回 Base64
 - [public/game.html](public/game.html)：
   - 移除 Phase 2 的本地存储，所有地图操作改为 `socket.emit`
   - 监听 `mapAsset:uploaded` / `placedMap:added` 等事件做对应渲染
@@ -287,5 +287,6 @@ world: {            // 世界状态（落盘）
 | `token:spawn` / `token:move` (像素) | 同名，payload 改为 `gridX/gridY` | Phase 4 |
 | `npc:spawn` / `npc:move` 等 | 同名，payload 改为 `gridX/gridY` | Phase 4 |
 | `draw:path` (像素点列) | `draw:freeStroke` (世界坐标点列) | Phase 5 |
+| — | `placedMap:resize`（新增，`{ id, gridWidth }`） | Phase 3 |
 | — | `draw:rect`（新增） | Phase 5 |
 | — | `history:undo` / `history:redo`（新增） | Phase 6 |

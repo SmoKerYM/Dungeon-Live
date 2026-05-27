@@ -16,6 +16,10 @@ const CHAT_HISTORY_FILE = process.env.NODE_ENV === 'production'
   ? '/data/chat_history.json' : './data/chat_history.json';
 // 聊天历史最大保留条数
 const MAX_CHAT_HISTORY = 100;
+// 地图资产文件路径
+const MAP_ASSETS_FILE = process.env.NODE_ENV === 'production' ? '/data/map_assets.json' : './data/map_assets.json';
+// 世界状态文件路径
+const WORLD_FILE = process.env.NODE_ENV === 'production' ? '/data/world.json' : './data/world.json';
 
 // 读取笔记
 function loadNotes() {
@@ -158,6 +162,59 @@ function getCharacterHP(playerName) {
   return null;
 }
 
+// 读取地图资产
+function loadMapAssets() {
+  try {
+    if (fs.existsSync(MAP_ASSETS_FILE)) {
+      return JSON.parse(fs.readFileSync(MAP_ASSETS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取地图资产失败:', err);
+  }
+  return {};
+}
+
+// 保存地图资产
+function saveMapAssets(data) {
+  try {
+    const dir = path.dirname(MAP_ASSETS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(MAP_ASSETS_FILE, JSON.stringify(data), 'utf8');
+  } catch (err) {
+    console.error('保存地图资产失败:', err);
+  }
+}
+
+// 读取世界状态
+function loadWorld() {
+  try {
+    if (fs.existsSync(WORLD_FILE)) {
+      return JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取世界状态失败:', err);
+  }
+  return { placedMaps: [] };
+}
+
+// 保存世界状态
+function saveWorld(data) {
+  try {
+    const dir = path.dirname(WORLD_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(WORLD_FILE, JSON.stringify(data), 'utf8');
+  } catch (err) {
+    console.error('保存世界状态失败:', err);
+  }
+}
+
+// 延迟保存世界状态（500ms debounce）
+let worldSaveTimer = null;
+function scheduleWorldSave() {
+  clearTimeout(worldSaveTimer);
+  worldSaveTimer = setTimeout(() => saveWorld(gameState.world), 500);
+}
+
 // 地图哈希函数（用于判断是否为同一张地图）
 function getMapHash(mapData) {
   return mapData.substring(0, 1000) + '_' + mapData.length;
@@ -189,7 +246,9 @@ const gameState = {
   characterNotes: loadCharacterNotes(), // 登场人物记录 [{name, info}]
   chatHistory: loadChatHistory(), // 聊天 + 骰子历史（最多 100 条，从文件加载）
   savedMaps: [],      // 地图存档
-  activeMapId: null   // DM 当前编辑的地图 ID
+  activeMapId: null,  // DM 当前编辑的地图 ID
+  mapAssets: loadMapAssets(), // 地图图片资产 { assetId: { base64, originalWidth, originalHeight } }
+  world: loadWorld(),         // 世界状态 { placedMaps: [...] }
 };
 
 // 向正在查看 DM 活跃地图的玩家广播（排除指定 socket）
@@ -259,7 +318,8 @@ io.on('connection', (socket) => {
         characterNotes: gameState.characterNotes,
         chatHistory: gameState.chatHistory,
         savedMaps: gameState.savedMaps.map(m => ({ id: m.id, thumbnail: m.thumbnail })),
-        activeMapId: gameState.activeMapId
+        activeMapId: gameState.activeMapId,
+        world: gameState.world
       }
     });
 
@@ -670,6 +730,79 @@ io.on('connection', (socket) => {
     if (!data.silent) {
       io.emit('map:stateUpdated', { mapId: data.mapId });
     }
+  });
+
+  // 上传地图资产 (仅 DM)
+  socket.on('mapAsset:upload', ({ assetId, base64, originalWidth, originalHeight }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    gameState.mapAssets[assetId] = { base64, originalWidth, originalHeight };
+    saveMapAssets(gameState.mapAssets);
+    socket.emit('mapAsset:uploaded', { assetId });
+  });
+
+  // 按需获取地图资产 (所有人)
+  socket.on('mapAsset:fetch', (assetId) => {
+    const player = gameState.players.get(socket.id);
+    if (!player) return;
+    const asset = gameState.mapAssets[assetId];
+    if (!asset) { socket.emit('mapAsset:notFound', { assetId }); return; }
+    socket.emit('mapAsset:fetched', { assetId, ...asset });
+  });
+
+  // 放置地图 (仅 DM)
+  socket.on('placedMap:add', ({ id, assetId, gridX, gridY, gridWidth, isLocked }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (!gameState.mapAssets[assetId]) return;
+    gameState.world.placedMaps.push({ id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked });
+    io.emit('placedMap:added', { id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked });
+    scheduleWorldSave();
+  });
+
+  // 移动地图 (仅 DM)
+  socket.on('placedMap:move', ({ id, gridX, gridY }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const map = gameState.world.placedMaps.find(m => m.id === id);
+    if (!map) return;
+    map.gridX = gridX;
+    map.gridY = gridY;
+    io.emit('placedMap:moved', { id, gridX, gridY });
+    scheduleWorldSave();
+  });
+
+  // 缩放地图 (仅 DM)
+  socket.on('placedMap:resize', ({ id, gridWidth }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const map = gameState.world.placedMaps.find(m => m.id === id);
+    if (!map) return;
+    map.gridWidth = gridWidth;
+    io.emit('placedMap:resized', { id, gridWidth });
+    scheduleWorldSave();
+  });
+
+  // 锁定/解锁地图 (仅 DM)
+  socket.on('placedMap:setLock', ({ id, isLocked }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const map = gameState.world.placedMaps.find(m => m.id === id);
+    if (!map) return;
+    map.isLocked = isLocked;
+    io.emit('placedMap:lockSet', { id, isLocked });
+    scheduleWorldSave();
+  });
+
+  // 删除地图 (仅 DM)
+  socket.on('placedMap:remove', (id) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const idx = gameState.world.placedMaps.findIndex(m => m.id === id);
+    if (idx === -1) return;
+    gameState.world.placedMaps.splice(idx, 1);
+    io.emit('placedMap:removed', id);
+    scheduleWorldSave();
   });
 
   // 断开连接

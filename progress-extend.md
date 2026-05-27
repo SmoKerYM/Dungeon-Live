@@ -1,7 +1,7 @@
 # Progress (for plan-extend.md)
 
 ## 当前状态
-- **当前阶段**：Phase 2 完成（待浏览器手动验收），待进入 Phase 3
+- **当前阶段**：Phase 3 完成（已人工验收），待进入 Phase 4
 - **最后更新**：2026-05-27
 
 ## 已完成的 Phase
@@ -38,18 +38,18 @@
 - 2026-05-27: 聊天 + 骰子历史持久化（最多 100 条 FIFO，落 `data/chat_history.json`）
 - 2026-05-27: CLAUDE.md 与 plan-extend.md 同步
 
-## 下一步
-进入 Phase 3：服务端协议改造 + 资产/世界落盘（详见 [plan-extend.md](plan-extend.md#L114)）。Phase 2 的本地 `localMapAssets`/`localPlacedMaps` 已与 Phase 3 服务端模型对齐字段名，迁移时直接替换为 socket 事件即可。
+- **Phase 3** (2026-05-27)：
+  - [server.js](server.js)：新增 `MAP_ASSETS_FILE`/`WORLD_FILE` 常量；`loadMapAssets/saveMapAssets/loadWorld/saveWorld` 函数；`gameState` 加入 `mapAssets`（启动时从文件加载）和 `world`（启动时从文件加载）；`scheduleWorldSave`（500ms debounce）
+  - [server.js](server.js)：新事件 handler（均有 DM guard）：`mapAsset:upload`（保存资产 + 落盘 + 回复 `mapAsset:uploaded`）、`mapAsset:fetch`（按需返回 Base64 给任意客户端）、`placedMap:add/move/resize/setLock/remove`（修改 `world.placedMaps` + `io.emit` 广播 + debounce 落盘）
+  - [server.js](server.js)：`joinSuccess` payload 加入 `world`（完整世界状态，不含 Base64）
+  - [public/game.html](public/game.html)：`localMapAssets` → `mapAssetCache`，`localPlacedMaps` → `placedMapsData`；新增 `pendingAssetUpload` Map
+  - [public/game.html](public/game.html)：文件上传改为 emit `mapAsset:upload`，等 `mapAsset:uploaded` 回调后再调 `placeMapAtViewportCenter`；`placeMapAtViewportCenter` 改为 emit `placedMap:add`（不再本地 push/render）
+  - [public/game.html](public/game.html)：`dragend` 加 emit `placedMap:move`；`onResizeEnd` 加 emit `placedMap:resize`；`togglePlacedMapLock` 改为 emit `placedMap:setLock`；`removePlacedMap` 改为 emit `placedMap:remove`
+  - [public/game.html](public/game.html)：新增 `renderPendingPlacedMaps()`，在 `toggleWorldView` 开启世界视图时调用（覆盖加入时资产已缓存但 stage 未初始化的情况）
+  - [public/game.html](public/game.html)：新增 socket 监听：`mapAsset:uploaded/fetched`、`placedMap:added/moved/resized/lockSet/removed`；`joinSuccess` 末尾处理 `gs.world`（填充 `placedMapsData` + 批量 emit `mapAsset:fetch`）
 
-## 待用户验收（Phase 2）
-本地与协议层均已实现，但需要用户在浏览器中跑下面这套人工验收：
-1. DM 上传一张图片 → 出现在世界中央且宽 20 格（数格子）
-2. 拖动后松手 → 左上角对齐到最近格点
-3. 点击左上角 🔓 → 变 🔒，再拖动地图无反应；再次点击解锁恢复
-4. 点击地图 → 右上角出现 🗑；点空白 stage → 🗑 消失
-5. 点 🗑 → 地图消失
-6. 缩放/平移过程中，锁定 icon 与删除按钮始终贴每张地图左上/右上角
-7. 玩家身份开第二窗口：侧边栏无 "添加地图" 按钮，切到新视图只见网格（Phase 2 无服务端，看不到 DM 放的地图属预期）
+## 下一步
+进入 Phase 4：棋子 & NPC 迁移到 Konva（网格坐标）（详见 [plan-extend.md](plan-extend.md#L146)）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
