@@ -5,24 +5,28 @@ DND 多人协作跑团工具 - A real-time collaborative D&D (Dungeons & Dragons
 
 Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial use.
 
+> **Planned refactor in progress**: see [plan-extend.md](plan-extend.md) for the multi-phase migration of the map subsystem from `<img>` + DOM tokens to a Konva-based grid world (VTT model). Before extending the current map / token / drawing system, check whether the change should instead be folded into that plan.
+
 ## Tech Stack
 - **Backend**: Node.js + Express 5 + Socket.IO 4
 - **Frontend**: Vanilla HTML/CSS/JavaScript + Canvas API
-- **Data**: JSON files (characters, character notes) + text files (notes), no database
+- **Data**: JSON files (characters, character notes, chat history) + text files (notes), no database
 - **Dev**: nodemon for hot reload
 
 ## File Structure
 ```
 coc_app/
-├── server.js              # Main server, Socket.IO events (~611 lines)
+├── server.js              # Main server, Socket.IO events (~713 lines)
 ├── package.json           # Dependencies: express, socket.io, nodemon
 ├── nodemon.json           # Watch config: ignores data/
+├── plan-extend.md         # Planned Konva grid-world refactor (multi-phase)
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
-│   └── game.html          # Main game UI (~3035 lines, inline CSS+JS)
+│   └── game.html          # Main game UI (~3206 lines, inline CSS+JS)
 ├── data/
 │   ├── characters.json        # Character card data (name-keyed object)
 │   ├── characters_notes.json  # Character records table [{name, info}]
+│   ├── chat_history.json      # Last 100 chat + dice entries (FIFO)
 │   └── notes.txt              # Shared notes (plain text)
 └── images/                # Map images (gitignored)
 ```
@@ -31,7 +35,7 @@ coc_app/
 - Single-room game instance per server (no multi-room)
 - Event-driven via Socket.IO with `namespace:action` pattern (e.g., `map:load`, `token:move`)
 - Role-based: DM vs Player, DM password is `12138`
-- Game state lives in memory (`gameState` object in server.js), persisted to files for characters/notes
+- Game state lives in memory (`gameState` object in server.js), persisted to files for characters, character notes, shared notes, and chat history
 - All CSS and JS are inline in HTML files (no separate css/js files)
 - **Player independent map viewing**: Players browse maps independently, server tracks each player's `currentMapId` and filters real-time events (token/npc/draw) to only reach players viewing the DM's active map
 - **Player independent zoom/pan**: Players control their own map transform (scale/origin), stored client-side per map in `playerTransforms`
@@ -59,7 +63,7 @@ coc_app/
 | Player | `player:viewMap`, `player:loadMap` |
 | Character | `character:list`, `character:load`, `character:save` |
 | CharacterNotes | `characterNotes:update` |
-| Other | `chat:message`, `dice:roll`, `notes:update` |
+| Other | `chat:message`, `dice:roll`, `notes:update` (chat + dice persisted to `chat_history.json`) |
 
 ### Server -> Client (new events)
 | Event | Description |
@@ -83,6 +87,7 @@ coc_app/
   npcs: [{ id, x, y, color }],
   notes: "string",
   characterNotes: [{ name, info }],
+  chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100, FIFO
   savedMaps: [],
   activeMapId: "map_xxx"
 }
@@ -112,7 +117,8 @@ npm start       # Production server
 ## Important Notes
 - Map images are Base64-encoded and can be large (50MB max buffer)
 - Map deduplication uses hash: `substring(0, 1000) + '_' + length`
-- Notes and character records updates are debounced at 500ms
+- Notes, character records, and chat history writes are debounced at 500ms
+- Chat history retains last 100 entries total (chat messages + dice rolls), older entries dropped FIFO; system messages (joins/leaves) are NOT persisted
 - Notes tab split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
 - DM-only UI elements use `.dm-only` CSS class, player-only use `.player-only`
