@@ -7,7 +7,7 @@
 **已确定的核心决策：**
 - **方案 A（共享世界）**：所有人看同一个 "世界"，DM 可以增删地图实例，玩家无法操作画布上的地图。每个观察者的视口（缩放/平移）独立，不广播。
 - **网格尺寸**：1 格 = 50px（zoom=1.0 时）。所有对象坐标用 `gridX/gridY`（浮点），渲染时乘以 `gridSizePx * zoom`。
-- **网格渲染**：CSS `background-image` 覆盖在 Konva Stage 之上的透明 `<div>`，`pointer-events: none`，跟随 Konva viewport 同步 `background-size` / `background-position`。
+- **网格渲染**：~~CSS `background-image` 覆盖层~~ → **改为 Konva 原生 `gridLayer`**（Phase 2 期间变更）。CSS overlay 与 Konva canvas 是两套独立渲染管线，缩放时会出现地图边缘与网格线肉眼可见的错位；改为在最底层 `gridLayer` 用 `Konva.Line` 按可视范围绘制网格（`strokeWidth = 1/scale`），与地图共享同一 stage 变换，缩放/平移永不错位。
 - **不支持地图旋转**。
 - **包含撤销/重做**。
 - **吸附规则**：棋子、NPC、矩形吸附；自由笔迹不吸附；地图实例放置/拖动吸附。
@@ -93,11 +93,11 @@ world: {            // 世界状态（落盘）
 **交付物 / Deliverables**：
 - [public/game.html](public/game.html)：
   - 侧边栏新增 "添加地图" 按钮（仅 `.dm-only` 显示），文件选择器读取图片 → 转 Base64 → 在世界中央创建 Konva.Image
-  - 客户端数据结构：`localPlacedMaps = [{ id, assetId, gridX, gridY, gridWidth, isLocked }]`，`localMapAssets = { assetId: { base64, ratio } }`
+  - 客户端数据结构：`localPlacedMaps = [{ id, assetId, gridX, gridY, gridWidth, isLocked }]`，`localMapAssets = { assetId: { base64, originalWidth, originalHeight } }`（与 Phase 3 服务端模型对齐）
   - 拖动结束时调用 `snapToGrid` 调整 `gridX/Y`
-  - 每张已放置地图右上角浮一个锁定 icon（DOM 元素，根据 Konva.Image 的屏幕坐标定位，缩放/平移时跟随更新）
+  - 每张已放置地图**左上角**浮一个锁定 icon（DOM 元素，根据 Konva.Image 的屏幕坐标定位，缩放/平移时跟随更新）
   - 锁定状态下：`konvaImage.draggable(false)`、icon 切换为已锁图标
-  - 选中地图（点击）时显示 "删除" 按钮（DM 用），点击后从 localPlacedMaps 移除并销毁 Konva 节点
+  - 选中地图（点击）时**右上角**显示 "删除" 按钮（DM 用 DOM 浮层，与锁定 icon 同步跟随），点击后从 localPlacedMaps 移除并销毁 Konva 节点
   - 玩家视角：所有 Konva.Image 设置 `listening: false`，玩家无法选中、拖动、删除
 
 **验收标准 / Acceptance criteria**：

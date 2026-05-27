@@ -109,15 +109,59 @@
             overflow: hidden;
         }
         #konva-stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        #grid-overlay {
+        /* 网格改为 Konva 原生绘制（gridLayer），与地图共享同一变换，杜绝缩放错位 */
+        /* 已放置地图的 DM 控件浮层（Phase 2） */
+        #placed-map-overlays {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
-            background-image:
-                linear-gradient(to right, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
-            background-size: 50px 50px;
-            background-position: 0 0;
+            overflow: hidden;
         }
+        .placed-map-lock, .placed-map-delete {
+            position: absolute;
+            width: 28px; height: 28px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            pointer-events: auto;
+            user-select: none;
+            padding: 0;
+        }
+        .placed-map-lock { background: rgba(243, 156, 18, 0.92); color: white; }
+        .placed-map-lock:hover { background: rgba(241, 196, 15, 1); }
+        .placed-map-lock.locked { background: rgba(231, 76, 60, 0.92); }
+        .placed-map-lock.locked:hover { background: rgba(192, 57, 43, 1); }
+        .placed-map-delete { background: rgba(192, 57, 43, 0.92); color: white; }
+        .placed-map-delete:hover { background: rgba(231, 76, 60, 1); }
+        /* 缩放手柄（右下角）+ 实时格数标签 */
+        .placed-map-resize {
+            position: absolute;
+            width: 18px; height: 18px;
+            border-radius: 4px;
+            background: rgba(22, 160, 133, 0.95);
+            border: 2px solid white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            cursor: nwse-resize;
+            pointer-events: auto;
+        }
+        .placed-map-size-label {
+            position: absolute;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.78);
+            color: #fff;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+        /* 添加地图按钮（新世界） */
+        #add-world-map-btn { background: #16a085; }
+        #add-world-map-btn:hover { background: #1abc9c; }
 
         .token {
             position: absolute; width: 0; height: 0;
@@ -975,6 +1019,13 @@
         </div>
     </div>
 
+    <!-- 新世界地图（Phase 2，本地放置，Phase 3 接服务端） -->
+    <div id="section-world-map" class="dm-only">
+        <div class="section-title">网格世界（新）</div>
+        <input type="file" id="world-file-input" accept="image/*" style="display: none;">
+        <button id="add-world-map-btn" class="action-btn" onclick="onAddWorldMapClick()">＋ 添加地图</button>
+    </div>
+
     <div id="section-tools" class="dm-only">
         <div class="section-title">绘图工具</div>
         <!-- 颜色选择（始终显示，圆形按钮） -->
@@ -1086,7 +1137,7 @@
     <button id="lock-btn" class="dm-only" onclick="toggleLock()">🔓 锁定地图</button>
     <button id="world-toggle-btn" onclick="toggleWorldView()">🌍 新世界视图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
-    <div id="world-container"><div id="konva-stage"></div><div id="grid-overlay"></div></div>
+    <div id="world-container"><div id="konva-stage"></div><div id="placed-map-overlays"></div></div>
 </div>
 
     <!-- 笔记视图 -->
@@ -3250,13 +3301,23 @@
     const ZOOM_STEP = 1.05;
 
     const worldContainer = document.getElementById('world-container');
-    const gridOverlay = document.getElementById('grid-overlay');
     const worldToggleBtn = document.getElementById('world-toggle-btn');
+    const placedMapOverlaysEl = document.getElementById('placed-map-overlays');
 
     let konvaStage = null;
+    let gridLayer = null;
     let staticLayer = null;
     let dynamicLayer = null;
     let isWorldViewActive = false;
+
+    // ===== Phase 2 本地状态（Phase 3 迁到服务端） =====
+    const localMapAssets = {};      // assetId -> { base64, originalWidth, originalHeight }
+    const localPlacedMaps = [];     // [{ id, assetId, gridX, gridY, gridWidth, isLocked }]
+    const placedMapNodes = new Map();    // mapId -> Konva.Image
+    const placedMapOverlays = new Map(); // mapId -> { wrap, lockBtn, deleteBtn }
+    let selectedPlacedMapId = null;
+    let placedMapSeq = 0;
+    let mapAssetSeq = 0;
 
     function initKonvaWorld() {
         if (konvaStage) return;
@@ -3267,24 +3328,31 @@
             height: rect.height,
             draggable: true,
         });
+        gridLayer = new Konva.Layer({ listening: false });
         staticLayer = new Konva.Layer();
         dynamicLayer = new Konva.Layer();
+        konvaStage.add(gridLayer);
         konvaStage.add(staticLayer);
         konvaStage.add(dynamicLayer);
 
         konvaStage.on('wheel', onStageWheel);
-        konvaStage.on('dragmove', syncGridOverlay);
-        konvaStage.on('dragend', syncGridOverlay);
+        konvaStage.on('dragmove', onStageTransformChanged);
+        konvaStage.on('dragend', onStageTransformChanged);
+        // 点击空白（stage 本身）取消选中
+        konvaStage.on('click tap', (e) => {
+            if (!isDM) return;
+            if (e.target === konvaStage) deselectPlacedMap();
+        });
 
         // 容器尺寸变化时同步 stage 与网格
         new ResizeObserver(() => {
             if (!isWorldViewActive) return;
             const r = worldContainer.getBoundingClientRect();
             konvaStage.size({ width: r.width, height: r.height });
-            syncGridOverlay();
+            onStageTransformChanged();
         }).observe(worldContainer);
 
-        syncGridOverlay();
+        onStageTransformChanged();
     }
 
     function onStageWheel(e) {
@@ -3304,16 +3372,40 @@
             x: pointer.x - worldPos.x * newScale,
             y: pointer.y - worldPos.y * newScale,
         });
-        syncGridOverlay();
+        onStageTransformChanged();
     }
 
-    function syncGridOverlay() {
-        if (!konvaStage) return;
-        const zoom = konvaStage.scaleX();
-        const size = GRID_SIZE * zoom;
-        const mod = (n, m) => ((n % m) + m) % m;
-        gridOverlay.style.backgroundSize = `${size}px ${size}px`;
-        gridOverlay.style.backgroundPosition = `${mod(konvaStage.x(), size)}px ${mod(konvaStage.y(), size)}px`;
+    function onStageTransformChanged() {
+        drawGrid();
+        updateAllPlacedMapOverlays();
+        if (konvaStage) konvaStage.batchDraw();
+    }
+
+    // 网格用 Konva.Line 绘制在 gridLayer 上，只覆盖当前可视世界范围
+    // 与地图共享 stage 变换，缩放/平移时永不错位
+    function drawGrid() {
+        if (!konvaStage || !gridLayer) return;
+        gridLayer.destroyChildren();
+        const scale = konvaStage.scaleX();
+        const left = -konvaStage.x() / scale;
+        const top = -konvaStage.y() / scale;
+        const right = left + konvaStage.width() / scale;
+        const bottom = top + konvaStage.height() / scale;
+        const startGX = Math.floor(left / GRID_SIZE);
+        const endGX = Math.ceil(right / GRID_SIZE);
+        const startGY = Math.floor(top / GRID_SIZE);
+        const endGY = Math.ceil(bottom / GRID_SIZE);
+        const stroke = 'rgba(255, 255, 255, 0.12)';
+        const strokeWidth = 1 / scale; // 折算成屏幕 1px
+        for (let gx = startGX; gx <= endGX; gx++) {
+            const wx = gx * GRID_SIZE;
+            gridLayer.add(new Konva.Line({ points: [wx, top, wx, bottom], stroke, strokeWidth, listening: false }));
+        }
+        for (let gy = startGY; gy <= endGY; gy++) {
+            const wy = gy * GRID_SIZE;
+            gridLayer.add(new Konva.Line({ points: [left, wy, right, wy], stroke, strokeWidth, listening: false }));
+        }
+        gridLayer.batchDraw();
     }
 
     // 世界坐标 <-> 格子坐标 工具函数
@@ -3348,13 +3440,308 @@
             } else {
                 const r = worldContainer.getBoundingClientRect();
                 konvaStage.size({ width: r.width, height: r.height });
-                syncGridOverlay();
+                onStageTransformChanged();
             }
         } else {
             worldContainer.style.display = 'none';
             mapFrame.style.display = '';
             worldToggleBtn.textContent = '🌍 新世界视图';
         }
+    }
+
+    // ===== Phase 2: DM 地图放置 / 拖动吸附 / 锁定 / 删除（仅本地） =====
+    function genPlacedMapId() { return `pm_${Date.now()}_${++placedMapSeq}`; }
+    function genMapAssetId() { return `ma_${Date.now()}_${++mapAssetSeq}`; }
+
+    function onAddWorldMapClick() {
+        if (!isDM) return;
+        if (!isWorldViewActive) toggleWorldView();
+        document.getElementById('world-file-input').click();
+    }
+
+    // 文件选择 -> 读取为 Base64 -> 解析尺寸 -> 在视口中央放置
+    document.getElementById('world-file-input').addEventListener('change', (e) => {
+        if (!isDM) return;
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const base64 = ev.target.result;
+            const img = new Image();
+            img.onload = () => {
+                const assetId = genMapAssetId();
+                localMapAssets[assetId] = {
+                    base64,
+                    originalWidth: img.naturalWidth,
+                    originalHeight: img.naturalHeight,
+                };
+                placeMapAtViewportCenter(assetId);
+            };
+            img.onerror = () => console.error('地图图片解析失败');
+            img.src = base64;
+        };
+        reader.onerror = () => console.error('地图文件读取失败');
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    });
+
+    function placeMapAtViewportCenter(assetId) {
+        if (!isDM) return;
+        const asset = localMapAssets[assetId];
+        if (!asset) return;
+        if (!konvaStage) initKonvaWorld();
+
+        const scale = konvaStage.scaleX();
+        const centerWorld = {
+            x: (konvaStage.width() / 2 - konvaStage.x()) / scale,
+            y: (konvaStage.height() / 2 - konvaStage.y()) / scale,
+        };
+        const gridWidth = 20;
+        const ratio = asset.originalHeight / asset.originalWidth;
+        const gridHeight = gridWidth * ratio;
+        const center = worldToGrid(centerWorld.x, centerWorld.y);
+        const snapped = snapToGrid(center.gx - gridWidth / 2, center.gy - gridHeight / 2);
+        const placed = {
+            id: genPlacedMapId(),
+            assetId,
+            gridX: snapped.gx,
+            gridY: snapped.gy,
+            gridWidth,
+            isLocked: false,
+        };
+        localPlacedMaps.push(placed);
+        renderPlacedMap(placed);
+        selectPlacedMap(placed.id);
+    }
+
+    function renderPlacedMap(placed) {
+        const asset = localMapAssets[placed.assetId];
+        if (!asset) return;
+        const ratio = asset.originalHeight / asset.originalWidth;
+        const imgEl = new Image();
+        imgEl.onload = () => {
+            const node = new Konva.Image({
+                id: placed.id,
+                name: 'placed-map',
+                x: placed.gridX * GRID_SIZE,
+                y: placed.gridY * GRID_SIZE,
+                width: placed.gridWidth * GRID_SIZE,
+                height: placed.gridWidth * ratio * GRID_SIZE,
+                image: imgEl,
+                draggable: isDM && !placed.isLocked,
+                listening: isDM,
+            });
+            node.on('mousedown touchstart', (e) => {
+                if (!isDM) return;
+                e.cancelBubble = true;       // 阻止冒泡到 stage 触发其 drag
+                selectPlacedMap(placed.id);
+            });
+            node.on('dragmove', () => updatePlacedMapOverlay(placed.id));
+            node.on('dragend', () => {
+                const snapped = snapToGrid(node.x() / GRID_SIZE, node.y() / GRID_SIZE);
+                placed.gridX = snapped.gx;
+                placed.gridY = snapped.gy;
+                node.position({ x: placed.gridX * GRID_SIZE, y: placed.gridY * GRID_SIZE });
+                updatePlacedMapOverlay(placed.id);
+            });
+            staticLayer.add(node);
+            placedMapNodes.set(placed.id, node);
+            if (isDM) createOverlayForPlacedMap(placed);
+            updatePlacedMapOverlay(placed.id);
+        };
+        imgEl.onerror = () => console.error('Konva.Image 加载失败:', placed.id);
+        imgEl.src = asset.base64;
+    }
+
+    function createOverlayForPlacedMap(placed) {
+        const wrap = document.createElement('div');
+        wrap.dataset.mapid = placed.id;
+
+        const lockBtn = document.createElement('button');
+        lockBtn.className = 'placed-map-lock' + (placed.isLocked ? ' locked' : '');
+        lockBtn.textContent = placed.isLocked ? '🔒' : '🔓';
+        lockBtn.title = placed.isLocked ? '点击解锁' : '点击锁定';
+        lockBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            togglePlacedMapLock(placed.id);
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'placed-map-delete';
+        deleteBtn.textContent = '🗑';
+        deleteBtn.title = '删除该地图';
+        deleteBtn.style.display = 'none';
+        deleteBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            removePlacedMap(placed.id);
+        });
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'placed-map-resize';
+        resizeHandle.title = '拖动缩放地图';
+        resizeHandle.style.display = 'none';
+        resizeHandle.addEventListener('mousedown', (ev) => startResize(ev, placed.id));
+
+        const sizeLabel = document.createElement('div');
+        sizeLabel.className = 'placed-map-size-label';
+        sizeLabel.style.display = 'none';
+
+        wrap.appendChild(lockBtn);
+        wrap.appendChild(deleteBtn);
+        wrap.appendChild(resizeHandle);
+        wrap.appendChild(sizeLabel);
+        placedMapOverlaysEl.appendChild(wrap);
+        placedMapOverlays.set(placed.id, { wrap, lockBtn, deleteBtn, resizeHandle, sizeLabel });
+        // 上传后选中是在节点异步加载前就置位的，overlay 创建好后补上选中态 UI
+        if (selectedPlacedMapId === placed.id) setPlacedMapSelectionUI(placed.id, true);
+    }
+
+    function updatePlacedMapOverlay(mapId) {
+        const overlay = placedMapOverlays.get(mapId);
+        const node = placedMapNodes.get(mapId);
+        if (!overlay || !node || !konvaStage) return;
+        const scale = konvaStage.scaleX();
+        const screenLeft = konvaStage.x() + node.x() * scale;
+        const screenTop = konvaStage.y() + node.y() * scale;
+        const screenRight = screenLeft + node.width() * scale;
+        const screenBottom = screenTop + node.height() * scale;
+        const inset = 6;
+        const btnSize = 28;
+        const handleSize = 18;
+        overlay.lockBtn.style.left = `${screenLeft + inset}px`;
+        overlay.lockBtn.style.top = `${screenTop + inset}px`;
+        overlay.deleteBtn.style.left = `${screenRight - inset - btnSize}px`;
+        overlay.deleteBtn.style.top = `${screenTop + inset}px`;
+        overlay.resizeHandle.style.left = `${screenRight - inset - handleSize}px`;
+        overlay.resizeHandle.style.top = `${screenBottom - inset - handleSize}px`;
+        overlay.sizeLabel.style.left = `${(screenLeft + screenRight) / 2}px`;
+        overlay.sizeLabel.style.top = `${(screenTop + screenBottom) / 2}px`;
+    }
+
+    function updateAllPlacedMapOverlays() {
+        for (const mapId of placedMapOverlays.keys()) updatePlacedMapOverlay(mapId);
+    }
+
+    function setPlacedMapSelectionUI(mapId, selected) {
+        const overlay = placedMapOverlays.get(mapId);
+        if (!overlay) return;
+        const placed = localPlacedMaps.find(m => m.id === mapId);
+        overlay.deleteBtn.style.display = selected ? '' : 'none';
+        // 缩放手柄仅在选中且未锁定时显示
+        overlay.resizeHandle.style.display = (selected && placed && !placed.isLocked) ? '' : 'none';
+        if (!selected) overlay.sizeLabel.style.display = 'none';
+    }
+
+    function selectPlacedMap(mapId) {
+        if (!isDM) return;
+        if (selectedPlacedMapId === mapId) return;
+        if (selectedPlacedMapId) setPlacedMapSelectionUI(selectedPlacedMapId, false);
+        selectedPlacedMapId = mapId;
+        setPlacedMapSelectionUI(mapId, true);
+        updatePlacedMapOverlay(mapId);
+    }
+
+    function deselectPlacedMap() {
+        if (!selectedPlacedMapId) return;
+        setPlacedMapSelectionUI(selectedPlacedMapId, false);
+        selectedPlacedMapId = null;
+    }
+
+    function togglePlacedMapLock(mapId) {
+        if (!isDM) return;
+        const placed = localPlacedMaps.find(m => m.id === mapId);
+        if (!placed) return;
+        placed.isLocked = !placed.isLocked;
+        const node = placedMapNodes.get(mapId);
+        if (node) node.draggable(!placed.isLocked);
+        const overlay = placedMapOverlays.get(mapId);
+        if (overlay) {
+            overlay.lockBtn.textContent = placed.isLocked ? '🔒' : '🔓';
+            overlay.lockBtn.title = placed.isLocked ? '点击解锁' : '点击锁定';
+            overlay.lockBtn.classList.toggle('locked', placed.isLocked);
+        }
+        // 锁定后隐藏缩放手柄；解锁且仍选中时恢复
+        if (selectedPlacedMapId === mapId) setPlacedMapSelectionUI(mapId, true);
+    }
+
+    // ===== 地图缩放（右下角手柄拖拽，保持宽高比，松手吸附到整数格宽） =====
+    let resizeState = null;
+
+    function startResize(ev, mapId) {
+        if (!isDM) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const node = placedMapNodes.get(mapId);
+        const placed = localPlacedMaps.find(m => m.id === mapId);
+        if (!node || !placed || placed.isLocked) return;
+        resizeState = {
+            mapId,
+            startPointerX: ev.clientX,
+            startWidthWorld: node.width(),
+            ratio: node.height() / node.width(),
+            scale: konvaStage.scaleX(),
+        };
+        const overlay = placedMapOverlays.get(mapId);
+        if (overlay) {
+            overlay.sizeLabel.style.display = '';
+            updateSizeLabel(mapId);
+        }
+        document.addEventListener('mousemove', onResizeMove);
+        document.addEventListener('mouseup', onResizeEnd);
+    }
+
+    function onResizeMove(ev) {
+        if (!resizeState) return;
+        const node = placedMapNodes.get(resizeState.mapId);
+        if (!node) return;
+        const deltaWorldX = (ev.clientX - resizeState.startPointerX) / resizeState.scale;
+        let newWidthWorld = resizeState.startWidthWorld + deltaWorldX;
+        if (newWidthWorld < GRID_SIZE) newWidthWorld = GRID_SIZE; // 最小 1 格
+        node.width(newWidthWorld);
+        node.height(newWidthWorld * resizeState.ratio);
+        updatePlacedMapOverlay(resizeState.mapId);
+        updateSizeLabel(resizeState.mapId);
+        konvaStage.batchDraw();
+    }
+
+    function onResizeEnd() {
+        if (!resizeState) return;
+        const node = placedMapNodes.get(resizeState.mapId);
+        const placed = localPlacedMaps.find(m => m.id === resizeState.mapId);
+        if (node && placed) {
+            const gw = Math.max(1, Math.round(node.width() / GRID_SIZE));
+            placed.gridWidth = gw;
+            node.width(gw * GRID_SIZE);
+            node.height(gw * resizeState.ratio * GRID_SIZE);
+            updatePlacedMapOverlay(resizeState.mapId);
+            konvaStage.batchDraw();
+        }
+        const overlay = placedMapOverlays.get(resizeState.mapId);
+        if (overlay) overlay.sizeLabel.style.display = 'none';
+        resizeState = null;
+        document.removeEventListener('mousemove', onResizeMove);
+        document.removeEventListener('mouseup', onResizeEnd);
+    }
+
+    function updateSizeLabel(mapId) {
+        const overlay = placedMapOverlays.get(mapId);
+        const node = placedMapNodes.get(mapId);
+        if (!overlay || !node) return;
+        const gw = node.width() / GRID_SIZE;
+        const gh = node.height() / GRID_SIZE;
+        overlay.sizeLabel.textContent = `宽 ${gw.toFixed(1)} 格 × 高 ${gh.toFixed(1)} 格`;
+    }
+
+    function removePlacedMap(mapId) {
+        if (!isDM) return;
+        const idx = localPlacedMaps.findIndex(m => m.id === mapId);
+        if (idx === -1) return;
+        localPlacedMaps.splice(idx, 1);
+        const node = placedMapNodes.get(mapId);
+        if (node) { node.destroy(); placedMapNodes.delete(mapId); }
+        const overlay = placedMapOverlays.get(mapId);
+        if (overlay) { overlay.wrap.remove(); placedMapOverlays.delete(mapId); }
+        if (selectedPlacedMapId === mapId) selectedPlacedMapId = null;
     }
 </script>
 </body>
