@@ -98,6 +98,27 @@
         #map-img { display: block; pointer-events: none; border-radius: 4px; }
         #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: auto; border-radius: 8px; }
 
+        /* 新地图世界占位（Konva 网格世界重构，Phase 0 引入，默认隐藏） */
+        #world-container {
+            display: none;
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #1a1a1a;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        #konva-stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #grid-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+            background-size: 50px 50px;
+            background-position: 0 0;
+        }
+
         .token {
             position: absolute; width: 0; height: 0;
             border-left: 18px solid transparent; border-right: 18px solid transparent;
@@ -192,6 +213,23 @@
         #lock-btn.locked:hover { background: #c0392b; }
         #lock-btn.disabled { opacity: 0.5; cursor: not-allowed; }
         #top-controls { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 20px; z-index: 20; font-size: 13px; }
+
+        /* 临时视图切换按钮（Phase 1 引入，Phase 7 删除） */
+        #world-toggle-btn {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            z-index: 25;
+            padding: 8px 14px;
+            background: #16a085;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        #world-toggle-btn:hover { background: #1abc9c; }
 
         /* 聊天框 */
         #chat-container {
@@ -891,6 +929,7 @@
             background: rgba(231, 76, 60, 0.95);
         }
     </style>
+    <script src="https://unpkg.com/konva@9/konva.min.js"></script>
 </head>
 <body>
 
@@ -1045,7 +1084,9 @@
     <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
     <button id="save-map-btn" class="dm-only" onclick="handleManualSave()">💾 保存地图</button>
     <button id="lock-btn" class="dm-only" onclick="toggleLock()">🔓 锁定地图</button>
+    <button id="world-toggle-btn" onclick="toggleWorldView()">🌍 新世界视图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
+    <div id="world-container"><div id="konva-stage"></div><div id="grid-overlay"></div></div>
 </div>
 
     <!-- 笔记视图 -->
@@ -3201,6 +3242,120 @@
 
     // 初始化应用
     startApp();
+
+    // ===== Konva 网格世界（Phase 1 引入，并行旧地图视图） =====
+    const GRID_SIZE = 50;
+    const MIN_ZOOM = 0.2;
+    const MAX_ZOOM = 5;
+    const ZOOM_STEP = 1.05;
+
+    const worldContainer = document.getElementById('world-container');
+    const gridOverlay = document.getElementById('grid-overlay');
+    const worldToggleBtn = document.getElementById('world-toggle-btn');
+
+    let konvaStage = null;
+    let staticLayer = null;
+    let dynamicLayer = null;
+    let isWorldViewActive = false;
+
+    function initKonvaWorld() {
+        if (konvaStage) return;
+        const rect = worldContainer.getBoundingClientRect();
+        konvaStage = new Konva.Stage({
+            container: 'konva-stage',
+            width: rect.width,
+            height: rect.height,
+            draggable: true,
+        });
+        staticLayer = new Konva.Layer();
+        dynamicLayer = new Konva.Layer();
+        konvaStage.add(staticLayer);
+        konvaStage.add(dynamicLayer);
+
+        konvaStage.on('wheel', onStageWheel);
+        konvaStage.on('dragmove', syncGridOverlay);
+        konvaStage.on('dragend', syncGridOverlay);
+
+        // 容器尺寸变化时同步 stage 与网格
+        new ResizeObserver(() => {
+            if (!isWorldViewActive) return;
+            const r = worldContainer.getBoundingClientRect();
+            konvaStage.size({ width: r.width, height: r.height });
+            syncGridOverlay();
+        }).observe(worldContainer);
+
+        syncGridOverlay();
+    }
+
+    function onStageWheel(e) {
+        e.evt.preventDefault();
+        const oldScale = konvaStage.scaleX();
+        const pointer = konvaStage.getPointerPosition();
+        if (!pointer) return;
+        const worldPos = {
+            x: (pointer.x - konvaStage.x()) / oldScale,
+            y: (pointer.y - konvaStage.y()) / oldScale,
+        };
+        const direction = e.evt.deltaY > 0 ? -1 : 1;
+        const target = direction > 0 ? oldScale * ZOOM_STEP : oldScale / ZOOM_STEP;
+        const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, target));
+        konvaStage.scale({ x: newScale, y: newScale });
+        konvaStage.position({
+            x: pointer.x - worldPos.x * newScale,
+            y: pointer.y - worldPos.y * newScale,
+        });
+        syncGridOverlay();
+    }
+
+    function syncGridOverlay() {
+        if (!konvaStage) return;
+        const zoom = konvaStage.scaleX();
+        const size = GRID_SIZE * zoom;
+        const mod = (n, m) => ((n % m) + m) % m;
+        gridOverlay.style.backgroundSize = `${size}px ${size}px`;
+        gridOverlay.style.backgroundPosition = `${mod(konvaStage.x(), size)}px ${mod(konvaStage.y(), size)}px`;
+    }
+
+    // 世界坐标 <-> 格子坐标 工具函数
+    function worldToGrid(x, y) {
+        return { gx: x / GRID_SIZE, gy: y / GRID_SIZE };
+    }
+    function gridToWorld(gx, gy) {
+        return { x: gx * GRID_SIZE, y: gy * GRID_SIZE };
+    }
+    function snapToGrid(gx, gy) {
+        return { gx: Math.round(gx), gy: Math.round(gy) };
+    }
+    function getMousePosInWorld() {
+        if (!konvaStage) return null;
+        const pointer = konvaStage.getPointerPosition();
+        if (!pointer) return null;
+        const scale = konvaStage.scaleX();
+        return {
+            x: (pointer.x - konvaStage.x()) / scale,
+            y: (pointer.y - konvaStage.y()) / scale,
+        };
+    }
+
+    function toggleWorldView() {
+        isWorldViewActive = !isWorldViewActive;
+        if (isWorldViewActive) {
+            mapFrame.style.display = 'none';
+            worldContainer.style.display = 'block';
+            worldToggleBtn.textContent = '🗺️ 回到旧地图';
+            if (!konvaStage) {
+                initKonvaWorld();
+            } else {
+                const r = worldContainer.getBoundingClientRect();
+                konvaStage.size({ width: r.width, height: r.height });
+                syncGridOverlay();
+            }
+        } else {
+            worldContainer.style.display = 'none';
+            mapFrame.style.display = '';
+            worldToggleBtn.textContent = '🌍 新世界视图';
+        }
+    }
 </script>
 </body>
 </html>
