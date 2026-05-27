@@ -270,6 +270,28 @@
         }
         #world-toggle-btn:hover { background: #1abc9c; }
 
+        /* 世界视图左上角撤销/重做按钮（Phase 6） */
+        #world-history-btns {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 30;
+            display: flex;
+            gap: 6px;
+        }
+        #world-history-btns button {
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.62);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 5px;
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            user-select: none;
+        }
+        #world-history-btns button:hover { background: rgba(255, 255, 255, 0.15); }
+
         /* 聊天框 */
         #chat-container {
             margin-top: auto;
@@ -1133,7 +1155,7 @@
     <button id="lock-btn" class="dm-only" onclick="toggleLock()">🔓 锁定地图</button>
     <button id="world-toggle-btn" onclick="toggleWorldView()">🌍 新世界视图</button>
     <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
-    <div id="world-container"><div id="konva-stage"></div><div id="placed-map-overlays"></div></div>
+    <div id="world-container"><div id="konva-stage"></div><div id="placed-map-overlays"></div><div id="world-history-btns" class="dm-only"><button onclick="emitWorldUndo()" title="撤销 (Ctrl+Z)">↩ 撤销</button><button onclick="emitWorldRedo()" title="重做 (Ctrl+Shift+Z)">↪ 重做</button></div></div>
 </div>
 
     <!-- 笔记视图 -->
@@ -3799,6 +3821,21 @@
     // 鼠标在 stage 外松开时也能正常结束绘制（window 级兜底）
     window.addEventListener('mouseup', finalizeWorldDraw);
 
+    function emitWorldUndo() { if (isDM) socket.emit('history:undo'); }
+    function emitWorldRedo() { if (isDM) socket.emit('history:redo'); }
+
+    // Ctrl/Cmd+Z 撤销，Ctrl/Cmd+Shift+Z 重做（仅 DM）
+    window.addEventListener('keydown', (e) => {
+        if (!isDM) return;
+        if (!(e.ctrlKey || e.metaKey) || e.key !== 'z' && e.key !== 'Z') return;
+        e.preventDefault();
+        if (e.shiftKey) {
+            socket.emit('history:redo');
+        } else {
+            socket.emit('history:undo');
+        }
+    });
+
     // ===== Phase 2: DM 地图放置 / 拖动吸附 / 锁定 / 删除（仅本地） =====
     function genPlacedMapId() { return `pm_${Date.now()}_${++placedMapSeq}`; }
     function genMapAssetId() { return `ma_${Date.now()}_${++mapAssetSeq}`; }
@@ -4166,6 +4203,45 @@
         const overlay = placedMapOverlays.get(id);
         if (overlay) { overlay.wrap.remove(); placedMapOverlays.delete(id); }
         if (selectedPlacedMapId === id) selectedPlacedMapId = null;
+    });
+
+    // 撤销/重做后服务端广播完整世界快照，全员重渲
+    socket.on('world:sync', (world) => {
+        // 更新本地数据数组
+        placedMapsData.length = 0;
+        worldTokensData.length = 0;
+        worldNpcsData.length = 0;
+        worldDrawingsData.length = 0;
+        worldRectsData.length = 0;
+        (world.placedMaps || []).forEach(m => placedMapsData.push(m));
+        (world.tokens || []).forEach(t => worldTokensData.push(t));
+        (world.npcs || []).forEach(n => worldNpcsData.push(n));
+        (world.freeDrawings || []).forEach(d => worldDrawingsData.push(d));
+        (world.rects || []).forEach(r => worldRectsData.push(r));
+
+        if (isWorldViewActive && konvaStage) {
+            // 销毁所有 Konva 节点
+            placedMapNodes.forEach(node => node.destroy());
+            placedMapNodes.clear();
+            placedMapOverlays.forEach(ov => ov.wrap.remove());
+            placedMapOverlays.clear();
+            selectedPlacedMapId = null;
+            worldTokenNodes.forEach(node => node.destroy());
+            worldTokenNodes.clear();
+            worldNpcNodes.forEach(node => node.destroy());
+            worldNpcNodes.clear();
+            worldDrawingNodes.forEach(node => node.destroy());
+            worldDrawingNodes.clear();
+            worldRectNodes.forEach(node => node.destroy());
+            worldRectNodes.clear();
+            liveStrokeNodes.forEach(node => node.destroy());
+            liveStrokeNodes.clear();
+            renderPendingWorldObjects();
+        }
+        // 按需拉取缺失的地图资产（undo 后可能出现之前未缓存的资产）
+        (world.placedMaps || []).forEach(pm => {
+            if (!mapAssetCache[pm.assetId]) socket.emit('mapAsset:fetch', pm.assetId);
+        });
     });
 
 </script>

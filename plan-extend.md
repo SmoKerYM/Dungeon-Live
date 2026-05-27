@@ -290,3 +290,4 @@ world: {            // 世界状态（落盘）
 | — | `placedMap:resize`（新增，`{ id, gridWidth }`） | Phase 3 |
 | — | `draw:rect`（新增） | Phase 5 |
 | — | `history:undo` / `history:redo`（新增） | Phase 6 |
+| — | `world:sync`（服务端 → 全员，undo/redo 后广播完整 world 快照） | Phase 6 |

@@ -16,6 +16,8 @@ const CHAT_HISTORY_FILE = process.env.NODE_ENV === 'production'
   ? '/data/chat_history.json' : './data/chat_history.json';
 // 聊天历史最大保留条数
 const MAX_CHAT_HISTORY = 100;
+// 撤销/重做栈最大长度
+const MAX_UNDO_STACK = 20;
 // 地图资产文件路径
 const MAP_ASSETS_FILE = process.env.NODE_ENV === 'production' ? '/data/map_assets.json' : './data/map_assets.json';
 // 世界状态文件路径
@@ -220,6 +222,17 @@ function scheduleWorldSave() {
   worldSaveTimer = setTimeout(() => saveWorld(gameState.world), 500);
 }
 
+// 撤销/重做栈（仅 DM，内存，重启后清空）
+let undoStack = [];
+let redoStack = [];
+
+// 在 world mutation 前调用：保存快照 + 清空 redoStack
+function pushWorldUndo() {
+  undoStack.push(JSON.parse(JSON.stringify(gameState.world)));
+  if (undoStack.length > MAX_UNDO_STACK) undoStack.shift();
+  redoStack = [];
+}
+
 // 地图哈希函数（用于判断是否为同一张地图）
 function getMapHash(mapData) {
   return mapData.substring(0, 1000) + '_' + mapData.length;
@@ -396,6 +409,7 @@ io.on('connection', (socket) => {
     if (!player) return;
     if (player.role === 'Player' && player.color !== color) return;
 
+    pushWorldUndo();
     // 同颜色只保留一个棋子
     const idx = gameState.world.tokens.findIndex(t => t.color === color);
     if (idx !== -1) gameState.world.tokens.splice(idx, 1);
@@ -410,6 +424,7 @@ io.on('connection', (socket) => {
     if (!player) return;
     if (player.role === 'Player' && player.color !== color) return;
 
+    pushWorldUndo();
     const token = gameState.world.tokens.find(t => t.color === color);
     if (token) { token.gridX = gridX; token.gridY = gridY; }
     io.emit('token:move', { color, gridX, gridY });
@@ -421,6 +436,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
+    pushWorldUndo();
     gameState.world.tokens = [];
     io.emit('token:clearAll');
     scheduleWorldSave();
@@ -449,6 +465,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
+    pushWorldUndo();
     const npcColor = color || '#7f8c8d';
     gameState.world.npcs.push({ id, gridX, gridY, color: npcColor });
     io.emit('npc:spawn', { id, gridX, gridY, color: npcColor });
@@ -460,6 +477,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
+    pushWorldUndo();
     const npc = gameState.world.npcs.find(n => n.id === id);
     if (npc) { npc.gridX = gridX; npc.gridY = gridY; }
     io.emit('npc:move', { id, gridX, gridY });
@@ -471,6 +489,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
+    pushWorldUndo();
     const idx = gameState.world.npcs.findIndex(n => n.id === id);
     if (idx !== -1) gameState.world.npcs.splice(idx, 1);
     io.emit('npc:remove', id);
@@ -482,6 +501,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
 
+    pushWorldUndo();
     gameState.world.npcs = [];
     io.emit('npc:clearAll');
     scheduleWorldSave();
@@ -750,6 +770,7 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
     if (!gameState.mapAssets[assetId]) return;
+    pushWorldUndo();
     gameState.world.placedMaps.push({ id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked });
     io.emit('placedMap:added', { id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked });
     scheduleWorldSave();
@@ -761,6 +782,7 @@ io.on('connection', (socket) => {
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
     if (!map) return;
+    pushWorldUndo();
     map.gridX = gridX;
     map.gridY = gridY;
     io.emit('placedMap:moved', { id, gridX, gridY });
@@ -773,6 +795,7 @@ io.on('connection', (socket) => {
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
     if (!map) return;
+    pushWorldUndo();
     map.gridWidth = gridWidth;
     io.emit('placedMap:resized', { id, gridWidth });
     scheduleWorldSave();
@@ -784,6 +807,7 @@ io.on('connection', (socket) => {
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
     if (!map) return;
+    pushWorldUndo();
     map.isLocked = isLocked;
     io.emit('placedMap:lockSet', { id, isLocked });
     scheduleWorldSave();
@@ -795,6 +819,7 @@ io.on('connection', (socket) => {
     if (player?.role !== 'DM') return;
     const idx = gameState.world.placedMaps.findIndex(m => m.id === id);
     if (idx === -1) return;
+    pushWorldUndo();
     gameState.world.placedMaps.splice(idx, 1);
     io.emit('placedMap:removed', id);
     scheduleWorldSave();
@@ -811,6 +836,7 @@ io.on('connection', (socket) => {
   socket.on('draw:freeStroke', ({ id, points, color, strokeWidth }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
+    pushWorldUndo();
     gameState.world.freeDrawings.push({ id, points, color, strokeWidth });
     socket.broadcast.emit('draw:freeStroke', { id, points, color, strokeWidth });
     scheduleWorldSave();
@@ -820,6 +846,7 @@ io.on('connection', (socket) => {
   socket.on('draw:rect', ({ id, gridX, gridY, gridW, gridH, color, strokeWidth }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
+    pushWorldUndo();
     gameState.world.rects.push({ id, gridX, gridY, gridW, gridH, color, strokeWidth });
     socket.broadcast.emit('draw:rect', { id, gridX, gridY, gridW, gridH, color, strokeWidth });
     scheduleWorldSave();
@@ -829,6 +856,7 @@ io.on('connection', (socket) => {
   socket.on('draw:remove', (id) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
+    pushWorldUndo();
     const di = gameState.world.freeDrawings.findIndex(d => d.id === id);
     if (di !== -1) gameState.world.freeDrawings.splice(di, 1);
     const ri = gameState.world.rects.findIndex(r => r.id === id);
@@ -841,10 +869,35 @@ io.on('connection', (socket) => {
   socket.on('draw:clearAll', () => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
+    pushWorldUndo();
     gameState.world.freeDrawings = [];
     gameState.world.rects = [];
     io.emit('draw:clearAll');
     scheduleWorldSave();
+  });
+
+  // 撤销世界操作 (仅 DM)
+  socket.on('history:undo', () => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (undoStack.length === 0) return;
+    redoStack.push(JSON.parse(JSON.stringify(gameState.world)));
+    if (redoStack.length > MAX_UNDO_STACK) redoStack.shift();
+    gameState.world = undoStack.pop();
+    scheduleWorldSave();
+    io.emit('world:sync', gameState.world);
+  });
+
+  // 重做世界操作 (仅 DM)
+  socket.on('history:redo', () => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (redoStack.length === 0) return;
+    undoStack.push(JSON.parse(JSON.stringify(gameState.world)));
+    if (undoStack.length > MAX_UNDO_STACK) undoStack.shift();
+    gameState.world = redoStack.pop();
+    scheduleWorldSave();
+    io.emit('world:sync', gameState.world);
   });
 
   // 断开连接

@@ -1,8 +1,8 @@
 # Progress (for plan-extend.md)
 
 ## 当前状态
-- **当前阶段**：Phase 4 完成（已人工验收），待进入 Phase 5
-- **最后更新**：2026-05-27
+- **当前阶段**：Phase 6 完成（待人工验收），待进入 Phase 7
+- **最后更新**：2026-05-28
 
 ## 已完成的 Phase
 - **Phase 0** (2026-05-27)：
@@ -61,8 +61,15 @@
   - [public/game.html](public/game.html)：`finalizeWorldDraw()` 实现乐观渲染：将 dynamicLayer 临时节点移入 staticLayer → 写入数据数组 → emit；`onStageDrawMouseDown` 只在 `e.target === konvaStage`（空白处）时开始绘制，避免与棋子/地图拖拽冲突；`finalizeWorldDraw` 幂等（第二次调用时 flag 已重置，无副作用）
   - [public/game.html](public/game.html)：`renderPendingWorldObjects()` 加入 `worldDrawingsData`/`worldRectsData` 的延迟渲染；`joinSuccess` handler 加入 `gs.world.freeDrawings`/`gs.world.rects` 初始化；socket 事件 `draw:freeStroke`/`draw:rect` 先写数据数组（含去重检查）再渲染，`draw:remove`/`draw:clearAll` 同步销毁节点
 
+- **Phase 6** (2026-05-28)：
+  - [server.js](server.js)：新增 `MAX_UNDO_STACK=20` 常量；`undoStack`/`redoStack` 内存变量；`pushWorldUndo()` 辅助函数（深拷贝当前 world 快照入 undoStack，超 20 条 shift，清空 redoStack）
+  - [server.js](server.js)：16 个 world mutation handler（`token:spawn/move/clearAll`、`npc:spawn/move/remove/clearAll`、`placedMap:add/move/resize/setLock/remove`、`draw:freeStroke/rect/remove/clearAll`）在实际 mutation 前均调用 `pushWorldUndo()`；placedMap 系列在 "not found" 检查通过后才调用，避免无效快照
+  - [server.js](server.js)：新增 `history:undo` handler（DM guard → redoStack push 当前快照 → world = undoStack.pop → scheduleWorldSave → `io.emit('world:sync', world)`）；`history:redo` 对称实现
+  - [public/game.html](public/game.html)：`window.addEventListener('keydown', ...)` 监听 Ctrl/Cmd+Z（`history:undo`）和 Ctrl/Cmd+Shift+Z（`history:redo`），仅 DM 触发，调用 `e.preventDefault()` 防止浏览器默认行为
+  - [public/game.html](public/game.html)：`socket.on('world:sync', ...)` handler：更新 5 个本地数据数组 → 若世界视图已激活则销毁所有 Konva 节点（placedMapNodes/Overlays、worldTokenNodes、worldNpcNodes、worldDrawingNodes、worldRectNodes、liveStrokeNodes）→ `renderPendingWorldObjects()` 重渲 → 对 placedMaps 中未缓存的 assetId 发 `mapAsset:fetch`
+
 ## 下一步
-进入 Phase 6：撤销/重做（Ctrl/Cmd+Z / Ctrl+Shift+Z，详见 [plan-extend.md](plan-extend.md#L208)）。
+进入 Phase 7：清理旧代码 & 更新文档（详见 [plan-extend.md](plan-extend.md#L237)）。
 
 ## Phase 7 清理时需注意（Phase 5 产生的变化）
 - 旧 `draw:path` / `draw:clear` socket handler（服务端和客户端）仍保留，Phase 7 连同旧 canvas 系统一起删除
