@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="sl-theme-dark">
 <head>
     <meta charset="UTF-8">
     <title>DND 线上跑团地图工具 - 多人协作版</title>
@@ -207,25 +207,31 @@
             gap: 4px;
             pointer-events: auto;
         }
-        .dm-tool-btn {
-            width: 36px; height: 36px;
-            border-radius: 6px;
+        #dm-toolbar sl-icon-button::part(base) {
+            width: 40px; height: 40px;
+            border-radius: 8px;
             border: 2px solid transparent;
-            background: rgba(0, 0, 0, 0.62);
-            color: white;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            user-select: none;
-            backdrop-filter: blur(4px);
-            transition: background 0.15s, border-color 0.15s;
-            padding: 0;
+            background: rgba(10, 10, 18, 0.72);
+            color: rgba(210, 215, 230, 0.9);
+            backdrop-filter: blur(6px);
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+            font-size: 18px;
         }
-        .dm-tool-btn:hover { background: rgba(255, 255, 255, 0.15); }
-        .dm-tool-btn.active { border-color: #f1c40f; background: rgba(241, 196, 15, 0.2); }
+        #dm-toolbar sl-icon-button::part(base):hover {
+            background: rgba(255, 255, 255, 0.14);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        #dm-toolbar sl-icon-button.active::part(base) {
+            border-color: #f1c40f;
+            background: rgba(241, 196, 15, 0.18);
+            color: #f1c40f;
+        }
+        #dm-toolbar sl-divider {
+            --color: rgba(255, 255, 255, 0.18);
+            --spacing: 3px;
+            width: 40px;
+        }
         /* 工具条弹出面板（颜色选择器 / 批量清除按钮） */
         #dm-toolbar-popout {
             position: absolute;
@@ -267,19 +273,11 @@
         input.toolbar-color-custom.selected { border-color: #f1c40f; transform: scale(1.1); }
         input.toolbar-color-custom::-webkit-color-swatch-wrapper { padding: 0; }
         input.toolbar-color-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
-        .toolbar-action-btn {
-            padding: 5px 9px;
-            background: rgba(70, 80, 95, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 5px;
-            color: white;
-            cursor: pointer;
+        #dm-toolbar-popout sl-button::part(base) {
             font-size: 11px;
-            font-weight: bold;
-            transition: background 0.15s;
             white-space: nowrap;
+            font-weight: bold;
         }
-        .toolbar-action-btn:hover { background: rgba(100, 115, 135, 0.9); }
 
         /* 聊天框 */
         #chat-container {
@@ -857,6 +855,8 @@
         }
     </style>
     <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/themes/dark.css" />
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/shoelace-autoloader.js"></script>
 </head>
 <body>
 
@@ -967,13 +967,29 @@
         <div id="konva-stage"></div>
         <div id="placed-map-overlays"></div>
         <div id="dm-toolbar" class="dm-only">
-            <button id="btn-move" class="dm-tool-btn active" onclick="setTool('move')" title="移动">移动</button>
-            <button id="btn-pen" class="dm-tool-btn" onclick="setTool('draw')" title="画笔">画笔</button>
-            <button id="btn-rect" class="dm-tool-btn" onclick="setTool('rect')" title="矩形">矩形</button>
-            <button id="btn-eraser" class="dm-tool-btn" onclick="setTool('erase')" title="橡皮">橡皮</button>
-            <button id="btn-fog" class="dm-tool-btn" onclick="setTool('fog')" title="迷雾遮罩：拖拽绘制，双击已有遮罩删除">迷雾</button>
-            <button id="btn-undo" class="dm-tool-btn" onclick="emitWorldUndo()" title="撤销 (Ctrl+Z)">↩</button>
-            <button id="btn-redo" class="dm-tool-btn" onclick="emitWorldRedo()" title="重做 (Ctrl+Shift+Z)">↪</button>
+            <sl-tooltip content="移动" placement="right">
+                <sl-icon-button id="btn-move" class="dm-tool-btn active" name="arrows-move" label="移动" onclick="setTool('move')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-divider></sl-divider>
+            <sl-tooltip content="画笔" placement="right">
+                <sl-icon-button id="btn-pen" class="dm-tool-btn" name="pencil-fill" label="画笔" onclick="setTool('draw')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="矩形" placement="right">
+                <sl-icon-button id="btn-rect" class="dm-tool-btn" name="bounding-box" label="矩形" onclick="setTool('rect')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="橡皮" placement="right">
+                <sl-icon-button id="btn-eraser" class="dm-tool-btn" name="eraser-fill" label="橡皮" onclick="setTool('erase')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="迷雾遮罩（拖拽绘制，双击删除）" placement="right">
+                <sl-icon-button id="btn-fog" class="dm-tool-btn" name="clouds-fill" label="迷雾" onclick="setTool('fog')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-divider></sl-divider>
+            <sl-tooltip content="撤销 (Ctrl+Z)" placement="right">
+                <sl-icon-button id="btn-undo" class="dm-tool-btn" name="arrow-counterclockwise" label="撤销" onclick="emitWorldUndo()"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="重做 (Ctrl+Shift+Z)" placement="right">
+                <sl-icon-button id="btn-redo" class="dm-tool-btn" name="arrow-clockwise" label="重做" onclick="emitWorldRedo()"></sl-icon-button>
+            </sl-tooltip>
         </div>
         <div id="dm-toolbar-popout"></div>
     </div>
@@ -1416,8 +1432,9 @@
                 { label: '清除所有玩家', fn: () => clearAllTokens() },
                 { label: '清除所有NPC',  fn: () => clearAllNPCs() },
             ].forEach(({ label, fn }) => {
-                const btn = document.createElement('button');
-                btn.className = 'toolbar-action-btn';
+                const btn = document.createElement('sl-button');
+                btn.setAttribute('size', 'small');
+                btn.setAttribute('variant', 'default');
                 btn.textContent = label;
                 btn.onclick = fn;
                 popout.appendChild(btn);
