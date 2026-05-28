@@ -199,6 +199,10 @@ function loadWorld() {
       if (!Array.isArray(data.freeDrawings)) data.freeDrawings = [];
       if (!Array.isArray(data.rects)) data.rects = [];
       if (!Array.isArray(data.fogRects)) data.fogRects = [];
+      // 兼容旧存档：补全 isBound 字段（默认 true）
+      if (Array.isArray(data.placedMaps)) {
+        data.placedMaps = data.placedMaps.map(m => ({ ...m, isBound: m.isBound ?? true }));
+      }
       return data;
     }
   } catch (err) {
@@ -598,18 +602,19 @@ io.on('connection', (socket) => {
   });
 
   // 放置地图 (仅 DM)
-  socket.on('placedMap:add', ({ id, assetId, gridX, gridY, gridWidth, isLocked }) => {
+  socket.on('placedMap:add', ({ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
     if (!gameState.mapAssets[assetId]) return;
     pushWorldUndo();
-    gameState.world.placedMaps.push({ id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked });
-    io.emit('placedMap:added', { id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked });
+    const mapEntry = { id, assetId, gridX, gridY, gridWidth, isLocked: !!isLocked, isBound: isBound !== false };
+    gameState.world.placedMaps.push(mapEntry);
+    io.emit('placedMap:added', mapEntry);
     scheduleWorldSave();
   });
 
-  // 移动地图 (仅 DM)，可选附带联动迷雾坐标
-  socket.on('placedMap:move', ({ id, gridX, gridY, movedFogRects }) => {
+  // 移动地图 (仅 DM)，可选附带联动迷雾和四类对象坐标
+  socket.on('placedMap:move', ({ id, gridX, gridY, movedFogRects, movedTokens, movedNpcs, movedFreeDrawings, movedRects }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
@@ -623,12 +628,43 @@ io.on('connection', (socket) => {
         if (fog) { fog.x = x; fog.y = y; }
       });
     }
-    io.emit('placedMap:moved', { id, gridX, gridY, movedFogRects: movedFogRects || [] });
+    if (Array.isArray(movedTokens)) {
+      movedTokens.forEach(({ id: tid, gridX: gx, gridY: gy }) => {
+        const t = gameState.world.tokens.find(t => t.id === tid);
+        if (t) { t.gridX = gx; t.gridY = gy; }
+      });
+    }
+    if (Array.isArray(movedNpcs)) {
+      movedNpcs.forEach(({ id: nid, gridX: gx, gridY: gy }) => {
+        const n = gameState.world.npcs.find(n => n.id === nid);
+        if (n) { n.gridX = gx; n.gridY = gy; }
+      });
+    }
+    if (Array.isArray(movedFreeDrawings)) {
+      movedFreeDrawings.forEach(({ id: did, points }) => {
+        const d = gameState.world.freeDrawings.find(d => d.id === did);
+        if (d && Array.isArray(points)) d.points = points;
+      });
+    }
+    if (Array.isArray(movedRects)) {
+      movedRects.forEach(({ id: rid, gridX: gx, gridY: gy }) => {
+        const r = gameState.world.rects.find(r => r.id === rid);
+        if (r) { r.gridX = gx; r.gridY = gy; }
+      });
+    }
+    io.emit('placedMap:moved', {
+      id, gridX, gridY,
+      movedFogRects: movedFogRects || [],
+      movedTokens: movedTokens || [],
+      movedNpcs: movedNpcs || [],
+      movedFreeDrawings: movedFreeDrawings || [],
+      movedRects: movedRects || [],
+    });
     scheduleWorldSave();
   });
 
-  // 缩放地图 (仅 DM)，可选附带联动迷雾新坐标/尺寸
-  socket.on('placedMap:resize', ({ id, gridWidth, scaledFogRects }) => {
+  // 缩放地图 (仅 DM)，可选附带联动迷雾和四类对象新坐标/尺寸
+  socket.on('placedMap:resize', ({ id, gridWidth, scaledFogRects, scaledTokens, scaledNpcs, scaledFreeDrawings, scaledRects }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
@@ -641,7 +677,49 @@ io.on('connection', (socket) => {
         if (fog) { fog.x = x; fog.y = y; fog.w = w; fog.h = h; }
       });
     }
-    io.emit('placedMap:resized', { id, gridWidth, scaledFogRects: scaledFogRects || [] });
+    if (Array.isArray(scaledTokens)) {
+      scaledTokens.forEach(({ id: tid, gridX: gx, gridY: gy }) => {
+        const t = gameState.world.tokens.find(t => t.id === tid);
+        if (t) { t.gridX = gx; t.gridY = gy; }
+      });
+    }
+    if (Array.isArray(scaledNpcs)) {
+      scaledNpcs.forEach(({ id: nid, gridX: gx, gridY: gy }) => {
+        const n = gameState.world.npcs.find(n => n.id === nid);
+        if (n) { n.gridX = gx; n.gridY = gy; }
+      });
+    }
+    if (Array.isArray(scaledFreeDrawings)) {
+      scaledFreeDrawings.forEach(({ id: did, points }) => {
+        const d = gameState.world.freeDrawings.find(d => d.id === did);
+        if (d && Array.isArray(points)) d.points = points;
+      });
+    }
+    if (Array.isArray(scaledRects)) {
+      scaledRects.forEach(({ id: rid, gridX: gx, gridY: gy, gridW, gridH }) => {
+        const r = gameState.world.rects.find(r => r.id === rid);
+        if (r) { r.gridX = gx; r.gridY = gy; r.gridW = gridW; r.gridH = gridH; }
+      });
+    }
+    io.emit('placedMap:resized', {
+      id, gridWidth,
+      scaledFogRects: scaledFogRects || [],
+      scaledTokens: scaledTokens || [],
+      scaledNpcs: scaledNpcs || [],
+      scaledFreeDrawings: scaledFreeDrawings || [],
+      scaledRects: scaledRects || [],
+    });
+    scheduleWorldSave();
+  });
+
+  // 切换地图内对象绑定联动 (仅 DM)，不纳入 undo 栈
+  socket.on('placedMap:setBound', ({ id, isBound }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const map = gameState.world.placedMaps.find(m => m.id === id);
+    if (!map) return;
+    map.isBound = !!isBound;
+    io.emit('placedMap:boundSet', { id, isBound: !!isBound });
     scheduleWorldSave();
   });
 

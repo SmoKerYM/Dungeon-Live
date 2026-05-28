@@ -91,6 +91,10 @@
         .placed-map-lock:hover { background: rgba(241, 196, 15, 1); }
         .placed-map-lock.locked { background: rgba(231, 76, 60, 0.92); }
         .placed-map-lock.locked:hover { background: rgba(192, 57, 43, 1); }
+        .placed-map-bind { background: rgba(39, 174, 96, 0.92); color: white; }
+        .placed-map-bind:hover { background: rgba(46, 204, 113, 1); }
+        .placed-map-bind.unbound { background: rgba(100, 100, 110, 0.85); color: white; }
+        .placed-map-bind.unbound:hover { background: rgba(140, 140, 150, 1); }
         .placed-map-delete { background: rgba(192, 57, 43, 0.92); color: white; }
         .placed-map-delete:hover { background: rgba(231, 76, 60, 1); }
         /* 缩放手柄（右下角）+ 实时格数标签 */
@@ -3204,6 +3208,42 @@
         });
     }
 
+    // 返回被指定地图"包裹"的四类对象（用于 isBound 联动）
+    // 必须在地图坐标更新前调用，以旧坐标为准
+    function getWrappedObjects(placed) {
+        const asset = mapAssetCache[placed.assetId];
+        if (!asset) return { tokens: [], npcs: [], freeDrawings: [], rects: [] };
+        const ratio = asset.originalHeight / asset.originalWidth;
+        const mapGX1 = placed.gridX;
+        const mapGY1 = placed.gridY;
+        const mapGX2 = placed.gridX + placed.gridWidth;
+        const mapGY2 = placed.gridY + placed.gridWidth * ratio;
+        const mapPX1 = mapGX1 * GRID_SIZE;
+        const mapPY1 = mapGY1 * GRID_SIZE;
+        const mapPX2 = mapGX2 * GRID_SIZE;
+        const mapPY2 = mapGY2 * GRID_SIZE;
+        const inGrid = (cx, cy) => cx >= mapGX1 && cx <= mapGX2 && cy >= mapGY1 && cy <= mapGY2;
+        const inPx = (px, py) => px >= mapPX1 && px <= mapPX2 && py >= mapPY1 && py <= mapPY2;
+
+        const tokens = worldTokensData.filter(t => inGrid(t.gridX + 0.5, t.gridY + 0.5));
+        const npcs = worldNpcsData.filter(n => inGrid(n.gridX + 0.5, n.gridY + 0.5));
+        const freeDrawings = worldDrawingsData.filter(d => {
+            const pts = d.points;
+            for (let i = 0; i + 1 < pts.length; i += 2) {
+                if (inPx(pts[i], pts[i + 1])) return true;
+            }
+            return false;
+        });
+        const rects = worldRectsData.filter(r => {
+            const corners = [
+                [r.gridX, r.gridY], [r.gridX + r.gridW, r.gridY],
+                [r.gridX, r.gridY + r.gridH], [r.gridX + r.gridW, r.gridY + r.gridH],
+            ];
+            return corners.some(([cx, cy]) => inGrid(cx, cy));
+        });
+        return { tokens, npcs, freeDrawings, rects };
+    }
+
     // 开启世界视图时一次性渲染所有待渲染的世界对象
     function renderPendingWorldObjects() {
         renderPendingPlacedMaps();
@@ -3344,6 +3384,7 @@
             gridY: snapped.gy,
             gridWidth,
             isLocked: false,
+            isBound: true,
         });
     }
 
@@ -3412,34 +3453,74 @@
                 selectPlacedMap(placed.id);
             });
             node.on('dragstart', () => {
+                const wrappedFog = getFogRectsWrappedByMap(placed).map(f => ({ id: f.id, origX: f.x, origY: f.y }));
                 fogDragStartData = {
                     origWorldX: placed.gridX * GRID_SIZE,
                     origWorldY: placed.gridY * GRID_SIZE,
-                    wrappedFog: getFogRectsWrappedByMap(placed).map(f => ({ id: f.id, origX: f.x, origY: f.y })),
+                    wrappedFog,
                 };
+                if (placed.isBound) {
+                    const wrapped = getWrappedObjects(placed);
+                    fogDragStartData.wrappedTokens = wrapped.tokens.map(t => ({ color: t.color, origGX: t.gridX, origGY: t.gridY }));
+                    fogDragStartData.wrappedNpcs = wrapped.npcs.map(n => ({ id: n.id, origGX: n.gridX, origGY: n.gridY }));
+                    fogDragStartData.wrappedDrawings = wrapped.freeDrawings.map(d => ({ id: d.id, origPoints: d.points.slice() }));
+                    fogDragStartData.wrappedRects = wrapped.rects.map(r => ({ id: r.id, origGX: r.gridX, origGY: r.gridY }));
+                }
             });
             node.on('dragmove', () => {
                 updatePlacedMapOverlay(placed.id);
-                if (fogDragStartData && fogDragStartData.wrappedFog.length > 0) {
-                    const dx = node.x() - fogDragStartData.origWorldX;
-                    const dy = node.y() - fogDragStartData.origWorldY;
+                if (!fogDragStartData) return;
+                const dx = node.x() - fogDragStartData.origWorldX;
+                const dy = node.y() - fogDragStartData.origWorldY;
+                if (fogDragStartData.wrappedFog.length > 0) {
                     fogDragStartData.wrappedFog.forEach(({ id: fid, origX, origY }) => {
                         const fogNode = worldFogNodes.get(fid);
                         if (fogNode) fogNode.position({ x: origX + dx, y: origY + dy });
                     });
                     if (fogLayer) fogLayer.batchDraw();
                 }
+                if (placed.isBound && fogDragStartData.wrappedTokens) {
+                    fogDragStartData.wrappedTokens.forEach(({ color, origGX, origGY }) => {
+                        const tNode = worldTokenNodes.get(color);
+                        if (tNode) tNode.position({ x: (origGX + 0.5) * GRID_SIZE + dx, y: (origGY + 0.5) * GRID_SIZE + dy });
+                    });
+                    fogDragStartData.wrappedNpcs.forEach(({ id: nid, origGX, origGY }) => {
+                        const nNode = worldNpcNodes.get(nid);
+                        if (nNode) nNode.position({ x: (origGX + 0.5) * GRID_SIZE + dx, y: (origGY + 0.5) * GRID_SIZE + dy });
+                    });
+                    fogDragStartData.wrappedDrawings.forEach(({ id: did, origPoints }) => {
+                        const dNode = worldDrawingNodes.get(did);
+                        if (dNode) dNode.points(origPoints.map((v, i) => i % 2 === 0 ? v + dx : v + dy));
+                    });
+                    fogDragStartData.wrappedRects.forEach(({ id: rid, origGX, origGY }) => {
+                        const rNode = worldRectNodes.get(rid);
+                        if (rNode) rNode.position({ x: origGX * GRID_SIZE + dx, y: origGY * GRID_SIZE + dy });
+                    });
+                    if (fogDragStartData.wrappedTokens.length || fogDragStartData.wrappedNpcs.length) dynamicLayer.batchDraw();
+                    if (fogDragStartData.wrappedDrawings.length || fogDragStartData.wrappedRects.length) drawingLayer.batchDraw();
+                }
             });
             node.on('dragend', () => {
                 const snapped = snapToGrid(node.x() / GRID_SIZE, node.y() / GRID_SIZE);
-                // 移动前先算 delta 和被包裹迷雾（placed 仍为旧坐标）
                 const dgx = snapped.gx - placed.gridX;
                 const dgy = snapped.gy - placed.gridY;
+                // fog 强制联动（始终计算，placed 仍为旧坐标）
                 const movedFogRects = getFogRectsWrappedByMap(placed).map(f => ({
-                    id: f.id,
-                    x: f.x + dgx * GRID_SIZE,
-                    y: f.y + dgy * GRID_SIZE,
+                    id: f.id, x: f.x + dgx * GRID_SIZE, y: f.y + dgy * GRID_SIZE,
                 }));
+                // isBound：四类对象联动
+                let movedTokens = [], movedNpcs = [], movedFreeDrawings = [], movedRects = [];
+                if (placed.isBound) {
+                    const wrapped = getWrappedObjects(placed);
+                    movedTokens = wrapped.tokens.map(t => ({ id: t.color, gridX: t.gridX + dgx, gridY: t.gridY + dgy }));
+                    movedNpcs = wrapped.npcs.map(n => ({ id: n.id, gridX: n.gridX + dgx, gridY: n.gridY + dgy }));
+                    movedFreeDrawings = wrapped.freeDrawings.map(d => ({
+                        id: d.id,
+                        points: d.points.map((v, i) => i % 2 === 0 ? v + dgx * GRID_SIZE : v + dgy * GRID_SIZE),
+                    }));
+                    movedRects = wrapped.rects.map(r => ({ id: r.id, gridX: r.gridX + dgx, gridY: r.gridY + dgy }));
+                }
+                // 更新 placed 坐标
                 placed.gridX = snapped.gx;
                 placed.gridY = snapped.gy;
                 node.position({ x: placed.gridX * GRID_SIZE, y: placed.gridY * GRID_SIZE });
@@ -3451,8 +3532,40 @@
                     if (fogNode) fogNode.position({ x, y });
                 });
                 if (movedFogRects.length > 0 && fogLayer) fogLayer.batchDraw();
+                // 乐观应用四类对象移动
+                if (placed.isBound) {
+                    movedTokens.forEach(({ id: tid, gridX: gx, gridY: gy }) => {
+                        const t = worldTokensData.find(t => t.color === tid);
+                        if (t) { t.gridX = gx; t.gridY = gy; }
+                        const tNode = worldTokenNodes.get(tid);
+                        if (tNode) tNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+                    });
+                    movedNpcs.forEach(({ id: nid, gridX: gx, gridY: gy }) => {
+                        const n = worldNpcsData.find(n => n.id === nid);
+                        if (n) { n.gridX = gx; n.gridY = gy; }
+                        const nNode = worldNpcNodes.get(nid);
+                        if (nNode) nNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+                    });
+                    movedFreeDrawings.forEach(({ id: did, points: newPts }) => {
+                        const d = worldDrawingsData.find(d => d.id === did);
+                        if (d) d.points = newPts;
+                        const dNode = worldDrawingNodes.get(did);
+                        if (dNode) dNode.points(newPts);
+                    });
+                    movedRects.forEach(({ id: rid, gridX: gx, gridY: gy }) => {
+                        const r = worldRectsData.find(r => r.id === rid);
+                        if (r) { r.gridX = gx; r.gridY = gy; }
+                        const rNode = worldRectNodes.get(rid);
+                        if (rNode) rNode.position({ x: gx * GRID_SIZE, y: gy * GRID_SIZE });
+                    });
+                    if ((movedTokens.length || movedNpcs.length) && dynamicLayer) dynamicLayer.batchDraw();
+                    if ((movedFreeDrawings.length || movedRects.length) && drawingLayer) drawingLayer.batchDraw();
+                }
                 updatePlacedMapOverlay(placed.id);
-                socket.emit('placedMap:move', { id: placed.id, gridX: placed.gridX, gridY: placed.gridY, movedFogRects });
+                socket.emit('placedMap:move', {
+                    id: placed.id, gridX: placed.gridX, gridY: placed.gridY,
+                    movedFogRects, movedTokens, movedNpcs, movedFreeDrawings, movedRects,
+                });
             });
             staticLayer.add(node);
             if (bringToTop) { node.moveToTop(); } else { node.moveToBottom(); }
@@ -3501,6 +3614,17 @@
         resizeHandle.style.display = 'none';
         resizeHandle.addEventListener('mousedown', (ev) => startResize(ev, placed.id));
 
+        const initialBound = placed.isBound !== false;
+        const bindBtn = document.createElement('button');
+        bindBtn.className = 'placed-map-lock placed-map-bind' + (initialBound ? '' : ' unbound');
+        bindBtn.textContent = initialBound ? '📌' : '📍';
+        bindBtn.title = initialBound ? '对象已绑定（点击解绑）' : '对象未绑定（点击绑定）';
+        bindBtn.style.display = 'none';
+        bindBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            togglePlacedMapBound(placed.id);
+        });
+
         const sizeLabel = document.createElement('div');
         sizeLabel.className = 'placed-map-size-label';
         sizeLabel.style.display = 'none';
@@ -3508,16 +3632,18 @@
         wrap.appendChild(lockBtn);
         wrap.appendChild(deleteBtn);
         wrap.appendChild(resizeHandle);
+        wrap.appendChild(bindBtn);
         wrap.appendChild(sizeLabel);
         placedMapOverlaysEl.appendChild(wrap);
 
-        const ov = { wrap, lockBtn, deleteBtn, resizeHandle, sizeLabel, hoverTimer: null, isHovered: false };
+        const ov = { wrap, lockBtn, deleteBtn, resizeHandle, bindBtn, sizeLabel, hoverTimer: null, isHovered: false };
 
         ov.showBtns = function() {
             clearTimeout(ov.hoverTimer);
             ov.isHovered = true;
             const pm = placedMapsData.find(m => m.id === placed.id);
             lockBtn.style.display = '';
+            bindBtn.style.display = '';
             const unlocked = pm && !pm.isLocked;
             deleteBtn.style.display = unlocked ? '' : 'none';
             resizeHandle.style.display = unlocked ? '' : 'none';
@@ -3530,10 +3656,11 @@
                 lockBtn.style.display = 'none';
                 deleteBtn.style.display = 'none';
                 resizeHandle.style.display = 'none';
+                bindBtn.style.display = 'none';
             }, 120);
         };
 
-        [lockBtn, deleteBtn, resizeHandle].forEach(el => {
+        [lockBtn, deleteBtn, resizeHandle, bindBtn].forEach(el => {
             el.addEventListener('mouseenter', () => clearTimeout(ov.hoverTimer));
             el.addEventListener('mouseleave', ov.scheduleHide);
         });
@@ -3561,6 +3688,10 @@
         overlay.resizeHandle.style.top = `${screenBottom - inset - handleSize}px`;
         overlay.sizeLabel.style.left = `${(screenLeft + screenRight) / 2}px`;
         overlay.sizeLabel.style.top = `${(screenTop + screenBottom) / 2}px`;
+        if (overlay.bindBtn) {
+            overlay.bindBtn.style.left = `${screenLeft + inset}px`;
+            overlay.bindBtn.style.top = `${screenBottom - inset - btnSize}px`;
+        }
     }
 
     function updateAllPlacedMapOverlays() {
@@ -3595,6 +3726,13 @@
         socket.emit('placedMap:setLock', { id: mapId, isLocked: !placed.isLocked });
     }
 
+    function togglePlacedMapBound(mapId) {
+        if (!isDM) return;
+        const placed = placedMapsData.find(m => m.id === mapId);
+        if (!placed) return;
+        socket.emit('placedMap:setBound', { id: mapId, isBound: !placed.isBound });
+    }
+
     // ===== 地图缩放（右下角手柄拖拽，保持宽高比，松手吸附到整数格宽） =====
     let resizeState = null;
 
@@ -3605,6 +3743,7 @@
         const node = placedMapNodes.get(mapId);
         const placed = placedMapsData.find(m => m.id === mapId);
         if (!node || !placed || placed.isLocked) return;
+        const wrappedObjs = placed.isBound ? getWrappedObjects(placed) : null;
         resizeState = {
             mapId,
             startPointerX: ev.clientX,
@@ -3613,7 +3752,12 @@
             scale: konvaStage.scaleX(),
             origGridX: placed.gridX,
             origGridY: placed.gridY,
+            isBound: !!placed.isBound,
             wrappedFog: getFogRectsWrappedByMap(placed).map(f => ({ id: f.id, origX: f.x, origY: f.y, origW: f.w, origH: f.h })),
+            wrappedTokens:   wrappedObjs ? wrappedObjs.tokens.map(t => ({ color: t.color, origGX: t.gridX, origGY: t.gridY })) : [],
+            wrappedNpcs:     wrappedObjs ? wrappedObjs.npcs.map(n => ({ id: n.id, origGX: n.gridX, origGY: n.gridY })) : [],
+            wrappedDrawings: wrappedObjs ? wrappedObjs.freeDrawings.map(d => ({ id: d.id, origPoints: d.points.slice() })) : [],
+            wrappedRects:    wrappedObjs ? wrappedObjs.rects.map(r => ({ id: r.id, origGX: r.gridX, origGY: r.gridY, origGW: r.gridW, origGH: r.gridH })) : [],
         };
         const overlay = placedMapOverlays.get(mapId);
         if (overlay) {
@@ -3635,11 +3779,11 @@
         node.height(newWidthWorld * resizeState.ratio);
         updatePlacedMapOverlay(resizeState.mapId);
         updateSizeLabel(resizeState.mapId);
+        const scaleFactor = newWidthWorld / resizeState.startWidthWorld;
+        const mapX1 = resizeState.origGridX * GRID_SIZE;
+        const mapY1 = resizeState.origGridY * GRID_SIZE;
         // 实时缩放被包裹的迷雾（DM 端视觉效果，不同步服务端）
         if (resizeState.wrappedFog && resizeState.wrappedFog.length > 0) {
-            const scaleFactor = newWidthWorld / resizeState.startWidthWorld;
-            const mapX1 = resizeState.origGridX * GRID_SIZE;
-            const mapY1 = resizeState.origGridY * GRID_SIZE;
             resizeState.wrappedFog.forEach(({ id: fid, origX, origY, origW, origH }) => {
                 const fogNode = worldFogNodes.get(fid);
                 if (fogNode) fogNode.setAttrs({
@@ -3651,6 +3795,38 @@
             });
             if (fogLayer) fogLayer.batchDraw();
         }
+        // 实时缩放 isBound 四类对象（仅视觉，dragend 时才落盘）
+        if (resizeState.isBound) {
+            resizeState.wrappedTokens.forEach(({ color, origGX, origGY }) => {
+                const newGX = resizeState.origGridX + (origGX + 0.5 - resizeState.origGridX) * scaleFactor - 0.5;
+                const newGY = resizeState.origGridY + (origGY + 0.5 - resizeState.origGridY) * scaleFactor - 0.5;
+                const tNode = worldTokenNodes.get(color);
+                if (tNode) tNode.position({ x: (newGX + 0.5) * GRID_SIZE, y: (newGY + 0.5) * GRID_SIZE });
+            });
+            resizeState.wrappedNpcs.forEach(({ id: nid, origGX, origGY }) => {
+                const newGX = resizeState.origGridX + (origGX + 0.5 - resizeState.origGridX) * scaleFactor - 0.5;
+                const newGY = resizeState.origGridY + (origGY + 0.5 - resizeState.origGridY) * scaleFactor - 0.5;
+                const nNode = worldNpcNodes.get(nid);
+                if (nNode) nNode.position({ x: (newGX + 0.5) * GRID_SIZE, y: (newGY + 0.5) * GRID_SIZE });
+            });
+            resizeState.wrappedRects.forEach(({ id: rid, origGX, origGY, origGW, origGH }) => {
+                const rNode = worldRectNodes.get(rid);
+                if (rNode) rNode.setAttrs({
+                    x: (resizeState.origGridX + (origGX - resizeState.origGridX) * scaleFactor) * GRID_SIZE,
+                    y: (resizeState.origGridY + (origGY - resizeState.origGridY) * scaleFactor) * GRID_SIZE,
+                    width: origGW * scaleFactor * GRID_SIZE,
+                    height: origGH * scaleFactor * GRID_SIZE,
+                });
+            });
+            resizeState.wrappedDrawings.forEach(({ id: did, origPoints }) => {
+                const dNode = worldDrawingNodes.get(did);
+                if (dNode) dNode.points(origPoints.map((v, i) =>
+                    i % 2 === 0 ? mapX1 + (v - mapX1) * scaleFactor : mapY1 + (v - mapY1) * scaleFactor
+                ));
+            });
+            if (resizeState.wrappedTokens.length || resizeState.wrappedNpcs.length) dynamicLayer.batchDraw();
+            if (resizeState.wrappedDrawings.length || resizeState.wrappedRects.length) drawingLayer.batchDraw();
+        }
         konvaStage.batchDraw();
     }
 
@@ -3660,7 +3836,7 @@
         const placed = placedMapsData.find(m => m.id === resizeState.mapId);
         if (node && placed) {
             const gw = Math.max(1, Math.round(node.width() / GRID_SIZE));
-            // 缩放前先算被包裹迷雾（placed.gridWidth 仍为旧值）
+            // 缩放前先算被包裹对象（placed.gridWidth 仍为旧值）
             const oldGw = placed.gridWidth;
             const scaleFactor = gw / oldGw;
             const mapX1 = placed.gridX * GRID_SIZE;
@@ -3672,6 +3848,33 @@
                 w: f.w * scaleFactor,
                 h: f.h * scaleFactor,
             }));
+            let scaledTokens = [], scaledNpcs = [], scaledFreeDrawings = [], scaledRects = [];
+            if (placed.isBound) {
+                const wrapped = getWrappedObjects(placed);
+                scaledTokens = wrapped.tokens.map(t => ({
+                    id: t.color,
+                    gridX: placed.gridX + (t.gridX + 0.5 - placed.gridX) * scaleFactor - 0.5,
+                    gridY: placed.gridY + (t.gridY + 0.5 - placed.gridY) * scaleFactor - 0.5,
+                }));
+                scaledNpcs = wrapped.npcs.map(n => ({
+                    id: n.id,
+                    gridX: placed.gridX + (n.gridX + 0.5 - placed.gridX) * scaleFactor - 0.5,
+                    gridY: placed.gridY + (n.gridY + 0.5 - placed.gridY) * scaleFactor - 0.5,
+                }));
+                scaledFreeDrawings = wrapped.freeDrawings.map(d => ({
+                    id: d.id,
+                    points: d.points.map((v, i) =>
+                        i % 2 === 0 ? mapX1 + (v - mapX1) * scaleFactor : mapY1 + (v - mapY1) * scaleFactor
+                    ),
+                }));
+                scaledRects = wrapped.rects.map(r => ({
+                    id: r.id,
+                    gridX: placed.gridX + (r.gridX - placed.gridX) * scaleFactor,
+                    gridY: placed.gridY + (r.gridY - placed.gridY) * scaleFactor,
+                    gridW: r.gridW * scaleFactor,
+                    gridH: r.gridH * scaleFactor,
+                }));
+            }
             placed.gridWidth = gw;
             node.width(gw * GRID_SIZE);
             node.height(gw * resizeState.ratio * GRID_SIZE);
@@ -3683,9 +3886,41 @@
                 if (fogNode) fogNode.setAttrs({ x, y, width: w, height: h });
             });
             if (scaledFogRects.length > 0 && fogLayer) fogLayer.batchDraw();
+            // 乐观应用四类对象缩放
+            if (placed.isBound) {
+                scaledTokens.forEach(({ id: tid, gridX: gx, gridY: gy }) => {
+                    const t = worldTokensData.find(t => t.color === tid);
+                    if (t) { t.gridX = gx; t.gridY = gy; }
+                    const tNode = worldTokenNodes.get(tid);
+                    if (tNode) tNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+                });
+                scaledNpcs.forEach(({ id: nid, gridX: gx, gridY: gy }) => {
+                    const n = worldNpcsData.find(n => n.id === nid);
+                    if (n) { n.gridX = gx; n.gridY = gy; }
+                    const nNode = worldNpcNodes.get(nid);
+                    if (nNode) nNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+                });
+                scaledFreeDrawings.forEach(({ id: did, points: newPts }) => {
+                    const d = worldDrawingsData.find(d => d.id === did);
+                    if (d) d.points = newPts;
+                    const dNode = worldDrawingNodes.get(did);
+                    if (dNode) dNode.points(newPts);
+                });
+                scaledRects.forEach(({ id: rid, gridX: gx, gridY: gy, gridW: gW, gridH: gH }) => {
+                    const r = worldRectsData.find(r => r.id === rid);
+                    if (r) { r.gridX = gx; r.gridY = gy; r.gridW = gW; r.gridH = gH; }
+                    const rNode = worldRectNodes.get(rid);
+                    if (rNode) rNode.setAttrs({ x: gx * GRID_SIZE, y: gy * GRID_SIZE, width: gW * GRID_SIZE, height: gH * GRID_SIZE });
+                });
+                if ((scaledTokens.length || scaledNpcs.length) && dynamicLayer) dynamicLayer.batchDraw();
+                if ((scaledFreeDrawings.length || scaledRects.length) && drawingLayer) drawingLayer.batchDraw();
+            }
             updatePlacedMapOverlay(resizeState.mapId);
             konvaStage.batchDraw();
-            socket.emit('placedMap:resize', { id: resizeState.mapId, gridWidth: gw, scaledFogRects });
+            socket.emit('placedMap:resize', {
+                id: resizeState.mapId, gridWidth: gw,
+                scaledFogRects, scaledTokens, scaledNpcs, scaledFreeDrawings, scaledRects,
+            });
         }
         const overlay = placedMapOverlays.get(resizeState.mapId);
         if (overlay) overlay.sizeLabel.style.display = 'none';
@@ -3740,7 +3975,7 @@
         if (isDM) focusOnPlacedMap(placedData.assetId);
     });
 
-    socket.on('placedMap:moved', ({ id, gridX, gridY, movedFogRects }) => {
+    socket.on('placedMap:moved', ({ id, gridX, gridY, movedFogRects, movedTokens, movedNpcs, movedFreeDrawings, movedRects }) => {
         const placed = placedMapsData.find(m => m.id === id);
         if (placed) { placed.gridX = gridX; placed.gridY = gridY; }
         const node = placedMapNodes.get(id);
@@ -3758,9 +3993,45 @@
             });
             if (fogLayer) fogLayer.batchDraw();
         }
+        if (Array.isArray(movedTokens) && movedTokens.length > 0) {
+            movedTokens.forEach(({ id: tid, gridX: gx, gridY: gy }) => {
+                const t = worldTokensData.find(t => t.color === tid);
+                if (t) { t.gridX = gx; t.gridY = gy; }
+                const tNode = worldTokenNodes.get(tid);
+                if (tNode) tNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+            });
+            if (dynamicLayer) dynamicLayer.batchDraw();
+        }
+        if (Array.isArray(movedNpcs) && movedNpcs.length > 0) {
+            movedNpcs.forEach(({ id: nid, gridX: gx, gridY: gy }) => {
+                const n = worldNpcsData.find(n => n.id === nid);
+                if (n) { n.gridX = gx; n.gridY = gy; }
+                const nNode = worldNpcNodes.get(nid);
+                if (nNode) nNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+            });
+            if (dynamicLayer) dynamicLayer.batchDraw();
+        }
+        if (Array.isArray(movedFreeDrawings) && movedFreeDrawings.length > 0) {
+            movedFreeDrawings.forEach(({ id: did, points: newPts }) => {
+                const d = worldDrawingsData.find(d => d.id === did);
+                if (d) d.points = newPts;
+                const dNode = worldDrawingNodes.get(did);
+                if (dNode) dNode.points(newPts);
+            });
+            if (drawingLayer) drawingLayer.batchDraw();
+        }
+        if (Array.isArray(movedRects) && movedRects.length > 0) {
+            movedRects.forEach(({ id: rid, gridX: gx, gridY: gy }) => {
+                const r = worldRectsData.find(r => r.id === rid);
+                if (r) { r.gridX = gx; r.gridY = gy; }
+                const rNode = worldRectNodes.get(rid);
+                if (rNode) rNode.position({ x: gx * GRID_SIZE, y: gy * GRID_SIZE });
+            });
+            if (drawingLayer) drawingLayer.batchDraw();
+        }
     });
 
-    socket.on('placedMap:resized', ({ id, gridWidth, scaledFogRects }) => {
+    socket.on('placedMap:resized', ({ id, gridWidth, scaledFogRects, scaledTokens, scaledNpcs, scaledFreeDrawings, scaledRects }) => {
         const placed = placedMapsData.find(m => m.id === id);
         if (!placed) return;
         placed.gridWidth = gridWidth;
@@ -3782,6 +4053,42 @@
             });
             if (fogLayer) fogLayer.batchDraw();
         }
+        if (Array.isArray(scaledTokens) && scaledTokens.length > 0) {
+            scaledTokens.forEach(({ id: tid, gridX: gx, gridY: gy }) => {
+                const t = worldTokensData.find(t => t.color === tid);
+                if (t) { t.gridX = gx; t.gridY = gy; }
+                const tNode = worldTokenNodes.get(tid);
+                if (tNode) tNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+            });
+            if (dynamicLayer) dynamicLayer.batchDraw();
+        }
+        if (Array.isArray(scaledNpcs) && scaledNpcs.length > 0) {
+            scaledNpcs.forEach(({ id: nid, gridX: gx, gridY: gy }) => {
+                const n = worldNpcsData.find(n => n.id === nid);
+                if (n) { n.gridX = gx; n.gridY = gy; }
+                const nNode = worldNpcNodes.get(nid);
+                if (nNode) nNode.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
+            });
+            if (dynamicLayer) dynamicLayer.batchDraw();
+        }
+        if (Array.isArray(scaledFreeDrawings) && scaledFreeDrawings.length > 0) {
+            scaledFreeDrawings.forEach(({ id: did, points: newPts }) => {
+                const d = worldDrawingsData.find(d => d.id === did);
+                if (d) d.points = newPts;
+                const dNode = worldDrawingNodes.get(did);
+                if (dNode) dNode.points(newPts);
+            });
+            if (drawingLayer) drawingLayer.batchDraw();
+        }
+        if (Array.isArray(scaledRects) && scaledRects.length > 0) {
+            scaledRects.forEach(({ id: rid, gridX: gx, gridY: gy, gridW: gW, gridH: gH }) => {
+                const r = worldRectsData.find(r => r.id === rid);
+                if (r) { r.gridX = gx; r.gridY = gy; r.gridW = gW; r.gridH = gH; }
+                const rNode = worldRectNodes.get(rid);
+                if (rNode) rNode.setAttrs({ x: gx * GRID_SIZE, y: gy * GRID_SIZE, width: gW * GRID_SIZE, height: gH * GRID_SIZE });
+            });
+            if (drawingLayer) drawingLayer.batchDraw();
+        }
     });
 
     socket.on('placedMap:lockSet', ({ id, isLocked }) => {
@@ -3796,6 +4103,17 @@
             overlay.lockBtn.classList.toggle('locked', isLocked);
             // 若当前正在 hover，刷新 delete/resize 可见性（锁定后隐藏，解锁后显示）
             if (overlay.isHovered) overlay.showBtns();
+        }
+    });
+
+    socket.on('placedMap:boundSet', ({ id, isBound }) => {
+        const placed = placedMapsData.find(m => m.id === id);
+        if (placed) placed.isBound = isBound;
+        const overlay = placedMapOverlays.get(id);
+        if (overlay && overlay.bindBtn) {
+            overlay.bindBtn.textContent = isBound ? '📌' : '📍';
+            overlay.bindBtn.title = isBound ? '对象已绑定（点击解绑）' : '对象未绑定（点击绑定）';
+            overlay.bindBtn.classList.toggle('unbound', !isBound);
         }
     });
 

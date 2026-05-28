@@ -114,8 +114,17 @@
   - **z 轴置顶修正**：`focusOnPlacedMap` 找到已有实例时，`node.moveToTop()` 将该地图提至 `staticLayer` 顶层
   - **新放置地图置顶**：`renderPlacedMap` 新增 `bringToTop = false` 参数；`placedMap:added` 传 `true`，在 `imgEl.onload` 异步回调内改调 `node.moveToTop()` 而非 `node.moveToBottom()`，解决异步时序问题（同步取 `placedMapNodes.get` 拿到 `undefined` 的 bug）；初始加载路径（`renderPendingWorldObjects` / `mapAsset:fetched`）不传 flag，保持 `moveToBottom` 使地图在笔迹/棋子下方
 
+- **Phase 9-B 地图内对象绑定联动** (2026-05-28)：
+  - [server.js](server.js)：`loadWorld()` 对旧 `placedMaps` 兼容补 `isBound: true`；`placedMap:add` handler 接收并存储 `isBound` 字段；新增 `placedMap:setBound` handler（DM guard，无 undo，`io.emit('placedMap:boundSet')`）；`placedMap:move` 接受 `movedTokens/movedNpcs/movedFreeDrawings/movedRects` 可选字段，原子更新对应 world 数据（freeDrawings 更新 points 数组）并附带广播；`placedMap:resize` 同理接受 `scaledTokens/scaledNpcs/scaledFreeDrawings/scaledRects`
+  - [public/game.html](public/game.html) CSS：新增 `.placed-map-bind` 按钮样式（绑定=绿色 `rgba(39,174,96,0.92)`，未绑定=灰色 `rgba(100,100,110,0.85)`，及对应 hover 态）
+  - [public/game.html](public/game.html) JS：新增 `getWrappedObjects(placed)` 工具函数（按地图边界框筛选 tokens/npcs/freeDrawings/rects，freeDrawings 按像素坐标判断至少一点在边界内，rects 按四角任一顶点在边界内）；新增 `togglePlacedMapBound(mapId)` emit `placedMap:setBound`
+  - [public/game.html](public/game.html) JS：`createOverlayForPlacedMap` 新增第四个按钮 `bindBtn`（左下角，仅 DM），初始状态与 `placed.isBound` 同步；`updatePlacedMapOverlay` 补充 bindBtn 定位（左侧 `inset`，底部减 `btnSize`）
+  - [public/game.html](public/game.html) JS：`placedMap:add` emit 补 `isBound: true`；`renderPlacedMap` dragstart 捕获 wrappedTokens/Npcs/Drawings/Rects 到 `fogDragStartData`（仅 `isBound` 时），dragmove 按像素 delta 实时移动所有 4 类对象节点（`dynamicLayer.batchDraw()` + `drawingLayer.batchDraw()`），dragend 计算格子 delta → 乐观更新本地数据 → emit `placedMap:move` 带全部 moved* 字段
+  - [public/game.html](public/game.html) JS：`startResize` 保存 `isBound` + 4 类 wrapped 对象初始坐标快照；`onResizeMove` hoisted scaleFactor/mapX1/mapY1，isBound 时实时更新 4 类对象节点视觉；`onResizeEnd` 计算 scaled* 数组（token/npc 锚点公式：`placed.gridX + (orig+0.5-placed.gridX)*scale - 0.5`；freeDrawing 按像素锚点重映射；rect 四字段均缩放），乐观更新本地数据，emit `placedMap:resize` 带全部 scaled* 字段
+  - [public/game.html](public/game.html) JS：新增 `placedMap:boundSet` handler（更新 `placedMapsData[i].isBound` + 切换 bindBtn 文本/class）；`placedMap:moved/resized` handler 补充应用 moved*/scaled* 字段到本地数据数组和 Konva 节点，调用 `batchDraw`
+
 ## 下一步
-Phase 9-A 完成。后续进入 Phase 9-B（地图内对象绑定联动）或 Phase 9-C（战争迷雾视觉分层）。
+Phase 9-B 完成。后续进入 Phase 9-C（战争迷雾视觉分层）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
