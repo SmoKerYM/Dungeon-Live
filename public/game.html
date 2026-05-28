@@ -3009,11 +3009,11 @@
             drawingLayer.add(konvaTempLine);
             drawingLayer.batchDraw();
         } else if (currentTool === 'rect') {
-            const snapped = snapToGrid(pos.x / GRID_SIZE, pos.y / GRID_SIZE);
+            const startGrid = { gx: pos.x / GRID_SIZE, gy: pos.y / GRID_SIZE };
             isKonvaRect = true;
-            konvaRectStartGrid = snapped;
+            konvaRectStartGrid = startGrid;
             konvaTempRect = new Konva.Rect({
-                x: snapped.gx * GRID_SIZE, y: snapped.gy * GRID_SIZE,
+                x: startGrid.gx * GRID_SIZE, y: startGrid.gy * GRID_SIZE,
                 width: 0, height: 0,
                 stroke: rectColor,
                 strokeWidth: 3,
@@ -3059,11 +3059,11 @@
                 lastLiveEmit = now;
             }
         } else if (isKonvaRect && konvaTempRect && konvaRectStartGrid) {
-            const snapped = snapToGrid(pos.x / GRID_SIZE, pos.y / GRID_SIZE);
-            const x1 = Math.min(konvaRectStartGrid.gx, snapped.gx);
-            const y1 = Math.min(konvaRectStartGrid.gy, snapped.gy);
-            const x2 = Math.max(konvaRectStartGrid.gx, snapped.gx);
-            const y2 = Math.max(konvaRectStartGrid.gy, snapped.gy);
+            const curGrid = { gx: pos.x / GRID_SIZE, gy: pos.y / GRID_SIZE };
+            const x1 = Math.min(konvaRectStartGrid.gx, curGrid.gx);
+            const y1 = Math.min(konvaRectStartGrid.gy, curGrid.gy);
+            const x2 = Math.max(konvaRectStartGrid.gx, curGrid.gx);
+            const y2 = Math.max(konvaRectStartGrid.gy, curGrid.gy);
             konvaTempRect.setAttrs({
                 x: x1 * GRID_SIZE, y: y1 * GRID_SIZE,
                 width: (x2 - x1) * GRID_SIZE,
@@ -3117,7 +3117,7 @@
         if (isKonvaRect && konvaTempRect && konvaRectStartGrid) {
             const pos = getMousePosInWorld();
             const endGrid = pos
-                ? snapToGrid(pos.x / GRID_SIZE, pos.y / GRID_SIZE)
+                ? { gx: pos.x / GRID_SIZE, gy: pos.y / GRID_SIZE }
                 : konvaRectStartGrid;
             const x1 = Math.min(konvaRectStartGrid.gx, endGrid.gx);
             const y1 = Math.min(konvaRectStartGrid.gy, endGrid.gy);
