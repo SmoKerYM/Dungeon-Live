@@ -3255,7 +3255,7 @@
         Object.entries(mapAssetCache).forEach(([assetId, asset]) => {
             const item = document.createElement('div');
             item.className = 'asset-thumb-item';
-            item.title = '点击放置到视口中央';
+            item.title = '点击聚焦到该地图';
 
             const img = document.createElement('img');
             img.src = asset.base64;
@@ -3270,7 +3270,7 @@
                 removeMapAsset(assetId);
             });
 
-            item.addEventListener('click', () => placeMapAtViewportCenter(assetId));
+            item.addEventListener('click', () => focusOnPlacedMap(assetId));
             item.appendChild(img);
             item.appendChild(removeBtn);
             lib.appendChild(item);
@@ -3347,7 +3347,49 @@
         });
     }
 
-    function renderPlacedMap(placed) {
+    function showToast(msg) {
+        const container = document.getElementById('world-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.textContent = msg;
+        toast.style.cssText = 'position:absolute;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:6px 16px;border-radius:6px;font-size:13px;z-index:100;pointer-events:none;transition:opacity 0.4s;';
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 400);
+        }, 1600);
+    }
+
+    function focusOnPlacedMap(assetId) {
+        if (!isDM) return;
+        const placed = placedMapsData.find(m => m.assetId === assetId);
+        if (!placed) {
+            placeMapAtViewportCenter(assetId);
+            showToast('无对应地图实例，已生成新的');
+            return;
+        }
+        if (!konvaStage) return;
+        const asset = mapAssetCache[assetId];
+        if (!asset) return;
+        const ratio = asset.originalHeight / asset.originalWidth;
+        const worldW = placed.gridWidth * GRID_SIZE;
+        const worldH = placed.gridWidth * ratio * GRID_SIZE;
+        const stageW = konvaStage.width();
+        const stageH = konvaStage.height();
+        let scale = Math.min(stageW / worldW, stageH / worldH) * 0.9;
+        scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, scale));
+        const mapWorldX = placed.gridX * GRID_SIZE;
+        const mapWorldY = placed.gridY * GRID_SIZE;
+        const tx = stageW / 2 - (mapWorldX + worldW / 2) * scale;
+        const ty = stageH / 2 - (mapWorldY + worldH / 2) * scale;
+        konvaStage.scale({ x: scale, y: scale });
+        konvaStage.position({ x: tx, y: ty });
+        const node = placedMapNodes.get(placed.id);
+        if (node) { node.moveToTop(); staticLayer.batchDraw(); }
+        onStageTransformChanged();
+    }
+
+    function renderPlacedMap(placed, bringToTop = false) {
         const asset = mapAssetCache[placed.assetId];
         if (!asset) return;
         const ratio = asset.originalHeight / asset.originalWidth;
@@ -3413,7 +3455,7 @@
                 socket.emit('placedMap:move', { id: placed.id, gridX: placed.gridX, gridY: placed.gridY, movedFogRects });
             });
             staticLayer.add(node);
-            node.moveToBottom(); // 地图始终在 staticLayer 最底部（图片异步加载，防止覆盖网格）
+            if (bringToTop) { node.moveToTop(); } else { node.moveToBottom(); }
             placedMapNodes.set(placed.id, node);
             if (isDM) {
                 createOverlayForPlacedMap(placed);
@@ -3690,11 +3732,12 @@
     socket.on('placedMap:added', (placedData) => {
         placedMapsData.push(placedData);
         if (mapAssetCache[placedData.assetId] && staticLayer) {
-            renderPlacedMap(placedData);
+            renderPlacedMap(placedData, true);
             if (isDM) selectPlacedMap(placedData.id);
         } else if (!mapAssetCache[placedData.assetId]) {
             socket.emit('mapAsset:fetch', placedData.assetId);
         }
+        if (isDM) focusOnPlacedMap(placedData.assetId);
     });
 
     socket.on('placedMap:moved', ({ id, gridX, gridY, movedFogRects }) => {

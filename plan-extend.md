@@ -307,7 +307,7 @@ staticLayer（地图）→ gridLayer（网格）→ fogLayer（马赛克）→ d
 - 马赛克四个顶点 `(x, y)、(x+w, y)、(x, y+h)、(x+w, y+h)`（世界像素坐标）中，**至少有一个**在地图边界内，即视为被包裹
 - 地图边界（世界像素）：`x1 = gridX * G, y1 = gridY * G, x2 = (gridX + gridWidth) * G, y2 = (gridY + gridHeight) * G`
 
-**联动计算**（规格参考，与 9-B 的集成在 9-B 阶段实现）：
+**联动计算**（规格参考，与 10-B 的集成在 10-B 阶段实现）：
 
 - 移动联动：`newX = x + dgx * GRID_SIZE`，`newY = y + dgy * GRID_SIZE`；`w/h` 不变
 - 缩放联动：`newX = mapX1 + (x - mapX1) / (oldW * G) * (newW * G)`，`newY` 同理；`newW = w / (oldW * G) * (newW * G)`，`newH` 同理
@@ -358,7 +358,7 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 - 服务器重启后马赛克保留（`world.fogRects` 已落盘）
 - Ctrl+Z 撤销"添加马赛克"或"删除马赛克"操作
 
-**本阶段不做 / Out of scope**：玩家视角完全不可见迷雾下方内容（当前方案是视觉遮挡，非渲染隔离）；圆形/多边形迷雾形状；迷雾透明度/颜色 UI 调整；迷雾作为 9-C 选框的选中目标（可后续追加）；与 9-B 地图绑定联动的集成（移入 9-B 统一实现）。
+**本阶段不做 / Out of scope**：玩家视角完全不可见迷雾下方内容（当前方案是视觉遮挡，非渲染隔离）；圆形/多边形迷雾形状；迷雾透明度/颜色 UI 调整；迷雾作为 10-C 选框的选中目标（可后续追加）；与 10-B 地图绑定联动的集成（移入 10-B 统一实现）。
 
 ---
 
@@ -470,15 +470,151 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 
 ---
 
-## Phase 9: 吸附开关 + 地图绑定联动 + 选框批量操作
+## Phase 9: 实际测试后反馈功能更改 + Bug修复
 
-**目标 / Goal**：在稳定的 Konva 世界上增加三组交互增强，每组作为独立子任务：(9-A) 为地图/矩形/棋子分别增加"吸附网格"开关，关闭后可自由放置于非格子位置；(9-B) 为地图实例增加"固定对象"开关，移动/缩放地图时被该地图包裹的笔迹、矩形、棋子跟随联动；(9-C) 增加"选框"工具，框选多类对象后批量平移或删除。
+**目标 / Goal**：根据实际跑团测试反馈，对三处体验缺陷进行针对性修复：(9-A) 地图资产库缩略图点击逻辑改为视口聚焦而非放置新实例；(9-B) 地图内所有对象（棋子、NPC、笔迹、矩形）默认随地图移动/缩放联动，并提供可关闭的开关；(9-C) 战争迷雾在 DM 和玩家视角下呈现不同的视觉效果。
+
+**前置条件 / Prerequisites**：Phase 8 全部完成（8-A ～ 8-D，Konva 世界为唯一渲染路径，战争迷雾已实现）。
+
+---
+
+### 9-A: 地图预览图点击 → 视口聚焦
+
+**功能说明**
+
+侧边栏资产库缩略图点击行为从"在视口中央放置新实例"改为"将 Konva Stage 视口聚焦到该地图实例"，计算并应用新的 scale / position 使地图完整显示在视口内（fit-to-map）。若该资产当前无放置实例，则先在视口中央自动生成一个实例，聚焦后显示 toast "无对应地图实例，已生成新的"。
+
+**交付物 / Deliverables**
+
+- [public/game.html](public/game.html) JS：
+  - 新增 `showToast(msg)`：在 `#world-container` 内生成绝对定位文字提示，2s 后淡出自毁
+  - 新增 `focusOnPlacedMap(assetId)`：
+    1. 在 `placedMapsData` 中按 `assetId` 查找放置实例
+    2. **找到**：取地图网格坐标换算为世界像素（`x = gridX * GRID_SIZE`, `y = gridY * GRID_SIZE`, `w = gridWidth * GRID_SIZE`, `h = gridHeight * GRID_SIZE`）；计算 fit-to-map 缩放比（`scale = Math.min(stageW / w, stageH / h) * 0.9`，clamp 到 [0.2, 5]）；计算平移使地图居中（`tx = stageW/2 - (x + w/2) * scale`, `ty = stageH/2 - (y + h/2) * scale`）；调用 `konvaStage.scale({ x: scale, y: scale })` + `konvaStage.position({ x: tx, y: ty })` + `onStageTransformChanged()`
+    3. **未找到**：调用已有的 `placeMapAtViewportCenter(assetId)`（会 emit `placedMap:add`），在后续 `placedMap:added` 回调中识别该 assetId 并调用 `focusOnPlacedMap(assetId)`；同时调 `showToast('无对应地图实例，已生成新的')`
+  - 缩略图 `onclick` 从直接调 `placeMapAtViewportCenter(assetId)` 改为调 `focusOnPlacedMap(assetId)`
+
+**验收标准 / Acceptance criteria**
+
+- DM 点击已放置地图的缩略图，Stage 视口变换，地图完整居中显示在视口内，不产生新实例
+- 同一资产的缩略图无论点击多少次，放置实例数量不增加（仅当无实例时才新建）
+- 资产未放置时，点击后：世界中央出现地图实例，视口聚焦到该实例，出现 toast "无对应地图实例，已生成新的"，2s 后消失
+- 玩家视角不可见资产库，无需改动
+
+**本阶段不做 / Out of scope**：动画过渡效果（`konvaStage.to` tween）；服务端校验同一资产只能有一个实例（客户端逻辑已满足，无需额外约束）。
+
+---
+
+### 9-B: 地图内对象绑定联动（isBound 默认开启）
+
+**功能说明**
+
+每个放置的地图实例新增 `isBound` 字段（默认 `true`）。开启时，DM 移动或缩放地图会触发地图范围内的棋子、NPC、笔迹、矩形跟随联动，与 8-C 已实现的迷雾联动机制对称。DM 可通过地图 overlay 左下角的绑定开关按钮切换。
+
+客户端在 emit 前**乐观更新**本地节点位置，随后服务端原子写入并广播给其他客户端。
+
+`fogRects` 联动已在 8-C 实现（`movedFogRects/scaledFogRects` 字段），本子任务仅新增 token / NPC / freeDrawing / rect 四类，并入同一事件 payload。Phase 10-B 的选框批量操作按原计划保留（`isBound` 字段届时直接复用）。
+
+**包裹判断规则**（以操作**前**地图边界为准）
+
+- `token/npc`：圆心 `(gridX + 0.5, gridY + 0.5)`（grid 单位）在地图 grid 边界 `[mapGX, mapGX+mapGW] × [mapGY, mapGY+mapGH]` 内
+- `rect`：四顶点 `(gridX, gridY)/(gridX+gridW, gridY)/(gridX, gridY+gridH)/(gridX+gridW, gridY+gridH)` 至少一个在地图 grid 边界内
+- `freeDrawing`：`points` 数组中至少一个 `(x, y)`（世界像素坐标）在地图世界像素边界 `[mapGX*G, (mapGX+mapGW)*G] × [mapGY*G, (mapGY+mapGH)*G]` 内
+
+**移动联动**（`dragend`，`dgx/dgy` 为格数 delta）
+
+- `token/npc`：`gridX += dgx`，`gridY += dgy`
+- `rect`：`gridX += dgx`，`gridY += dgy`（`gridW/gridH` 不变）
+- `freeDrawing`：每个点 `x += dgx * GRID_SIZE`，`y += dgy * GRID_SIZE`
+
+**缩放联动**（resize 结束，`scaleFactor = newGridWidth / oldGridWidth`，锚点为地图左上角）
+
+- `token/npc`（grid 单位）：`newTx = placed.gridX + (token.gridX + 0.5 - placed.gridX) * scaleFactor - 0.5`（Y 同理）；结果按 `snapToken` 全局变量决定是否 `Math.round`
+- `rect`（grid 单位）：`newRx = placed.gridX + (rect.gridX - placed.gridX) * scaleFactor`（Y/W/H 同理等比缩放）
+- `freeDrawing`（世界像素）：`newX = mapX1 + (x - mapX1) * scaleFactor`（Y 同理，`mapX1 = placed.gridX * GRID_SIZE`）
+
+**数据模型变更**
+
+```javascript
+// world.placedMaps 条目新增字段（默认 true）
+{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }
+
+// placedMap:move payload 扩展（在已有 movedFogRects 基础上新增四类）
+{ id, gridX, gridY, movedFogRects, movedTokens, movedNpcs, movedFreeDrawings, movedRects }
+
+// placedMap:resize payload 扩展（在已有 scaledFogRects 基础上新增四类）
+{ id, gridWidth, scaledFogRects, scaledTokens, scaledNpcs, scaledFreeDrawings, scaledRects }
+```
+
+**交付物 / Deliverables**
+
+- [server.js](server.js)：
+  - `loadWorld()` 读取旧数据时补 `isBound: map.isBound ?? true`（兼容旧存档，默认开启）
+  - 新事件 `placedMap:setBound`（DM guard）：更新 `world.placedMaps` 中对应条目的 `isBound` → `io.emit('placedMap:boundSet', { id, isBound })` → `scheduleWorldSave()`，**不**纳入 undoStack（与 `setLock` 一致）
+  - `placedMap:move` handler 扩展：接受可选 `movedTokens/movedNpcs/movedFreeDrawings/movedRects`，与已有 `movedFogRects` 一并原子批量写入对应数组，广播 `placedMap:moved`（含所有 moved 字段）
+  - `placedMap:resize` handler 扩展：同上，字段名 `scaledTokens/scaledNpcs/scaledFreeDrawings/scaledRects`，广播 `placedMap:resized`
+
+- [public/game.html](public/game.html) CSS：`.bind-btn` 激活/非激活样式（绑定开启时绿色高亮，关闭时灰色；参照 `.lock-btn` 样式规范）
+
+- [public/game.html](public/game.html) JS：
+  - `createOverlayForPlacedMap()`：地图 DOM overlay 左下角新增 bind 按钮（📌 已绑 / 灰色未绑，DM only），`click` 调 `togglePlacedMapBound(id)`；`updatePlacedMapOverlay` 同步更新 bind 按钮屏幕坐标与样式
+  - `togglePlacedMapBound(id)`：emit `placedMap:setBound { id, isBound: !current }`
+  - `socket.on('placedMap:boundSet', { id, isBound })`：更新 `placedMapsData[id].isBound`，刷新对应 overlay 按钮图标与样式
+  - 新增 `getWrappedObjects(placed)`：返回 `{ tokens, npcs, freeDrawings, rects }`，基于当前 `worldTokensData/worldNpcsData/worldDrawingsData/worldRectsData` 按上述包裹规则过滤；fog 由 8-C 已有的 `getFogRectsWrappedByMap` 独立处理，不重复纳入
+  - 地图 `dragend` handler：若 `isBound`，先调 `getWrappedObjects` → 计算新坐标 → **乐观更新**本地数据数组 + 对应 Konva 节点（token/npc 调 `.x()/.y()`；freeDrawing 调 `.points(newPoints)`；rect 调 `.x()/.y()`）→ `dynamicLayer.batchDraw()` + `staticLayer.batchDraw()` → emit `placedMap:move`（含 `movedTokens/movedNpcs/movedFreeDrawings/movedRects` 及已有 fog 字段）；若 `!isBound` 走原有逻辑不变
+  - resize 结束 handler：若 `isBound`，同理按缩放公式计算新坐标 → 乐观更新 → emit `placedMap:resize`（含 `scaledTokens/scaledNpcs/scaledFreeDrawings/scaledRects` 及已有 fog 字段）
+  - `socket.on('placedMap:moved', payload)`（其他客户端接收）：补充更新 `worldTokensData/worldNpcsData/worldDrawingsData/worldRectsData` 及对应 Konva 节点位置/points，`batchDraw`（与已有 fog 同步逻辑并列）
+  - `socket.on('placedMap:resized', payload)`：同上
+
+**验收标准 / Acceptance criteria**
+
+- 新放置的地图，`isBound` 默认为开（左下角 📌 图标绿色高亮）；服务器重启后保持
+- DM 在地图上放一枚棋子，拖动地图 → 棋子平移相同 delta，DM 端立即（乐观）更新，其他客户端随后同步
+- DM 在地图上画一条笔迹（至少一点在地图内），拖动地图 → 笔迹跟随
+- DM 缩放地图（拖动右下角手柄），地图内的矩形/笔迹/棋子等比重映射；其他客户端同步
+- Ctrl+Z 还原地图移动时，地图和所有联动对象同步回滚（单个 undo 槽，利用已有 `pushWorldUndo` 机制）
+- `isBound=false` 时，移动/缩放地图不影响任何对象位置
+- 地图处于锁定状态下无法拖动，`isBound` 不触发联动
+
+**本阶段不做 / Out of scope**：Phase 10-B 的选框批量操作（按原计划保留）；一个对象同时被两张 `isBound=true` 的地图包裹时的仲裁（取 `placedMapsData` 中第一个匹配项即可）；NPC 缩放时改变圆形大小（仅平移圆心）。
+
+---
+
+### 9-C: 战争迷雾视觉分层（DM 浅灰 / 玩家纯黑）
+
+**功能说明**
+
+迷雾 `Konva.Rect` 的视觉样式按角色分两套渲染：DM 看到浅灰半透明矩形（可感知迷雾存在，仍可清晰看清地图内容）；玩家看到纯黑实心矩形（完全遮挡）。均不再使用马赛克 pattern。
+
+**交付物 / Deliverables**
+
+- [public/game.html](public/game.html) JS：
+  - `renderWorldFog(fogRect)` 内 `fill` 和 `opacity` 按 `isDM` 分支（两者均不使用 `fillPatternImage`）：
+    - DM：`fill: 'rgba(180,180,180,1)'`，`opacity: 0.35`
+    - 玩家：`fill: '#000000'`，`opacity: 1`
+  - 移除 `fillPatternImage: fogPatternCanvas` 赋值；`createFogPattern()` 和 `fogPatternCanvas` 变量保留但不再调用（避免影响其他可能引用处）
+  - 其余逻辑不变（`listening: isDM`，DM 端 `dblclick → fog:remove`，玩家端不可操作）
+
+**验收标准 / Acceptance criteria**
+
+- DM 绘制一块迷雾 → DM 视角显示浅灰半透明矩形，透过矩形可看清下方地图
+- 同一块迷雾，玩家视角显示为纯黑实心矩形，完全遮盖下方地图
+- 刷新/重连后两种视角样式仍正确（由 `isDM` 在 `renderWorldFog` 时动态判断）
+- DM 双击浅灰矩形 → 迷雾消失，玩家同步
+
+**本阶段不做 / Out of scope**：迷雾透明度/颜色的 UI 调节入口；边缘虚化效果；玩家视角下迷雾内对象的渲染隔离（仍为视觉遮挡而非渲染隔离）。
+
+---
+
+## Phase 10: 吸附开关 + 地图绑定联动 + 选框批量操作
+
+**目标 / Goal**：在稳定的 Konva 世界上增加三组交互增强，每组作为独立子任务：(10-A) 为地图/矩形/棋子分别增加"吸附网格"开关，关闭后可自由放置于非格子位置；(10-B) 为地图实例增加"固定对象"开关，移动/缩放地图时被该地图包裹的笔迹、矩形、棋子跟随联动；(10-C) 增加"选框"工具，框选多类对象后批量平移或删除。
 
 **前置条件 / Prerequisites**：Phase 8 完成（Konva 世界为唯一渲染路径，所有对象通过 socket 事件管理）。
 
 ---
 
-### 9-A: 吸附开关
+### 10-A: 吸附开关
 
 **功能说明**
 
@@ -515,7 +651,7 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 
 ---
 
-### 9-B: 地图固定对象联动
+### 10-B: 地图固定对象联动
 
 **功能说明**
 
@@ -591,7 +727,7 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 
 ---
 
-### 9-C: 选框批量操作
+### 10-C: 选框批量操作
 
 **功能说明**
 
@@ -679,6 +815,6 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 | — | `fog:add` / `fog:added`（新增，添加马赛克遮罩） | Phase 8-C |
 | — | `fog:remove` / `fog:removed`（新增，删除马赛克遮罩） | Phase 8-C |
 | — | `placedMap:setBound` / `placedMap:boundSet`（新增，固定对象开关） | Phase 9-B |
-| — | `world:boundedMove` / `world:boundedMoved`（新增，地图移动联动批量更新） | Phase 9-B |
-| — | `world:boundedResize` / `world:boundedResized`（新增，地图缩放联动批量更新） | Phase 9-B |
-| — | `world:selectionMove` / `world:selectionMoved`（新增，选框批量平移） | Phase 9-C |
+| `placedMap:move`（含 `movedFogRects`） | `placedMap:move`（新增 `movedTokens/movedNpcs/movedFreeDrawings/movedRects`，合并联动 payload） | Phase 9-B |
+| `placedMap:resize`（含 `scaledFogRects`） | `placedMap:resize`（新增 `scaledTokens/scaledNpcs/scaledFreeDrawings/scaledRects`，合并联动 payload） | Phase 10-B 核心已并入 Phase 9-B |
+| — | `world:selectionMove` / `world:selectionMoved`（新增，选框批量平移） | Phase 10-C |

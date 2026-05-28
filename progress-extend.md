@@ -107,8 +107,15 @@
     - [public/game.html](public/game.html) HTML：`#world-container` 内删除 `#world-history-btns`，新增 `#dm-toolbar`（7 个 `.dm-tool-btn`：`btn-move/pen/rect/eraser/fog/undo/redo`）+ `#dm-toolbar-popout`；左侧栏删除 `#section-tools`（绘图工具区块含颜色色块+工具按钮+清空笔迹按钮）和 两个 `#dm-actions`（清空笔迹 + 清除所有玩家/NPC）
     - [public/game.html](public/game.html) JS：全局新增 `rectColor/penCustomColor/rectCustomColor` 变量；删除 `setDrawColor/setPenColor` 函数及旧 `draw-custom-color-input` 事件监听；改写 `setTool()`（切工具时关闭弹出，映射 'draw'→`btn-pen`/`'erase'`→`btn-eraser`，激活 `dm-tool-btn` 高亮，对 draw/rect/erase 调 `openToolbarPopout`）；新增 `openToolbarPopout/closeToolbarPopout/positionPopout/refreshSwatchHighlight`（用 `dataset.color` 避免 hex/rgb 不匹配）；`PRESET_COLORS` 常量（黑/白/红/绿）；橡皮弹出三个 `.toolbar-action-btn`；rect 绘制全部改用 `rectColor`；`joinSuccess` 收到 `data.uiPrefs` 时初始化 `penColor/rectColor/penCustomColor/rectCustomColor`
 
+- **Phase 9-A 地图预览图点击 → 视口聚焦** (2026-05-28)：
+  - [public/game.html](public/game.html) JS：新增 `showToast(msg)`（`#world-container` 内绝对定位浮层，1.6s 后淡出自毁）；新增 `focusOnPlacedMap(assetId)`（在 `placedMapsData` 中查找实例 → fit-to-map scale/position，`scale = Math.min(stageW/worldW, stageH/worldH)*0.9` clamp [0.2,5]，居中平移后调 `onStageTransformChanged`；未找到时调 `placeMapAtViewportCenter` + `showToast`）
+  - `placedMap:added` handler 末尾补 `if (isDM) focusOnPlacedMap(placedData.assetId)`（处理"无实例→新建→聚焦"链路，同时使上传新地图后也自动聚焦）
+  - `renderAssetLibrary` 缩略图 `onclick` 从 `placeMapAtViewportCenter` 改为 `focusOnPlacedMap`；`title` 改为"点击聚焦到该地图"
+  - **z 轴置顶修正**：`focusOnPlacedMap` 找到已有实例时，`node.moveToTop()` 将该地图提至 `staticLayer` 顶层
+  - **新放置地图置顶**：`renderPlacedMap` 新增 `bringToTop = false` 参数；`placedMap:added` 传 `true`，在 `imgEl.onload` 异步回调内改调 `node.moveToTop()` 而非 `node.moveToBottom()`，解决异步时序问题（同步取 `placedMapNodes.get` 拿到 `undefined` 的 bug）；初始加载路径（`renderPendingWorldObjects` / `mapAsset:fetched`）不传 flag，保持 `moveToBottom` 使地图在笔迹/棋子下方
+
 ## 下一步
-Phase 8 全部完成（8-A、8-B、8-C、8-D），进入实际跑团测试阶段。后续进入 Phase 9（吸附开关 + 地图绑定联动 + 选框批量操作）。
+Phase 9-A 完成。后续进入 Phase 9-B（地图内对象绑定联动）或 Phase 9-C（战争迷雾视觉分层）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
