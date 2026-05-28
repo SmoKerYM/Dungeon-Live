@@ -218,7 +218,7 @@ world: {            // 世界状态（落盘）
   - 新事件：`history:undo` / `history:redo`（仅 DM）
   - 执行 undo 时：pop undoStack → 应用逆操作 → push 正向操作到 redoStack → 广播变化
   - 任何 *新* 编辑发生时清空 redoStack
-  - 栈大小上限 50 条
+  - 栈大小上限 20 条
 - [public/game.html](public/game.html)：
   - 全局键盘监听 Ctrl/Cmd+Z 和 Ctrl+Shift+Z（仅 DM 生效）
   - 工具栏可选加 "撤销" / "重做" 按钮
@@ -369,6 +369,104 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 - 玩家端不显示资产库列表
 
 **本阶段不做 / Out of scope**：资产删除（资产库条目一旦上传不可删除）；地图实例层级排序 UI；战斗追踪器等大型功能。
+
+---
+
+### 8-D: DM 工具条迁移至 Canvas 悬浮侧边栏
+
+**目标 / Goal**：将左侧工具栏中的绘图工具区块（移动/画笔/矩形/橡皮/雾）和清除按钮（清除所有笔迹/玩家/NPC）迁移至 `#world-container` 左侧的悬浮竖向工具条，撤销/重做也从 canvas 顶部移入该工具条底部；工具条整体仅对 DM 可见。画笔/矩形颜色末次选择持久化到服务端文件。
+
+**前置条件 / Prerequisites**：Phase 8-C 完成（所有工具已存在，仅做位置迁移 + 颜色持久化增强）。
+
+---
+
+**工具条布局**（从上到下）：
+
+| 序号 | 按钮 | 激活时右侧展开 |
+|------|------|--------------|
+| 1 | 移动 | 无 |
+| 2 | 画笔 | 颜色选择器 |
+| 3 | 矩形 | 颜色选择器 |
+| 4 | 橡皮 | 三个批量清除按钮 |
+| 5 | 迷雾 | 无 |
+| 6 | 撤销 | 无 |
+| 7 | 重做 | 无 |
+
+---
+
+**颜色选择器（画笔 & 矩形）**：
+
+- 激活工具时，右侧横向展开 5 个颜色选项：黑（`#000000`）/ 白（`#ffffff`）/ 红（`#cc0000`，出厂默认）/ 绿（`#22c55e`）/ 自定义（`<input type="color">`，展示当前自定义色的色块，点击弹系统颜色选择器，确认后立即生效）
+- 切换到其他工具时，颜色选择器自动收起
+- 切回同一工具时，自动恢复该工具上次使用的颜色并高亮对应色块
+- 画笔与矩形颜色**各自独立**记忆，均在"确认颜色"时 emit `uiPrefs:save`，持久化到 `data/ui_prefs.json`
+
+**橡皮二级菜单**：
+
+- 橡皮工具激活后默认进入"点击单笔迹删除"模式（现有功能不变，`dblclick` / `click` 删单条）
+- 右侧横向展开三个按钮：**清除所有笔迹** / **清除所有玩家** / **清除所有NPC**（从左侧栏原位迁移而来，功能不变）
+- 切换到其他工具时，右侧按钮组收起
+
+---
+
+**数据模型变更**：
+
+```javascript
+// 新增文件：data/ui_prefs.json
+{
+  "penColor": "#cc0000",   // 画笔末次颜色
+  "rectColor": "#cc0000"   // 矩形末次颜色
+}
+```
+
+---
+
+**交付物 / Deliverables**：
+
+- [server.js](server.js)：
+  - 新增常量 `UI_PREFS_FILE`（`data/ui_prefs.json`），函数 `loadUiPrefs()` / `saveUiPrefs()`（参照现有 `loadNotes` 模式，文件不存在时返回默认值 `{ penColor: '#cc0000', rectColor: '#cc0000' }`）
+  - `gameState` 加入 `uiPrefs`，启动时从文件加载
+  - 新事件 `uiPrefs:save`（DM guard）：payload `{ penColor?, rectColor? }`，partial merge 到 `gameState.uiPrefs`，立即落盘（无 debounce，颜色切换低频）
+  - `joinSuccess` payload 中，当 role === 'DM' 时附加 `uiPrefs`
+
+- [public/game.html](public/game.html) CSS：
+  - 新增 `#dm-toolbar`：绝对定位于 `#world-container` 左侧，`top: 8px; left: 8px`，竖向 flex，`gap: 4px`，`z-index: 20`，`pointer-events: auto`
+  - `.dm-tool-btn`：统一工具按钮样式（大小 36×36，圆角，背景色方案与现有工具按钮一致），`.active` 高亮态
+  - `#dm-toolbar-popout`：绝对定位，紧贴当前激活按钮右侧，横向 flex，`gap: 4px`；内含颜色色块 `.color-swatch`（20×20 圆形，`.active` 有高亮边框）和操作按钮 `.toolbar-action-btn`
+  - 删除旧的 `.tool-group`、`#btn-move/pen/rect/eraser/fog` 的定位样式（这些 selector 将在 HTML 中移入 `#dm-toolbar`），删除旧 `#undo-btn/redo-btn` 的样式
+
+- [public/game.html](public/game.html) HTML：
+  - 在 `#world-container` 内新增 `<div id="dm-toolbar">` 及 7 个 `.dm-tool-btn`（id 分别为 `btn-move、btn-pen、btn-rect、btn-eraser、btn-fog、btn-undo、btn-redo`），以及弹出面板 `<div id="dm-toolbar-popout">`（默认 hidden）
+  - 左侧工具栏中删除：整个 "绘图工具" 区块（颜色色块行 + `.tool-group` 按钮行 + 清空笔迹按钮）
+  - 左侧工具栏中删除："清除所有玩家" / "清除所有NPC" 两个按钮及其包裹容器
+  - canvas 顶部删除：`#undo-btn` / `#redo-btn` 独立按钮（功能已由 `#dm-toolbar` 中的撤销/重做按钮承接）
+
+- [public/game.html](public/game.html) JS：
+  - 全局变量 `penColor`（初始 `'#cc0000'`）、`rectColor`（初始 `'#cc0000'`）、`penCustomColor`（初始 `'#cc0000'`）、`rectCustomColor`（初始 `'#cc0000'`）
+  - `joinSuccess` handler：若 role === 'DM' 且收到 `gs.uiPrefs`，则用服务端值初始化 `penColor / rectColor`（`penCustomColor / rectCustomColor` 同步为各自初始值，以便自定义色块展示正确色）
+  - 新增 `openToolbarPopout(toolName)`：按 `toolName`（`'pen'`/`'rect'`/`'eraser'`）填充并显示 `#dm-toolbar-popout`，定位于对应按钮右侧；画笔/矩形时渲染 5 个色块（高亮当前颜色）+ 自定义 `<input type="color">`；橡皮时渲染三个操作按钮
+  - 新增 `closeToolbarPopout()`：隐藏 `#dm-toolbar-popout` 并清空内容
+  - `setTool(toolName)` 调整：切工具前调 `closeToolbarPopout()`；切到 `'pen'`/`'rect'`/`'eraser'` 时调 `openToolbarPopout(toolName)`
+  - 色块点击回调：更新 `penColor`/`rectColor` → 重新高亮色块 → emit `uiPrefs:save { penColor }` 或 `{ rectColor }`
+  - 自定义 `<input type="color">` `change` 回调：更新 `penCustomColor`/`rectCustomColor` → 同步到 `penColor`/`rectColor` → 高亮自定义色块 → emit `uiPrefs:save`
+  - 工具条中撤销/重做按钮 `onclick` 直接调 `socket.emit('history:undo')` / `socket.emit('history:redo')`（逻辑与原按钮完全相同）
+  - `setTool` 中现有对旧 `#btn-move/pen/rect/eraser/fog` 的 classList 操作改为操作新 `#dm-toolbar` 中同 id 按钮（id 不变，只是宿主 DOM 变了）
+  - 橡皮弹出的三个操作按钮 onclick：分别调用现有的 `clearWorldDrawings()`、`socket.emit('token:clearAll')` 包裹函数、`socket.emit('npc:clearAll')` 包裹函数（与原按钮逻辑完全相同）
+
+---
+
+**验收标准 / Acceptance criteria**：
+
+- DM 视角下，canvas 左上角出现竖向工具条，7 个按钮从上到下依次为移动/画笔/矩形/橡皮/迷雾/撤销/重做
+- 玩家视角下，工具条完全不可见
+- 点击画笔/矩形后，右侧展开颜色选项；选色后用该颜色绘制；切到其他工具后颜色选项收起，切回时恢复上次颜色及高亮色块
+- 服务器重启后 DM 重新加入，画笔/矩形颜色恢复为上次关闭前的选择（验证 `data/ui_prefs.json` 被写入）
+- 点击橡皮后右侧展开三个按钮，"清除所有笔迹"/"清除所有玩家"/"清除所有NPC" 功能正常；橡皮本身仍可点击单条笔迹删除
+- 撤销/重做按钮功能与原按钮完全一致（Ctrl+Z 快捷键同时保留）
+- 左侧工具栏中原 "绘图工具" 区块、"清除所有玩家"/"清除所有NPC" 按钮均已消失
+- canvas 顶部原撤销/重做独立按钮已消失
+
+**本阶段不做 / Out of scope**：工具条的拖动/位置自定义；颜色偏好的玩家端同步（颜色仅 DM 用）；橡皮工具的笔刷大小调节；迷雾颜色/透明度调节入口（8-C out of scope）。
 
 ---
 

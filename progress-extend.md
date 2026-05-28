@@ -101,8 +101,14 @@
       - `placedMap:moved/resized` socket handler 补充 fog 节点同步（其他客户端接收时应用）
       - server `placedMap:move/resize` 接受可选 `movedFogRects/scaledFogRects`，原子更新 `world.fogRects` + 广播
 
+  - **8-D DM 工具条迁移** (2026-05-28)：
+    - [server.js](server.js)：新增 `UI_PREFS_FILE` 常量；`loadUiPrefs()` / `saveUiPrefs()` 函数（出厂默认 `penColor/rectColor = '#cc0000'`）；`gameState.uiPrefs`；新事件 `uiPrefs:save`（DM guard，partial merge，立即落盘）；`joinSuccess` 对 DM 附带 `uiPrefs` 字段
+    - [public/game.html](public/game.html) CSS：删除旧 `.draw-color-selector/.draw-color/.tool-group/.tool-btn` 及 `#clear-draw-btn/.action-row/.action-btn-sm` 等规则；删除 `#world-history-btns` 样式；新增 `#dm-toolbar/.dm-tool-btn/.dm-tool-btn.active/#dm-toolbar-popout/.toolbar-color-swatch/.toolbar-color-custom/.toolbar-action-btn` 完整样式
+    - [public/game.html](public/game.html) HTML：`#world-container` 内删除 `#world-history-btns`，新增 `#dm-toolbar`（7 个 `.dm-tool-btn`：`btn-move/pen/rect/eraser/fog/undo/redo`）+ `#dm-toolbar-popout`；左侧栏删除 `#section-tools`（绘图工具区块含颜色色块+工具按钮+清空笔迹按钮）和 两个 `#dm-actions`（清空笔迹 + 清除所有玩家/NPC）
+    - [public/game.html](public/game.html) JS：全局新增 `rectColor/penCustomColor/rectCustomColor` 变量；删除 `setDrawColor/setPenColor` 函数及旧 `draw-custom-color-input` 事件监听；改写 `setTool()`（切工具时关闭弹出，映射 'draw'→`btn-pen`/`'erase'`→`btn-eraser`，激活 `dm-tool-btn` 高亮，对 draw/rect/erase 调 `openToolbarPopout`）；新增 `openToolbarPopout/closeToolbarPopout/positionPopout/refreshSwatchHighlight`（用 `dataset.color` 避免 hex/rgb 不匹配）；`PRESET_COLORS` 常量（黑/白/红/绿）；橡皮弹出三个 `.toolbar-action-btn`；rect 绘制全部改用 `rectColor`；`joinSuccess` 收到 `data.uiPrefs` 时初始化 `penColor/rectColor/penCustomColor/rectCustomColor`
+
 ## 下一步
-Phase 8 全部完成（8-A、8-B、8-C），进入实际跑团测试阶段。后续进入 Phase 9（吸附开关 + 地图绑定联动 + 选框批量操作）。
+Phase 8 全部完成（8-A、8-B、8-C、8-D），进入实际跑团测试阶段。后续进入 Phase 9（吸附开关 + 地图绑定联动 + 选框批量操作）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。

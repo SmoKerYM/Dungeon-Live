@@ -22,6 +22,8 @@ const MAX_UNDO_STACK = 20;
 const MAP_ASSETS_FILE = process.env.NODE_ENV === 'production' ? '/data/map_assets.json' : './data/map_assets.json';
 // 世界状态文件路径
 const WORLD_FILE = process.env.NODE_ENV === 'production' ? '/data/world.json' : './data/world.json';
+// UI 偏好文件路径（DM 画笔/矩形颜色持久化）
+const UI_PREFS_FILE = process.env.NODE_ENV === 'production' ? '/data/ui_prefs.json' : './data/ui_prefs.json';
 
 // 读取笔记
 function loadNotes() {
@@ -223,6 +225,29 @@ function scheduleWorldSave() {
   worldSaveTimer = setTimeout(() => saveWorld(gameState.world), 500);
 }
 
+// 读取 UI 偏好（DM 专属颜色设置）
+function loadUiPrefs() {
+  try {
+    if (fs.existsSync(UI_PREFS_FILE)) {
+      return JSON.parse(fs.readFileSync(UI_PREFS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('读取 UI 偏好失败:', err);
+  }
+  return { penColor: '#cc0000', rectColor: '#cc0000' };
+}
+
+// 保存 UI 偏好
+function saveUiPrefs(data) {
+  try {
+    const dir = path.dirname(UI_PREFS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(UI_PREFS_FILE, JSON.stringify(data), 'utf8');
+  } catch (err) {
+    console.error('保存 UI 偏好失败:', err);
+  }
+}
+
 // 撤销/重做栈（仅 DM，内存，重启后清空）
 let undoStack = [];
 let redoStack = [];
@@ -256,6 +281,7 @@ const gameState = {
   chatHistory: loadChatHistory(), // 聊天 + 骰子历史（最多 100 条，从文件加载）
   mapAssets: loadMapAssets(), // 地图图片资产 { assetId: { base64, originalWidth, originalHeight } }
   world: loadWorld(),         // 世界状态 { placedMaps, tokens, npcs, freeDrawings, rects }
+  uiPrefs: loadUiPrefs(),     // DM UI 偏好 { penColor, rectColor }
 };
 
 // Socket.IO 连接处理
@@ -299,6 +325,7 @@ io.on('connection', (socket) => {
       name,
       dmName: gameState.dm?.name || null,
       takenColors,
+      uiPrefs: role === 'DM' ? gameState.uiPrefs : undefined,
       gameState: {
         players: playersWithHP,
         notes: gameState.notes,
@@ -740,6 +767,15 @@ io.on('connection', (socket) => {
     gameState.world = redoStack.pop();
     scheduleWorldSave();
     io.emit('world:sync', gameState.world);
+  });
+
+  // 保存 DM UI 偏好（画笔/矩形颜色，仅 DM）
+  socket.on('uiPrefs:save', (prefs) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (typeof prefs.penColor === 'string') gameState.uiPrefs.penColor = prefs.penColor;
+    if (typeof prefs.rectColor === 'string') gameState.uiPrefs.rectColor = prefs.rectColor;
+    saveUiPrefs(gameState.uiPrefs);
   });
 
   // 断开连接

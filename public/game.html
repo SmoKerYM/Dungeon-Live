@@ -49,62 +49,8 @@
         .hp-warning { color: #f1c40f !important; }
         .hp-danger { color: #ff4757 !important; font-weight: 900; }
 
-        /* 绘图工具 */
-        .draw-color-selector { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; align-items: center; }
-        .draw-color {
-            width: 28px; height: 28px;
-            border-radius: 50%;  /* 圆形，与 NPC 方形选择器区分 */
-            cursor: pointer;
-            border: 2px solid transparent;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        .draw-color:hover { transform: scale(1.15); }
-        .draw-color.selected { border-color: #f1c40f; transform: scale(1.1); }
-        input.draw-color-custom {
-            width: 28px; height: 28px;
-            border-radius: 50%;
-            cursor: pointer;
-            border: 2px solid transparent;
-            padding: 0;
-            -webkit-appearance: none;
-            appearance: none;
-            overflow: hidden;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        input.draw-color-custom:hover { transform: scale(1.15); }
-        input.draw-color-custom.selected { border-color: #f1c40f; transform: scale(1.1); }
-        input.draw-color-custom::-webkit-color-swatch-wrapper { padding: 0; }
-        input.draw-color-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
-        .tool-group { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 10px; }
-        .tool-btn { padding: 8px 4px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 12px; }
-        .tool-btn.active { border-color: #f1c40f; background: #555; }
-        .tool-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
-
         .action-btn { margin-top: 8px; padding: 10px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; }
         .action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
-        #clear-draw-btn { background: #4b5e71; }
-
-        /* 清除按钮行 */
-        .action-row {
-            display: flex;
-            gap: 6px;
-            margin-top: 8px;
-        }
-        .action-btn-sm {
-            flex: 1;
-            padding: 8px 4px;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            font-weight: bold;
-            transition: opacity 0.2s;
-        }
-        .action-btn-sm:hover { opacity: 0.85; }
-        .action-btn-sm:active { opacity: 0.7; }
-        #clear-btn { background: #eb881d; }
-        #clear-npc-btn { background: #249cc1; }
 
         /* 画布与地图 */
         #viewport { flex-grow: 1; display: flex; background: #1a1a1a; position: relative; overflow: hidden; padding: 15px; }
@@ -250,27 +196,90 @@
         .dice-label { font-size: 9px; opacity: 0.8; }
         .dice-val { font-size: 16px; font-weight: bold; }
         .dice-big { width: 50px; height: 50px; border: 1px solid rgba(255,255,255,0.3); }
-        /* 世界视图左上角撤销/重做按钮（Phase 6） */
-        #world-history-btns {
+        /* DM 悬浮工具条（Phase 8-D） */
+        #dm-toolbar {
             position: absolute;
-            top: 12px;
-            left: 12px;
+            top: 8px;
+            left: 8px;
             z-index: 30;
             display: flex;
-            gap: 6px;
+            flex-direction: column;
+            gap: 4px;
+            pointer-events: auto;
         }
-        #world-history-btns button {
-            padding: 6px 12px;
+        .dm-tool-btn {
+            width: 36px; height: 36px;
+            border-radius: 6px;
+            border: 2px solid transparent;
             background: rgba(0, 0, 0, 0.62);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            backdrop-filter: blur(4px);
+            transition: background 0.15s, border-color 0.15s;
+            padding: 0;
+        }
+        .dm-tool-btn:hover { background: rgba(255, 255, 255, 0.15); }
+        .dm-tool-btn.active { border-color: #f1c40f; background: rgba(241, 196, 15, 0.2); }
+        /* 工具条弹出面板（颜色选择器 / 批量清除按钮） */
+        #dm-toolbar-popout {
+            position: absolute;
+            display: none;
+            flex-direction: row;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 8px;
+            background: rgba(0, 0, 0, 0.78);
+            border-radius: 7px;
+            backdrop-filter: blur(4px);
+            z-index: 31;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            white-space: nowrap;
+        }
+        .toolbar-color-swatch {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.15s, border-color 0.15s;
+            flex-shrink: 0;
+        }
+        .toolbar-color-swatch:hover { transform: scale(1.15); }
+        .toolbar-color-swatch.selected { border-color: #f1c40f; transform: scale(1.1); }
+        input.toolbar-color-custom {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            padding: 0;
+            -webkit-appearance: none;
+            appearance: none;
+            overflow: hidden;
+            transition: transform 0.15s, border-color 0.15s;
+            flex-shrink: 0;
+        }
+        input.toolbar-color-custom:hover { transform: scale(1.15); }
+        input.toolbar-color-custom.selected { border-color: #f1c40f; transform: scale(1.1); }
+        input.toolbar-color-custom::-webkit-color-swatch-wrapper { padding: 0; }
+        input.toolbar-color-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
+        .toolbar-action-btn {
+            padding: 5px 9px;
+            background: rgba(70, 80, 95, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 5px;
             color: white;
-            font-size: 13px;
             cursor: pointer;
-            backdrop-filter: blur(4px);
-            user-select: none;
+            font-size: 11px;
+            font-weight: bold;
+            transition: background 0.15s;
+            white-space: nowrap;
         }
-        #world-history-btns button:hover { background: rgba(255, 255, 255, 0.15); }
+        .toolbar-action-btn:hover { background: rgba(100, 115, 135, 0.9); }
 
         /* 聊天框 */
         #chat-container {
@@ -884,31 +893,7 @@
         <div id="world-asset-library"></div>
     </div>
 
-    <div id="section-tools" class="dm-only">
-        <div class="section-title">绘图工具</div>
-        <!-- 颜色选择（始终显示，圆形按钮） -->
-        <div class="draw-color-selector">
-            <div class="draw-color selected" style="background:#ff0000;" onclick="setDrawColor('#ff0000', this)" title="红色"></div>
-            <div class="draw-color" style="background:#1a1a1a;" onclick="setDrawColor('#1a1a1a', this)" title="黑色"></div>
-            <div class="draw-color" style="background:#ffffff; border: 1px solid #bdc3c7;" onclick="setDrawColor('#ffffff', this)" title="白色"></div>
-            <input type="color" id="draw-custom-color-input" class="draw-color-custom" value="#ff0000" title="自定义颜色">
-        </div>
-        <!-- 工具按钮 -->
-        <div class="tool-group">
-            <div id="btn-move" class="tool-btn active" onclick="setTool('move')">移动</div>
-            <div id="btn-draw" class="tool-btn" onclick="setTool('draw')">画笔</div>
-            <div id="btn-rect" class="tool-btn" onclick="setTool('rect')">矩形</div>
-            <div id="btn-erase" class="tool-btn" onclick="setTool('erase')">橡皮</div>
-            <div id="btn-fog" class="tool-btn" onclick="setTool('fog')" title="迷雾遮罩：拖拽绘制，双击已有遮罩删除">雾</div>
-        </div>
-    </div>
-
-    <!-- 清空所有笔迹按钮 -->
-    <div id="dm-actions" class="dm-only">
-        <button id="clear-draw-btn" class="action-btn" onclick="clearCanvas()">清空所有笔迹</button>
-    </div> 
-
-    <div class="section-title">角色列表</div>
+    <div class="section-title">玩家列表</div>
     <div id="player-list">
         <div class="player-row" id="row-orange" style="display: none;">
             <button class="player-btn" style="background: #e67e22;" data-color="orange" onclick="spawnToken('orange')">
@@ -940,33 +925,21 @@
                 <span class="hp-display"><span id="hp-cur-purple">_</span>/<span id="hp-max-purple">_</span></span>
             </button>
         </div>
-        <!-- <div class="player-row" id="row-black" style="display: none;">
-            <button class="player-btn" style="background: #2c3e50;" data-color="black" onclick="spawnToken('black')">
-                <span class="player-name" id="name-black">玩家 (黑)</span>
-                <span class="hp-display"><span id="hp-cur-black">_</span>/<span id="hp-max-black">_</span></span>
-            </button>
-        </div> -->
         <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无玩家加入</p>
         <!-- NPC 角色卡 (仅 DM) -->
         <div class="player-row dm-only" id="row-npc">
+            <div class="section-title">生成NPC</div>
             <div class="npc-card">
-                <span class="player-name">NPC</span>
                 <div class="npc-color-selector">
                     <div class="npc-color" style="background: #e74c3c;" onclick="spawnNPCWithColor('#e74c3c')" title="红色"></div>
                     <div class="npc-color" style="background: #072af1;" onclick="spawnNPCWithColor('#072af1')" title="深蓝"></div>
                     <div class="npc-color" style="background: #1a1a1a;" onclick="spawnNPCWithColor('#1a1a1a')" title="黑色"></div>
                     <div class="npc-color" style="background: #7f8c8d;" onclick="spawnNPCWithColor('#7f8c8d')" title="灰色（默认）"></div>
                     <div class="npc-color" style="background: #ecf0f1; border: 1px solid #bdc3c7;" onclick="spawnNPCWithColor('#ecf0f1')" title="白色"></div>
+                    <div style="width:1px;height:20px;background:rgba(255,255,255,0.25);margin:0 2px;flex-shrink:0;align-self:center;"></div>
                     <input type="color" id="npc-custom-color-input" class="npc-color" value="#7f8c8d" title="自定义颜色">
                 </div>
             </div>
-        </div>
-    </div>
-
-    <div id="dm-actions" class="dm-only">
-        <div class="action-row">
-            <button id="clear-btn" class="action-btn-sm" onclick="clearAllTokens()">清除所有玩家</button>
-            <button id="clear-npc-btn" class="action-btn-sm" onclick="clearAllNPCs()">清除所有NPC</button>
         </div>
     </div>
 
@@ -990,7 +963,20 @@
     </div>
 
     <div id="viewport">
-    <div id="world-container"><div id="konva-stage"></div><div id="placed-map-overlays"></div><div id="world-history-btns" class="dm-only"><button onclick="emitWorldUndo()" title="撤销 (Ctrl+Z)">↩ 撤销</button><button onclick="emitWorldRedo()" title="重做 (Ctrl+Shift+Z)">↪ 重做</button></div></div>
+    <div id="world-container">
+        <div id="konva-stage"></div>
+        <div id="placed-map-overlays"></div>
+        <div id="dm-toolbar" class="dm-only">
+            <button id="btn-move" class="dm-tool-btn active" onclick="setTool('move')" title="移动">移动</button>
+            <button id="btn-pen" class="dm-tool-btn" onclick="setTool('draw')" title="画笔">画笔</button>
+            <button id="btn-rect" class="dm-tool-btn" onclick="setTool('rect')" title="矩形">矩形</button>
+            <button id="btn-eraser" class="dm-tool-btn" onclick="setTool('erase')" title="橡皮">橡皮</button>
+            <button id="btn-fog" class="dm-tool-btn" onclick="setTool('fog')" title="迷雾遮罩：拖拽绘制，双击已有遮罩删除">迷雾</button>
+            <button id="btn-undo" class="dm-tool-btn" onclick="emitWorldUndo()" title="撤销 (Ctrl+Z)">↩</button>
+            <button id="btn-redo" class="dm-tool-btn" onclick="emitWorldRedo()" title="重做 (Ctrl+Shift+Z)">↪</button>
+        </div>
+        <div id="dm-toolbar-popout"></div>
+    </div>
 </div>
 
     <!-- 笔记视图 -->
@@ -1141,7 +1127,10 @@
     const chatMessages = document.getElementById('chat-messages');
 
     let currentTool = 'move';
-    let penColor = '#ff0000';
+    let penColor = '#cc0000';     // 画笔当前颜色
+    let rectColor = '#cc0000';    // 矩形当前颜色
+    let penCustomColor = '#cc0000';  // 画笔自定义色槽
+    let rectCustomColor = '#cc0000'; // 矩形自定义色槽
 
     // --- Tab 切换 ---
     const notesTextarea = document.getElementById('notes-textarea');
@@ -1356,14 +1345,116 @@
     // --- 工具切换 ---
     function setTool(tool) {
         if (!isDM && (tool === 'draw' || tool === 'erase' || tool === 'rect' || tool === 'fog')) return;
+        closeToolbarPopout();
         currentTool = tool;
-        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('btn-' + tool).classList.add('active');
+        document.querySelectorAll('.dm-tool-btn').forEach(b => b.classList.remove('active'));
+        const btnId = tool === 'draw' ? 'btn-pen' : tool === 'erase' ? 'btn-eraser' : 'btn-' + tool;
+        document.getElementById(btnId)?.classList.add('active');
+        if (tool === 'draw' || tool === 'rect' || tool === 'erase') openToolbarPopout(tool);
         if (konvaStage) {
             konvaStage.draggable(tool === 'move');
             const konvaCursor = tool === 'move' ? 'grab' : (tool === 'erase' ? 'default' : 'crosshair');
             konvaStage.container().style.cursor = konvaCursor;
             updateNodeListening();
+        }
+    }
+
+    // 工具条弹出面板：颜色选择器（画笔/矩形）或批量清除按钮（橡皮）
+    const PRESET_COLORS = [
+        { color: '#000000', border: false },
+        { color: '#ffffff', border: true },
+        { color: '#cc0000', border: false },
+        { color: '#22c55e', border: false },
+    ];
+
+    function openToolbarPopout(tool) {
+        if (!isDM) return;
+        const popout = document.getElementById('dm-toolbar-popout');
+        if (!popout) return;
+        popout.innerHTML = '';
+
+        if (tool === 'draw' || tool === 'rect') {
+            const currentColor = tool === 'draw' ? penColor : rectColor;
+            const currentCustom = tool === 'draw' ? penCustomColor : rectCustomColor;
+            const isCustomActive = !PRESET_COLORS.find(p => p.color === currentColor);
+
+            PRESET_COLORS.forEach(({ color, border }) => {
+                const swatch = document.createElement('div');
+                swatch.className = 'toolbar-color-swatch' + (color === currentColor ? ' selected' : '');
+                swatch.style.background = color;
+                swatch.dataset.color = color;
+                if (border) swatch.style.outline = '1px solid #999';
+                swatch.onclick = () => {
+                    if (tool === 'draw') penColor = color;
+                    else rectColor = color;
+                    socket.emit('uiPrefs:save', tool === 'draw' ? { penColor: color } : { rectColor: color });
+                    refreshSwatchHighlight(color);
+                };
+                popout.appendChild(swatch);
+            });
+
+            const divider = document.createElement('div');
+            divider.style.cssText = 'width:1px;height:20px;background:rgba(255,255,255,0.25);margin:0 2px;flex-shrink:0;';
+            popout.appendChild(divider);
+
+            const customInput = document.createElement('input');
+            customInput.type = 'color';
+            customInput.className = 'toolbar-color-custom' + (isCustomActive ? ' selected' : '');
+            customInput.value = currentCustom;
+            customInput.addEventListener('input', (e) => {
+                const c = e.target.value;
+                if (tool === 'draw') { penColor = c; penCustomColor = c; }
+                else { rectColor = c; rectCustomColor = c; }
+                socket.emit('uiPrefs:save', tool === 'draw' ? { penColor: c } : { rectColor: c });
+                refreshSwatchHighlight(c);
+            });
+            popout.appendChild(customInput);
+
+        } else if (tool === 'erase') {
+            [
+                { label: '清除所有笔迹', fn: () => clearCanvas() },
+                { label: '清除所有玩家', fn: () => clearAllTokens() },
+                { label: '清除所有NPC',  fn: () => clearAllNPCs() },
+            ].forEach(({ label, fn }) => {
+                const btn = document.createElement('button');
+                btn.className = 'toolbar-action-btn';
+                btn.textContent = label;
+                btn.onclick = fn;
+                popout.appendChild(btn);
+            });
+        }
+
+        positionPopout(tool);
+        popout.style.display = 'flex';
+    }
+
+    function closeToolbarPopout() {
+        const popout = document.getElementById('dm-toolbar-popout');
+        if (popout) { popout.style.display = 'none'; popout.innerHTML = ''; }
+    }
+
+    function positionPopout(tool) {
+        const btnId = tool === 'draw' ? 'btn-pen' : tool === 'erase' ? 'btn-eraser' : 'btn-' + tool;
+        const btn = document.getElementById(btnId);
+        const popout = document.getElementById('dm-toolbar-popout');
+        const container = document.getElementById('world-container');
+        if (!btn || !popout || !container) return;
+        const btnRect = btn.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        popout.style.top = (btnRect.top - containerRect.top) + 'px';
+        popout.style.left = (btnRect.right - containerRect.left + 6) + 'px';
+    }
+
+    function refreshSwatchHighlight(activeColor) {
+        const popout = document.getElementById('dm-toolbar-popout');
+        if (!popout) return;
+        const presetColors = PRESET_COLORS.map(p => p.color);
+        popout.querySelectorAll('.toolbar-color-swatch').forEach(sw => {
+            sw.classList.toggle('selected', sw.dataset.color === activeColor);
+        });
+        const customInput = popout.querySelector('.toolbar-color-custom');
+        if (customInput) {
+            customInput.classList.toggle('selected', !presetColors.includes(activeColor));
         }
     }
 
@@ -1396,19 +1487,6 @@
         worldDrawingNodes.forEach(node => node.listening(isErase));
         worldRectNodes.forEach(node => node.listening(isErase));
         konvaStage.batchDraw();
-    }
-
-    function setDrawColor(c, el) {
-        penColor = c;
-        document.querySelectorAll('.draw-color').forEach(b => b.classList.remove('selected'));
-        document.getElementById('draw-custom-color-input')?.classList.remove('selected');
-        el.classList.add('selected');
-        if (currentTool === 'move' || currentTool === 'erase') setTool('draw');
-    }
-
-    // 兼容旧函数名
-    function setPenColor(c, el) {
-        setDrawColor(c, el);
     }
 
     function clearCanvas() {
@@ -1595,6 +1673,14 @@
             }
         }
         hasJoined = true;
+
+        // 恢复 DM 画笔/矩形颜色偏好
+        if (isDM && data.uiPrefs) {
+            penColor = data.uiPrefs.penColor || '#cc0000';
+            rectColor = data.uiPrefs.rectColor || '#cc0000';
+            penCustomColor = penColor;
+            rectCustomColor = rectColor;
+        }
 
         if (data.dmName) {
             document.getElementById('dm-name').textContent = data.dmName;
@@ -2912,7 +2998,7 @@
             konvaTempRect = new Konva.Rect({
                 x: snapped.gx * GRID_SIZE, y: snapped.gy * GRID_SIZE,
                 width: 0, height: 0,
-                stroke: penColor,
+                stroke: rectColor,
                 strokeWidth: 3,
                 fill: 'transparent',
                 listening: false,
@@ -3023,7 +3109,7 @@
 
             if (gridW > 0 && gridH > 0) {
                 const id = genDrawId('dr');
-                const data = { id, gridX: x1, gridY: y1, gridW, gridH, color: penColor, strokeWidth: 3 };
+                const data = { id, gridX: x1, gridY: y1, gridW, gridH, color: rectColor, strokeWidth: 3 };
                 // konvaTempRect 已在 drawingLayer，直接注册
                 worldRectNodes.set(id, konvaTempRect);
                 worldRectsData.push(data);
@@ -3659,14 +3745,6 @@
         spawnNPCWithColor(e.target.value);
     });
 
-    // 自定义画笔颜色（input 实时更新颜色，无需等待 change）
-    document.getElementById('draw-custom-color-input').addEventListener('input', (e) => {
-        if (!isDM) return;
-        penColor = e.target.value;
-        document.querySelectorAll('.draw-color').forEach(b => b.classList.remove('selected'));
-        e.target.classList.add('selected');
-        if (currentTool === 'move' || currentTool === 'erase') setTool('draw');
-    });
 
     socket.on('placedMap:removed', (id) => {
         const idx = placedMapsData.findIndex(m => m.id === id);
