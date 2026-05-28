@@ -124,9 +124,12 @@
         #add-world-map-btn { background: #16a085; }
         #add-world-map-btn:hover { background: #1abc9c; }
 
+        /* 权限分区默认隐藏 */
+        .player-only { display: none; }
+
         /* 地图资产库缩略图列表 */
-        #world-asset-library { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
-        .asset-thumb-item { position: relative; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s; flex-shrink: 0; }
+        #world-asset-library, #player-asset-library { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 200px; overflow-y: auto; }
+        .asset-thumb-item { position: relative; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s; }
         .asset-thumb-item:hover { border-color: #16a085; }
         .asset-thumb-item img { width: 100%; height: 60px; object-fit: cover; display: block; pointer-events: none; }
         .asset-thumb-remove { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 4px; border: none; background: rgba(192, 57, 43, 0.88); color: white; font-size: 14px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; pointer-events: auto; padding: 0; }
@@ -892,9 +895,14 @@
 
     <div id="section-world-map" class="dm-only">
         <div class="section-title">地图</div>
+        <div id="world-asset-library"></div>
         <input type="file" id="world-file-input" accept="image/*" style="display: none;">
         <button id="add-world-map-btn" class="action-btn" onclick="onAddWorldMapClick()">＋ 添加地图</button>
-        <div id="world-asset-library"></div>
+    </div>
+
+    <div id="section-player-maps" class="player-only">
+        <div class="section-title">地图</div>
+        <div id="player-asset-library"></div>
     </div>
 
     <div class="section-title">玩家列表</div>
@@ -1659,7 +1667,7 @@
             }
             return `${who} 投掷了 ${data.expr}，结果是 ${breakdown} = ${data.result}`;
         }
-        return `${who} 投掷了 D${data.sides}，结果是 ${data.result}`;
+        return `${who} 投掷了 d${data.sides}，结果是 ${data.result}`;
     }
 
     function handleChatKeypress(e) {
@@ -3294,33 +3302,46 @@
 
     // ===== Phase 8-A: 地图资产库 =====
     function renderAssetLibrary() {
-        if (!isDM) return;
-        const lib = document.getElementById('world-asset-library');
-        if (!lib) return;
-        lib.innerHTML = '';
-        Object.entries(mapAssetCache).forEach(([assetId, asset]) => {
-            const item = document.createElement('div');
-            item.className = 'asset-thumb-item';
-            item.title = '点击聚焦到该地图';
-
-            const img = document.createElement('img');
-            img.src = asset.base64;
-            img.alt = '地图缩略图';
-
-            const removeBtn = document.createElement('button');
-            removeBtn.className = 'asset-thumb-remove';
-            removeBtn.textContent = '×';
-            removeBtn.title = '删除资产';
-            removeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                removeMapAsset(assetId);
+        if (isDM) {
+            const lib = document.getElementById('world-asset-library');
+            if (!lib) return;
+            lib.innerHTML = '';
+            Object.entries(mapAssetCache).forEach(([assetId, asset]) => {
+                const item = document.createElement('div');
+                item.className = 'asset-thumb-item';
+                item.title = '点击聚焦到该地图';
+                const img = document.createElement('img');
+                img.src = asset.base64;
+                img.alt = '地图缩略图';
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'asset-thumb-remove';
+                removeBtn.textContent = '×';
+                removeBtn.title = '删除资产';
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    removeMapAsset(assetId);
+                });
+                item.addEventListener('click', () => focusOnPlacedMap(assetId));
+                item.appendChild(img);
+                item.appendChild(removeBtn);
+                lib.appendChild(item);
             });
-
-            item.addEventListener('click', () => focusOnPlacedMap(assetId));
-            item.appendChild(img);
-            item.appendChild(removeBtn);
-            lib.appendChild(item);
-        });
+        } else {
+            const lib = document.getElementById('player-asset-library');
+            if (!lib) return;
+            lib.innerHTML = '';
+            Object.entries(mapAssetCache).forEach(([assetId, asset]) => {
+                const item = document.createElement('div');
+                item.className = 'asset-thumb-item';
+                item.title = '点击聚焦到该地图';
+                const img = document.createElement('img');
+                img.src = asset.base64;
+                img.alt = '地图缩略图';
+                item.addEventListener('click', () => focusOnPlacedMap(assetId));
+                item.appendChild(img);
+                lib.appendChild(item);
+            });
+        }
     }
 
     function removeMapAsset(assetId) {
@@ -3408,11 +3429,14 @@
     }
 
     function focusOnPlacedMap(assetId) {
-        if (!isDM) return;
         const placed = placedMapsData.find(m => m.assetId === assetId);
         if (!placed) {
-            placeMapAtViewportCenter(assetId);
-            showToast('无对应地图实例，已生成新的');
+            if (isDM) {
+                placeMapAtViewportCenter(assetId);
+                showToast('无对应地图实例，已生成新的');
+            } else {
+                showToast('DM还没有放置该地图');
+            }
             return;
         }
         if (!konvaStage) return;

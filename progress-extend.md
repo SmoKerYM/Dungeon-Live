@@ -126,8 +126,14 @@
 - **Phase 9-C 战争迷雾视觉分层** (2026-05-28)：
   - [public/game.html](public/game.html) JS：`renderWorldFog(fogRect)` 改为按 `isDM` 分支构造 rectConfig：DM 端 `fill: 'rgba(180,180,180,1)'` + `opacity: 0.7`（浅灰半透明，可透视地图）；玩家端 `fillPatternImage: fogPatternCanvas` + `fillPatternRepeat: 'repeat'` + `opacity: 0.99`（深色马赛克方块，类网格背景质感，视觉上完全遮挡地图）；其余逻辑不变（`listening: isDM`，DM `dblclick → fog:remove`）
 
+- **9-A 扩展：玩家侧地图资产库** (2026-05-28)：
+  - [public/game.html](public/game.html) CSS：新增 `.player-only { display: none; }` 默认隐藏玩家专属区域；`#world-asset-library, #player-asset-library` 布局从 `flex column` 改为 `grid 双栏（1fr 1fr）`节省垂直空间
+  - [public/game.html](public/game.html) HTML：新增 `#section-player-maps.player-only`（紧接 DM 地图区块后），内含"地图"标题 + `#player-asset-library` 容器，无"添加地图"按钮
+  - [public/game.html](public/game.html) JS：`renderAssetLibrary()` 移除全局 `isDM` 守卫，按角色分支渲染：DM 填充 `#world-asset-library`（含删除按钮，逻辑不变）；玩家填充 `#player-asset-library`（仅缩略图，无删除按钮，click → `focusOnPlacedMap`）；玩家加入后 `mapAsset:fetched` 照常触发该函数，库自动填充
+  - [public/game.html](public/game.html) JS：`focusOnPlacedMap(assetId)` 移除 `if (!isDM) return` 守卫；未找到实例时按角色分支：DM → `placeMapAtViewportCenter` + toast "无对应地图实例，已生成新的"；玩家 → toast "DM还没有放置该地图"；找到实例时置顶+聚焦逻辑两者共用
+
 ## 下一步
-Phase 9-C 完成。后续进入 Phase 10（吸附开关 + 选框批量操作）。
+Phase 9-C 及扩展完成。后续进入 Phase 10（吸附开关 + 选框批量操作）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
