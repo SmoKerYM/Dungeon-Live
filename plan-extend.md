@@ -590,7 +590,7 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 
 - [public/game.html](public/game.html) JS：
   - `renderWorldFog(fogRect)` 内 `fill` 和 `opacity` 按 `isDM` 分支（两者均不使用 `fillPatternImage`）：
-    - DM：`fill: 'rgba(180,180,180,1)'`，`opacity: 0.35`
+    - DM：`fill: 'rgba(180,180,180,1)'`，`opacity: 0.7`
     - 玩家：`fill: '#000000'`，`opacity: 1`
   - 移除 `fillPatternImage: fogPatternCanvas` 赋值；`createFogPattern()` 和 `fogPatternCanvas` 变量保留但不再调用（避免影响其他可能引用处）
   - 其余逻辑不变（`listening: isDM`，DM 端 `dblclick → fog:remove`，玩家端不可操作）
@@ -606,9 +606,11 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 
 ---
 
-## Phase 10: 吸附开关 + 地图绑定联动 + 选框批量操作
+## Phase 10: 吸附开关（暂缓）+ 选框批量操作（暂缓）
 
-**目标 / Goal**：在稳定的 Konva 世界上增加三组交互增强，每组作为独立子任务：(10-A) 为地图/矩形/棋子分别增加"吸附网格"开关，关闭后可自由放置于非格子位置；(10-B) 为地图实例增加"固定对象"开关，移动/缩放地图时被该地图包裹的笔迹、矩形、棋子跟随联动；(10-C) 增加"选框"工具，框选多类对象后批量平移或删除。
+**目标 / Goal**：在稳定的 Konva 世界上增加两组交互增强，每组作为独立子任务：(10-A) 为地图/矩形/棋子分别增加"吸附网格"开关，关闭后可自由放置于非格子位置；(10-C) 增加"选框"工具，框选多类对象后批量平移或删除。（地图绑定联动功能已在 Phase 9-B 实现，10-B 已废弃。）
+
+> **注**：10-A 和 10-C 均暂时搁置，待后续跑团反馈后按需实现。
 
 **前置条件 / Prerequisites**：Phase 8 完成（Konva 世界为唯一渲染路径，所有对象通过 socket 事件管理）。
 
@@ -648,82 +650,6 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 - 刷新页面后三个开关恢复默认开启
 
 **本阶段不做 / Out of scope**：持久化开关状态；玩家侧的独立棋子吸附开关（可后续追加至玩家工具栏）；自由笔迹（本就不吸附，不需要开关）。
-
----
-
-### 10-B: 地图固定对象联动
-
-**功能说明**
-
-每个放置的地图实例新增 `isBound` 布尔字段（默认 `false`）。开启后，DM 对该地图实例的移动和缩放会触发被"包裹"对象的联动更新。
-
-**包裹判断规则**（以操作**前**地图的世界坐标边界为准）：
-
-- 边界换算：地图 `gridX/gridY` 为网格单位，世界坐标 = `grid * GRID_SIZE`；`gridHeight = gridWidth * (asset.originalHeight / asset.originalWidth)`
-- `freeDrawing`：`points` 数组中**至少有一个** (x, y)（世界坐标）在地图边界内，即视为包裹
-- `rect`：四个顶点中**至少有一个**（换算为世界坐标后）在地图边界内，即视为包裹
-- `token` / `npc`：渲染圆心（`(gridX + 0.5) * GRID_SIZE`，取 `renderWorldToken` 相同计算方式）在地图边界内
-- `fogRect`（8-C 已实现）：四顶点 `(x,y),(x+w,y),(x,y+h),(x+w,y+h)`（世界像素坐标）至少有一个在地图边界内
-
-**移动联动**（`dragend`）：
-
-- 计算 delta：`dgx = newGridX - oldGridX`，`dgy = newGridY - oldGridY`
-- 所有被包裹的 `freeDrawing` 的每个点 `+= (dgx * GRID_SIZE, dgy * GRID_SIZE)`
-- 所有被包裹的 `rect` 的 `gridX += dgx`，`gridY += dgy`
-- 所有被包裹的 `token/npc` 的 `gridX += dgx`，`gridY += dgy`
-- 所有被包裹的 `fogRect` 的 `x += dgx * GRID_SIZE`，`y += dgy * GRID_SIZE`；`w/h` 不变
-
-**缩放联动**（resize 结束）：
-
-- 旧地图网格尺寸：`oldW = gridWidth`，`oldH = oldW * aspectRatio`
-- 新地图网格尺寸：`newW = newGridWidth`，`newH = newW * aspectRatio`（gridX/gridY 不变，锚点为左上角）
-- `freeDrawing` 每个点（世界坐标）：
-  `newX = mapX1 + (x - mapX1) / (oldW * G) * (newW * G)`，Y 同理（`mapX1 = gridX * G`）
-- `rect`（网格坐标）：
-  `newRx = gridX + (rx - gridX) / oldW * newW`，`newRy/newRw/newRh` 类似等比缩放
-- `token/npc`（网格坐标）：
-  `newTx = gridX + (tx + 0.5 - gridX) / oldW * newW - 0.5`（保持圆心在地图内相对比例不变，结果按 `snapToken` 决定是否 `Math.round`）
-- `fogRect`（世界像素坐标）：
-  `newX = mapX1 + (x - mapX1) / (oldW * G) * (newW * G)`，Y 同理；`newW = w / (oldW * G) * (newW * G)`，`newH` 同理（公式见 8-C 联动计算）
-
-**数据模型变更**：
-
-```javascript
-// world.placedMaps 条目新增字段
-{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }
-```
-
-**交付物 / Deliverables**：
-
-- [server.js](server.js)：
-  - `loadWorld()` 默认值中 `placedMaps` 条目读取时补 `isBound: map.isBound ?? false`（兼容旧存档）
-  - 新事件 `placedMap:setBound`（DM guard）：更新 `world.placedMaps` 中对应条目的 `isBound`，`io.emit('placedMap:boundSet', { id, isBound })`，`scheduleWorldSave()`，**不**纳入 undoStack（与 `placedMap:setLock` 一致）
-  - 新事件 `world:boundedMove`（DM guard）：payload `{ mapId, mapGridX, mapGridY, movedTokens: [{id, gridX, gridY}], movedNpcs: [{id, gridX, gridY}], movedFreeDrawings: [{id, points}], movedRects: [{id, gridX, gridY, gridW, gridH}], movedFogRects: [{id, x, y, w, h}] }`；handler：`pushWorldUndo()` → 更新 `world.placedMaps` 中 mapId 的坐标 → 批量更新五类对象（含 `world.fogRects`）→ `io.emit('world:boundedMoved', payload)` → `scheduleWorldSave()`
-  - 新事件 `world:boundedResize`（DM guard）：payload `{ mapId, newGridWidth, scaledFreeDrawings: [{id, points}], scaledRects: [{id, gridX, gridY, gridW, gridH}], movedTokens: [{id, gridX, gridY}], movedNpcs: [{id, gridX, gridY}], scaledFogRects: [{id, x, y, w, h}] }`；handler：`pushWorldUndo()` → 更新地图 `gridWidth` → 批量更新五类对象（含 `world.fogRects`）→ `io.emit('world:boundedResized', payload)` → `scheduleWorldSave()`
-
-- [public/game.html](public/game.html) CSS：`.bind-btn` 绑定/解绑视觉样式（激活时用与锁定按钮同色系但不同图标区分）
-- [public/game.html](public/game.html) JS：
-  - `createOverlayForPlacedMap()`：新增 bind 按钮（DM only），图标建议 📌（已绑）/ 📍（未绑），`click` 调 `togglePlacedMapBound(id)`
-  - `togglePlacedMapBound(id)`：emit `placedMap:setBound`，传 `{ id, isBound: !current }`
-  - `socket.on('placedMap:boundSet', { id, isBound })`：更新 `placedMapsData[id].isBound`，刷新 overlay 按钮图标与样式
-  - 新增 `getWrappedObjects(placedData)`：返回 `{ tokens, npcs, freeDrawings, rects, fogRects }`，基于 `worldTokensData / worldNpcsData / worldDrawingsData / worldRectsData / worldFogData` 按包裹规则过滤（使用操作前的旧坐标）；fog 顶点检查：四顶点 `(x,y),(x+w,y),(x,y+h),(x+w,y+h)` 至少一个在地图边界内
-  - 地图 `dragend` handler：若 `isBound`，先调 `getWrappedObjects`，计算新坐标，emit `world:boundedMove`；否则 emit 原 `placedMap:move`
-  - 地图 resize 结束 handler：若 `isBound`，调 `getWrappedObjects`，按缩放公式算新坐标，emit `world:boundedResize`；否则 emit 原 `placedMap:resize`
-  - `socket.on('world:boundedMoved', payload)`：用 payload 更新 `placedMapsData`、`worldTokensData`、`worldNpcsData`、`worldDrawingsData`、`worldRectsData`、`worldFogData`，对应 Konva 节点调用 `.position()` / `.points()` 更新，fog 节点调 `.x()/.y()` 更新，`batchDraw`
-  - `socket.on('world:boundedResized', payload)`：同上（freeDrawing 节点需 `.points(newPoints)` 重绘，rect 节点需更新 `.x()/.y()/.width()/.height()`；fog 节点需更新 `.x()/.y()/.width()/.height()`）
-  - `world:sync`（undo/redo）已有的全量销毁重渲逻辑自动覆盖，无需额外修改
-
-**验收标准 / Acceptance criteria**：
-
-- 默认 `isBound=false`；DM toggle 后服务器持久化，刷新后保留
-- 地图开启绑定，地图内放置棋子，以及一条完整在地图内的笔迹 → 拖动地图 → 两者平移相同 delta，其他客户端同步
-- 笔迹有至少一点在地图内（哪怕只有一端在地图内）→ 跟随移动（"部分交叉 = 包裹"）
-- 缩放已绑定地图 → 地图内的矩形顶点等比重映射；地图内棋子维持相对比例位置
-- Ctrl+Z 一次性还原地图 + 所有联动对象的位置（单个 undo 槽）
-- 地图处于锁定状态时无法拖动，`isBound` 不触发联动
-- 地图开启绑定，地图内存在马赛克遮罩（8-C 已实现）→ 拖动地图 → 马赛克跟随平移；缩放地图 → 马赛克等比重映射；其他客户端同步
-
-**本阶段不做 / Out of scope**：一个对象同时被两张绑定地图包裹时的仲裁（实现时取 `placedMapsData` 中第一个匹配项即可）；NPC 缩放（仅平移位置，不改变圆形大小）；`isBound` toggle 纳入 undoStack。
 
 ---
 
@@ -816,5 +742,5 @@ world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
 | — | `fog:remove` / `fog:removed`（新增，删除马赛克遮罩） | Phase 8-C |
 | — | `placedMap:setBound` / `placedMap:boundSet`（新增，固定对象开关） | Phase 9-B |
 | `placedMap:move`（含 `movedFogRects`） | `placedMap:move`（新增 `movedTokens/movedNpcs/movedFreeDrawings/movedRects`，合并联动 payload） | Phase 9-B |
-| `placedMap:resize`（含 `scaledFogRects`） | `placedMap:resize`（新增 `scaledTokens/scaledNpcs/scaledFreeDrawings/scaledRects`，合并联动 payload） | Phase 10-B 核心已并入 Phase 9-B |
+| `placedMap:resize`（含 `scaledFogRects`） | `placedMap:resize`（新增 `scaledTokens/scaledNpcs/scaledFreeDrawings/scaledRects`，合并联动 payload） | Phase 9-B |
 | — | `world:selectionMove` / `world:selectionMoved`（新增，选框批量平移） | Phase 10-C |

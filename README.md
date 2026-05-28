@@ -16,7 +16,8 @@
 ### 🗺️ 地图系统（Konva 网格世界）
 - **共享网格世界** - 所有人看同一个世界，DM 负责管理地图实例，玩家仅可观看
 - **地图资产上传** - DM 上传图片自动存入资产库并放置到世界中央（默认 20 格宽）
-- **地图资产库** - 已上传地图以缩略图列表展示，DM 点击可随时放置新实例；× 删除资产时联动移除所有网格上的对应实例
+- **地图资产库** - DM 侧已上传地图以缩略图列表展示，点击缩略图聚焦视口到对应地图实例（无实例时自动放置并提示）；× 删除资产时联动移除所有网格上的对应实例；玩家也有只读地图缩略图库，点击同样聚焦视口
+- **地图绑定联动** - 每张地图实例默认开启绑定（左下角 📌 按钮控制），移动/缩放地图时内部的棋子、NPC、笔迹、矩形、迷雾同步联动；关闭后地图独立移动
 - **拖动吸附** - 地图实例拖动后自动对齐网格交点
 - **缩放调整** - 右下角拖拽手柄调整地图宽度（保持宽高比，吸附到整数格）
 - **锁定/删除** - 支持锁定防误操作，悬停显示控件
@@ -29,17 +30,25 @@
 - **HP 同步显示** - 侧边栏实时显示角色血量，悬停棋子也可查看
 
 ### 🖌️ 绘图工具
+- **DM 悬浮工具条** - Canvas 左上角竖向工具条（仅 DM 可见）：移动 / 画笔 / 矩形 / 橡皮 / 迷雾 / 撤销 / 重做
+- **颜色选择器** - 画笔和矩形工具激活时右侧展开颜色面板（黑/白/红/绿 + 自定义）；末次颜色持久化到服务端 `data/ui_prefs.json`
 - **自由笔迹** - 画笔工具在世界坐标上自由绘画，不吸附，实时广播
 - **矩形工具** - 四顶点吸附到网格的方框绘制
-- **橡皮擦** - 拖拽擦除单条笔迹或矩形
-- **颜色选择器** - 预设颜色 + 自定义调色盘
-- **清空笔迹** - DM 可一键清空所有笔迹和矩形
+- **橡皮擦** - 点击删除单条笔迹或矩形；右侧弹出菜单含"清除所有笔迹"/"清除所有玩家"/"清除所有NPC"三个批量按钮
 
 ### 🧩 棋子系统
 - **玩家棋子** - Konva 圆形棋子，拖动吸附网格，悬停显示 HP 和玩家名
 - **NPC 系统** - DM 可生成多种颜色的 NPC（圆角矩形），双击删除
 - **权限隔离** - 玩家只能拖动自己颜色的棋子，DM 可操作全部
 - **批量清除** - 分别清除玩家棋子或 NPC
+
+### 🌫️ 战争迷雾
+- **迷雾工具** - DM 在工具条激活迷雾工具，拖拽绘制矩形遮罩覆盖地图区域
+- **视觉分层** - DM 看到浅灰半透明矩形（可透视地图内容）；玩家看到深色马赛克，完全遮挡下方内容
+- **交互** - DM 双击迷雾矩形即可删除（揭示下方地图）；玩家无法操作迷雾
+- **绑定联动** - 迷雾随所在地图移动/缩放同步位移（基于 8-C 强制联动，无需 isBound 开关）
+- **持久化** - 服务器重启后保留（`world.fogRects` 随世界状态落盘）
+- **撤销支持** - Ctrl+Z 可撤销添加/删除迷雾操作
 
 ### ↩️ 撤销/重做
 - **Ctrl/Cmd+Z** 撤销，**Ctrl/Cmd+Shift+Z** 重做（仅 DM）
@@ -115,13 +124,16 @@ npm start
 ### 核心操作
 
 #### DM 操作
-- **上传地图**：左侧边栏点 **＋ 添加地图**，或点击资产库缩略图放置新实例
+- **上传地图**：左侧边栏点 **＋ 添加地图**
+- **聚焦地图**：点击资产库缩略图，视口聚焦到该地图实例（无实例时自动放置并提示）
 - **拖动/缩放地图**：移动工具下拖动地图实例，右下角手柄调整尺寸
 - **锁定/删除**：悬停地图出现控件，锁定后无法拖动
 - **删除资产**：点缩略图 × → 确认 → 同步删除网格上所有对应实例
-- **绘图工具**：切换画笔/矩形/橡皮，在空白处绘制（移动工具时平移）
+- **绑定联动**：地图左下角 📌 按钮控制绑定状态；开启时移动/缩放地图内部对象跟随
+- **绘图工具**：切换画笔/矩形/橡皮（工具条或工具栏），在空白处绘制；移动工具时拖动空白处平移
+- **战争迷雾**：激活迷雾工具，拖拽绘制遮罩矩形；双击迷雾矩形删除
 - **NPC 管理**：点击 NPC 颜色块生成，双击 NPC 删除
-- **撤销/重做**：Ctrl+Z / Ctrl+Shift+Z，或点击左上角按钮
+- **撤销/重做**：Ctrl+Z / Ctrl+Shift+Z，或点击工具条中的撤销/重做按钮
 - **视口控制**：滚轮缩放（0.2x~5x），移动工具下拖动空白处平移
 
 #### 玩家操作
@@ -160,7 +172,8 @@ coc_app/
 │   ├── characters_notes.json  # 登场人物记录
 │   ├── chat_history.json      # 聊天/骰子历史（最近 100 条）
 │   ├── map_assets.json        # 地图图片资产（Base64）
-│   ├── world.json             # 世界状态（地图实例、棋子、笔迹等）
+│   ├── world.json             # 世界状态（地图实例、棋子、笔迹、迷雾等）
+│   ├── ui_prefs.json          # DM 绘图颜色偏好（penColor/rectColor）
 │   └── notes.txt              # 共享笔记
 └── images/                # （已废弃）
 ```
@@ -194,12 +207,14 @@ coc_app/
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // 最多 100 条
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
+  uiPrefs: { penColor: "#cc0000", rectColor: "#cc0000" },
   world: {
-    placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
+    placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }],
     tokens:       [{ id, color, gridX, gridY }],
     npcs:         [{ id, gridX, gridY, color }],
     freeDrawings: [{ id, points: [x,y,...], color, strokeWidth }],
-    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]
+    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }],
+    fogRects:     [{ id, x, y, w, h }]
   }
 }
 ```
@@ -226,13 +241,14 @@ coc_app/
 |----------|------|
 | Auth | `join`, `selectColor` |
 | MapAsset | `mapAsset:upload`, `mapAsset:fetch`, `mapAsset:remove` |
-| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
+| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:setBound`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
+| Fog | `fog:add`, `fog:remove` |
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save` |
-| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update` |
+| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update`, `uiPrefs:save` |
 
 ### 服务端 → 客户端
 | 事件 | 说明 |
@@ -241,7 +257,8 @@ coc_app/
 | `mapAsset:uploaded` | 资产上传确认 |
 | `mapAsset:fetched` | 返回 Base64 资产数据 |
 | `mapAsset:removed` | 资产删除广播 |
-| `placedMap:added/moved/resized/lockSet/removed` | 地图实例变更广播 |
+| `placedMap:added/moved/resized/lockSet/boundSet/removed` | 地图实例变更广播 |
+| `fog:added/removed` | 迷雾矩形变更广播 |
 | `token:spawn/move/clearAll/remove` | 棋子状态广播 |
 | `npc:spawn/move/remove/clearAll` | NPC 状态广播 |
 | `draw:freeStroke/rect/liveStroke/remove/clearAll` | 绘图广播 |

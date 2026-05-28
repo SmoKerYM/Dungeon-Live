@@ -19,7 +19,7 @@ coc_app/
 ├── server.js              # Main server, Socket.IO events
 ├── package.json           # Dependencies: express, socket.io, nodemon
 ├── nodemon.json           # Watch config: ignores data/
-├── plan-extend.md         # Konva grid-world refactor plan (Phase 0-7 complete)
+├── plan-extend.md         # Konva grid-world refactor plan (Phase 0-9 complete, Phase 10 pending)
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
 │   └── game.html          # Main game UI (inline CSS+JS, Konva VTT model)

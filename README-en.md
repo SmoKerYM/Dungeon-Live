@@ -16,7 +16,8 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 ### Map System (Konva Grid World)
 - **Shared Grid World** — Everyone sees the same world; DM manages map instances, players can only observe
 - **Map Asset Upload** — DM uploads images saved to the asset library and placed at the world center (default 20 tiles wide)
-- **Asset Library** — Uploaded maps shown as thumbnail list; click to place a new instance; × deletes the asset and all its placed instances
+- **Asset Library** — DM side shows uploaded maps as thumbnails; click to focus the viewport on the placed instance (auto-places a new one if none exists); × deletes the asset and all its placed instances; players also have a read-only thumbnail library with the same focus-on-click behavior
+- **Map Binding** — Each placed map defaults to binding mode (📌 button at bottom-left); when enabled, tokens/NPCs/strokes/rects/fog inside the map move and scale together with it
 - **Snap-to-Grid** — Dragged map instances snap to the nearest grid intersection
 - **Resize Handle** — Bottom-right drag handle resizes width (preserves aspect ratio, snaps to whole tiles)
 - **Lock / Delete** — Lock to prevent accidental drags; controls appear on hover
@@ -29,17 +30,25 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **HP Sync** — Sidebar shows character HP; hover over a token to inspect HP and name
 
 ### Drawing Tools
+- **DM Floating Toolbar** — Vertical toolbar at the top-left of the canvas (DM only): Move / Brush / Rect / Eraser / Fog / Undo / Redo
+- **Color Picker** — Activating brush or rect expands a color panel (black/white/red/green + custom); last-used color is persisted to `data/ui_prefs.json`
 - **Free Brush** — Draw freehand in world coordinates, no snapping, broadcasts in real time
 - **Rectangle Tool** — Corners snap to grid
-- **Eraser** — Drag to erase individual strokes or rectangles
-- **Color Picker** — Preset colors + custom color wheel
-- **Clear All** — DM clears all drawings and rectangles with one click
+- **Eraser** — Click to delete a single stroke or rectangle; pop-out menu has three batch buttons: Clear All Strokes / Clear All Players / Clear All NPCs
 
 ### Token System
 - **Player Tokens** — Konva circles snap to grid; hover shows HP and player name
 - **NPC System** — DM spawns multi-color NPCs (rounded rectangles); double-click to delete
 - **Permission Isolation** — Players can only drag their own token; DM can move all
 - **Batch Clear** — Separate clear for player tokens and NPCs
+
+### War Fog
+- **Fog Tool** — DM activates the fog tool from the toolbar and drags to draw rectangular fog masks
+- **Visual Layers** — DM sees a light-gray semi-transparent rect (map remains visible); players see a dark mosaic that fully obscures the map
+- **Interaction** — DM double-clicks a fog rect to remove it; players cannot interact with fog
+- **Binding** — Fog moves and scales with its underlying map (always linked, no isBound switch needed)
+- **Persistence** — Saved in `world.fogRects`; survives server restarts
+- **Undo** — Ctrl+Z undoes fog add/remove operations
 
 ### Undo / Redo
 - **Ctrl/Cmd+Z** to undo, **Ctrl/Cmd+Shift+Z** to redo (DM only)
@@ -108,13 +117,16 @@ npm start
 ### Core Operations
 
 #### DM
-- **Upload map**: click **＋ 添加地图** in sidebar, or click an asset thumbnail to place a new instance
+- **Upload map**: click **＋ 添加地图** in sidebar
+- **Focus map**: click an asset thumbnail to focus the viewport on that instance (auto-places if none exists)
 - **Drag / resize**: move tool to drag a map instance; bottom-right handle to resize
 - **Lock / delete**: hover map to reveal lock and delete controls
 - **Delete asset**: click thumbnail × → confirm → removes asset and all placed instances
-- **Drawing**: switch brush/rect/eraser, draw on empty canvas; move tool to pan
+- **Binding toggle**: 📌 button at map bottom-left; when on, objects inside move/scale with the map
+- **Drawing**: switch brush/rect/eraser via toolbar; draw on empty canvas; move tool pans
+- **War Fog**: activate fog tool, drag to draw a fog mask; double-click fog to remove it
 - **NPCs**: click a color block to spawn; double-click NPC to delete
-- **Undo / redo**: Ctrl+Z / Ctrl+Shift+Z, or use buttons in top-left corner
+- **Undo / redo**: Ctrl+Z / Ctrl+Shift+Z, or click Undo/Redo in the DM toolbar
 - **Viewport**: scroll wheel to zoom (0.2×–5×), drag empty space to pan
 
 #### Player
@@ -153,7 +165,8 @@ coc_app/
 │   ├── characters_notes.json  # Character records
 │   ├── chat_history.json      # Last 100 chat/dice entries
 │   ├── map_assets.json        # Map image assets (Base64)
-│   ├── world.json             # World state (maps, tokens, drawings…)
+│   ├── world.json             # World state (maps, tokens, drawings, fog…)
+│   ├── ui_prefs.json          # DM drawing color preferences (penColor/rectColor)
 │   └── notes.txt              # Shared notes
 └── images/                # (legacy, unused)
 ```
@@ -187,12 +200,14 @@ coc_app/
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
+  uiPrefs: { penColor: "#cc0000", rectColor: "#cc0000" },
   world: {
-    placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
+    placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }],
     tokens:       [{ id, color, gridX, gridY }],
     npcs:         [{ id, gridX, gridY, color }],
     freeDrawings: [{ id, points: [x,y,...], color, strokeWidth }],
-    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]
+    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }],
+    fogRects:     [{ id, x, y, w, h }]
   }
 }
 ```
@@ -219,13 +234,14 @@ coc_app/
 |-----------|--------|
 | Auth | `join`, `selectColor` |
 | MapAsset | `mapAsset:upload`, `mapAsset:fetch`, `mapAsset:remove` |
-| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
+| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:setBound`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
+| Fog | `fog:add`, `fog:remove` |
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save` |
-| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update` |
+| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update`, `uiPrefs:save` |
 
 ### Server → Client
 | Event | Description |
@@ -234,7 +250,8 @@ coc_app/
 | `mapAsset:uploaded` | Asset upload confirmed |
 | `mapAsset:fetched` | Base64 asset data returned on demand |
 | `mapAsset:removed` | Asset deletion broadcast |
-| `placedMap:added/moved/resized/lockSet/removed` | Map instance mutation broadcasts |
+| `placedMap:added/moved/resized/lockSet/boundSet/removed` | Map instance mutation broadcasts |
+| `fog:added/removed` | Fog rect mutation broadcasts |
 | `token:spawn/move/clearAll/remove` | Token state broadcasts |
 | `npc:spawn/move/remove/clearAll` | NPC state broadcasts |
 | `draw:freeStroke/rect/liveStroke/remove/clearAll` | Drawing broadcasts |
