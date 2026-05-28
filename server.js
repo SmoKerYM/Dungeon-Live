@@ -436,21 +436,31 @@ io.on('connection', (socket) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
 
-    const result = {
-      playerName: player.name,
-      role: player.role,
-      sides: data.sides,
-      result: data.result
-    };
-    appendChatHistory({
+    const historyEntry = {
       type: 'dice',
       name: player.name,
       role: player.role,
       sides: data.sides,
       result: data.result,
       timestamp: Date.now()
-    });
-    io.emit('dice:result', result);
+    };
+    // regex 掷骰额外字段透传（点击骰子按钮时无此字段）
+    if (data.expr) {
+      historyEntry.expr = data.expr;
+      historyEntry.rolls = data.rolls;
+      historyEntry.modifier = data.modifier || 0;
+      historyEntry.count = data.count || 1;
+    }
+    appendChatHistory(historyEntry);
+
+    const broadcast = { playerName: player.name, role: player.role, sides: data.sides, result: data.result };
+    if (data.expr) {
+      broadcast.expr = data.expr;
+      broadcast.rolls = data.rolls;
+      broadcast.modifier = data.modifier || 0;
+      broadcast.count = data.count || 1;
+    }
+    io.emit('dice:result', broadcast);
   });
 
   // 聊天消息 (所有人)
@@ -544,6 +554,18 @@ io.on('connection', (socket) => {
     const asset = gameState.mapAssets[assetId];
     if (!asset) { socket.emit('mapAsset:notFound', { assetId }); return; }
     socket.emit('mapAsset:fetched', { assetId, ...asset });
+  });
+
+  // 删除地图资产（仅 DM）：移除资产 + 删除所有对应放置实例，不纳入 undo 栈
+  socket.on('mapAsset:remove', (assetId) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (!gameState.mapAssets[assetId]) return;
+    delete gameState.mapAssets[assetId];
+    gameState.world.placedMaps = gameState.world.placedMaps.filter(m => m.assetId !== assetId);
+    saveMapAssets(gameState.mapAssets);
+    scheduleWorldSave();
+    io.emit('mapAsset:removed', { assetId });
   });
 
   // 放置地图 (仅 DM)

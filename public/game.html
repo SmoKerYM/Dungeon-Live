@@ -174,6 +174,14 @@
         #add-world-map-btn { background: #16a085; }
         #add-world-map-btn:hover { background: #1abc9c; }
 
+        /* 地图资产库缩略图列表 */
+        #world-asset-library { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+        .asset-thumb-item { position: relative; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s; flex-shrink: 0; }
+        .asset-thumb-item:hover { border-color: #16a085; }
+        .asset-thumb-item img { width: 100%; height: 60px; object-fit: cover; display: block; pointer-events: none; }
+        .asset-thumb-remove { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 4px; border: none; background: rgba(192, 57, 43, 0.88); color: white; font-size: 14px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; pointer-events: auto; padding: 0; }
+        .asset-thumb-remove:hover { background: rgba(231, 76, 60, 1); }
+
         /* .token / .token.npc DOM 样式已在 Phase 4 移除，棋子/NPC 改为 Konva.Circle */
 
         /* NPC 卡片 */
@@ -873,6 +881,7 @@
         <div class="section-title">地图</div>
         <input type="file" id="world-file-input" accept="image/*" style="display: none;">
         <button id="add-world-map-btn" class="action-btn" onclick="onAddWorldMapClick()">＋ 添加地图</button>
+        <div id="world-asset-library"></div>
     </div>
 
     <div id="section-tools" class="dm-only">
@@ -965,7 +974,7 @@
     <div id="chat-container">
         <div id="chat-messages"></div>
         <div id="chat-input-container">
-            <input type="text" id="chat-input" placeholder="输入消息..." onkeypress="handleChatKeypress(event)">
+            <input type="text" id="chat-input" placeholder="输入消息，或 /2d6+3 投骰..." onkeypress="handleChatKeypress(event)">
             <button id="chat-send" onclick="sendChat()">发送</button>
         </div>
     </div>
@@ -1511,10 +1520,46 @@
     function sendChat() {
         const input = document.getElementById('chat-input');
         const message = input.value.trim();
-        if (message) {
-            socket.emit('chat:message', message);
-            input.value = '';
+        if (!message) return;
+        input.value = '';
+        const diceMatch = message.match(/^\/(\d+)?d(\d+)([+-]\d+)?$/i);
+        if (diceMatch) {
+            const count = parseInt(diceMatch[1] || '1');
+            const sides = parseInt(diceMatch[2]);
+            const modifier = diceMatch[3] ? parseInt(diceMatch[3]) : 0;
+            rollDiceFromChat(count, sides, modifier, message.slice(1));
+            return;
         }
+        socket.emit('chat:message', message);
+    }
+
+    function rollDiceFromChat(count, sides, modifier, expr) {
+        const rolls = [];
+        for (let i = 0; i < count; i++) rolls.push(Math.floor(Math.random() * sides) + 1);
+        const total = rolls.reduce((a, b) => a + b, 0) + modifier;
+        socket.emit('dice:roll', { sides, result: total, rolls, modifier, count, expr });
+    }
+
+    function formatDiceMessage(data) {
+        const who = data.role === 'DM' ? 'DM' : data.playerName;
+        if (data.expr) {
+            const count = data.count || 1;
+            const modifier = data.modifier || 0;
+            const rolls = data.rolls || [];
+            if (count === 1 && modifier === 0) {
+                return `${who} 投掷了 ${data.expr}，结果是 ${data.result}`;
+            }
+            let breakdown;
+            if (modifier < 0) {
+                breakdown = rolls.join(' + ') + ' - ' + Math.abs(modifier);
+            } else if (modifier > 0) {
+                breakdown = [...rolls.map(String), String(modifier)].join(' + ');
+            } else {
+                breakdown = rolls.join(' + ');
+            }
+            return `${who} 投掷了 ${data.expr}，结果是 ${breakdown} = ${data.result}`;
+        }
+        return `${who} 投掷了 D${data.sides}，结果是 ${data.result}`;
     }
 
     function handleChatKeypress(e) {
@@ -1548,8 +1593,7 @@
                 if (entry.type === 'chat') {
                     addChatMessage(entry.name, entry.role, entry.message);
                 } else if (entry.type === 'dice') {
-                    const who = entry.role === 'DM' ? 'DM' : entry.name;
-                    addSystemMessage(`${who} 投掷了 D${entry.sides}，结果是 ${entry.result}`);
+                    addSystemMessage(formatDiceMessage({ ...entry, playerName: entry.name }));
                 }
             });
         }
@@ -1752,8 +1796,7 @@
     });
 
     socket.on('dice:result', (data) => {
-        const who = data.role === 'DM' ? 'DM' : data.playerName;
-        addSystemMessage(`${who} 投掷了 D${data.sides}，结果是 ${data.result}`);
+        addSystemMessage(formatDiceMessage(data));
     });
 
     socket.on('chat:message', (data) => {
@@ -2920,6 +2963,43 @@
     function genPlacedMapId() { return `pm_${Date.now()}_${++placedMapSeq}`; }
     function genMapAssetId() { return `ma_${Date.now()}_${++mapAssetSeq}`; }
 
+    // ===== Phase 8-A: 地图资产库 =====
+    function renderAssetLibrary() {
+        if (!isDM) return;
+        const lib = document.getElementById('world-asset-library');
+        if (!lib) return;
+        lib.innerHTML = '';
+        Object.entries(mapAssetCache).forEach(([assetId, asset]) => {
+            const item = document.createElement('div');
+            item.className = 'asset-thumb-item';
+            item.title = '点击放置到视口中央';
+
+            const img = document.createElement('img');
+            img.src = asset.base64;
+            img.alt = '地图缩略图';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'asset-thumb-remove';
+            removeBtn.textContent = '×';
+            removeBtn.title = '删除资产';
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeMapAsset(assetId);
+            });
+
+            item.addEventListener('click', () => placeMapAtViewportCenter(assetId));
+            item.appendChild(img);
+            item.appendChild(removeBtn);
+            lib.appendChild(item);
+        });
+    }
+
+    function removeMapAsset(assetId) {
+        if (!isDM) return;
+        if (!confirm('删除该地图资产会同步删除所有已放置的对应地图实例，确认删除？')) return;
+        socket.emit('mapAsset:remove', assetId);
+    }
+
     function onAddWorldMapClick() {
         if (!isDM) return;
         if (!konvaStage) initKonvaWorld();
@@ -3232,15 +3312,17 @@
 
     // ===== Phase 3 Socket 事件监听：服务端世界状态同步 =====
 
-    // 资产上传确认 → 触发放置
+    // 资产上传确认 → 刷新资产库 + 触发放置
     socket.on('mapAsset:uploaded', ({ assetId }) => {
+        renderAssetLibrary();
         const cb = pendingAssetUpload.get(assetId);
         if (cb) { pendingAssetUpload.delete(assetId); cb(); }
     });
 
-    // 资产按需拉取响应 → 缓存并渲染等待中的地图
+    // 资产按需拉取响应 → 缓存并渲染等待中的地图 + 刷新资产库
     socket.on('mapAsset:fetched', ({ assetId, base64, originalWidth, originalHeight }) => {
         mapAssetCache[assetId] = { base64, originalWidth, originalHeight };
+        renderAssetLibrary();
         placedMapsData.forEach(placed => {
             if (placed.assetId === assetId && !placedMapNodes.has(placed.id) && staticLayer) {
                 renderPlacedMap(placed);
@@ -3323,6 +3405,23 @@
         const overlay = placedMapOverlays.get(id);
         if (overlay) { overlay.wrap.remove(); placedMapOverlays.delete(id); }
         if (selectedPlacedMapId === id) selectedPlacedMapId = null;
+    });
+
+    // 资产库删除广播：清除缓存 + 销毁所有对应地图实例节点
+    socket.on('mapAsset:removed', ({ assetId }) => {
+        delete mapAssetCache[assetId];
+        const removedIds = placedMapsData.filter(m => m.assetId === assetId).map(m => m.id);
+        removedIds.forEach(id => {
+            const idx = placedMapsData.findIndex(m => m.id === id);
+            if (idx !== -1) placedMapsData.splice(idx, 1);
+            const node = placedMapNodes.get(id);
+            if (node) { node.destroy(); placedMapNodes.delete(id); }
+            const overlay = placedMapOverlays.get(id);
+            if (overlay) { overlay.wrap.remove(); placedMapOverlays.delete(id); }
+            if (selectedPlacedMapId === id) selectedPlacedMapId = null;
+        });
+        if (staticLayer && removedIds.length > 0) staticLayer.batchDraw();
+        renderAssetLibrary();
     });
 
     // 撤销/重做后服务端广播完整世界快照，全员重渲

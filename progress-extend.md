@@ -75,8 +75,22 @@
   - [public/game.html](public/game.html) JS：删除 `savedGameState/savedDmName` sessionStorage 解析；删除 `init()` 函数；`startApp()` 末尾直接调 `initKonvaWorld()`；删除 `loadMapFromData/restoreDrawings/resetMap/updateTransform/updateLockButton/toggleLock`、旧鼠标/滚轮地图事件、`fileInput.onchange` 旧上传逻辑；删除旧地图存档系统全部变量和函数（`localSavedMaps/localDrawings/currentMapId/isDirty/autoSaveInterval` 等）；删除旧 socket 监听（`map:load/transform/lock/draw:path/draw:clear` 等）；删除 `isWorldViewActive` 变量和 `toggleWorldView()` 函数；简化 `setTool()` 和 `clearCanvas()`；`world:sync` 守卫简化为 `if (konvaStage)`
   - [CLAUDE.md](CLAUDE.md)：更新文件结构（加 `map_assets.json/world.json`）、架构说明（Konva VTT 模型）、Socket 事件表（新事件命名空间）、数据模型（`gameState` 新结构）、重要说明（网格坐标、undo/redo 20 条、`io.emit` 全播）
 
+- **Phase 8** (2026-05-28)：
+  - **8-A 地图资产库**：
+    - [public/game.html](public/game.html) CSS：新增 `#world-asset-library`、`.asset-thumb-item`、`.asset-thumb-remove` 样式
+    - [public/game.html](public/game.html) HTML：`#section-world-map` 内新增 `<div id="world-asset-library">` 缩略图容器
+    - [public/game.html](public/game.html) JS：新增 `renderAssetLibrary()`（遍历 `mapAssetCache` 渲染缩略图列表，仅 DM）；新增 `removeMapAsset(assetId)`（`confirm` 弹窗后 `emit('mapAsset:remove', assetId)`）；点击缩略图调用 `placeMapAtViewportCenter(assetId)`
+    - [public/game.html](public/game.html) JS：`mapAsset:uploaded` / `mapAsset:fetched` handler 末尾加 `renderAssetLibrary()`；新增 `mapAsset:removed` handler（清除 `mapAssetCache[assetId]` + 销毁对应所有 `placedMapsData`/Konva 节点/DOM overlay + 刷新资产库）
+    - [server.js](server.js)：新增 `mapAsset:remove` handler（DM guard → `delete gameState.mapAssets[assetId]` → 过滤 `world.placedMaps` → `saveMapAssets` + `scheduleWorldSave` → `io.emit('mapAsset:removed', { assetId })`）；不纳入 undo 栈
+  - **8-B regex 掷骰**：
+    - [public/game.html](public/game.html) JS：`sendChat()` 改造，发送前用 `/^\/(\d+)?d(\d+)([+-]\d+)?$/i` 匹配；命中时调用新增的 `rollDiceFromChat(count, sides, modifier, expr)`（本地掷骰 + `emit('dice:roll', { sides, result, rolls, modifier, count, expr })`）
+    - [public/game.html](public/game.html) JS：新增 `formatDiceMessage(data)` 格式化函数：无 `expr` 时走旧格式（`D20`）；有 `expr` 时按拆解式展示（单骰无 modifier 直接显示结果，其余显示 `r1 + r2 + mod = total`，负 modifier 用 `-` 连接）
+    - [public/game.html](public/game.html) JS：`dice:result` handler 改为调用 `formatDiceMessage`；聊天历史回放的 `dice` 条目同步改为调用 `formatDiceMessage({ ...entry, playerName: entry.name })`
+    - [public/game.html](public/game.html) HTML：聊天输入框 placeholder 改为 `"输入消息，或 /2d6+3 投骰..."`
+    - [server.js](server.js)：`dice:roll` handler 改为透传 `expr/rolls/modifier/count` 字段（按需附加到 `historyEntry` 和 `broadcast`），兼容旧骰子按钮（无 `expr` 时不变）
+
 ## 下一步
-进入 Phase 8：小功能 & 小 bug 修复（详见 [plan-extend.md](plan-extend.md)）。
+Phase 8 完成，进入实际跑团测试阶段。如有新的小功能需求在 8-B 之后追加。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
