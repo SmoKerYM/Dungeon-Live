@@ -2,7 +2,7 @@
 
 # DND Multiplayer Collaborative TTRPG Tool
 
-A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting real-time map sharing, token movement, drawing annotations, character sheet management, and dice rolling between DM and players.
+A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map sharing, token movement, drawing annotations, character sheet management, and dice rolling between DM and players.
 
 **Copyright (c) 2026 Mingwei Yan. All rights reserved.**
 
@@ -13,53 +13,59 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting rea
 
 ## Features
 
-### Map System
-- **Real-time Map Upload** - DM can upload map images, saved as map archives
-- **Zoom & Pan** - Both DM and players can freely zoom/pan maps with independent control
-- **Independent Player Map Browsing** - Players can switch between maps via sidebar thumbnails
-- **Map Archive Management** - Save multiple map states for quick scene switching
-- **Smart Event Filtering** - Token/NPC/drawing events only sync to players viewing the DM's active map
+### Map System (Konva Grid World)
+- **Shared Grid World** — Everyone sees the same world; DM manages map instances, players can only observe
+- **Map Asset Upload** — DM uploads images saved to the asset library and placed at the world center (default 20 tiles wide)
+- **Asset Library** — Uploaded maps shown as thumbnail list; click to place a new instance; × deletes the asset and all its placed instances
+- **Snap-to-Grid** — Dragged map instances snap to the nearest grid intersection
+- **Resize Handle** — Bottom-right drag handle resizes width (preserves aspect ratio, snaps to whole tiles)
+- **Lock / Delete** — Lock to prevent accidental drags; controls appear on hover
+- **Independent Viewports** — Each client controls its own zoom/pan independently
 
 ### Roles & Permissions
-- **DM/Player Dual Role System** - DM has full control, players have limited permissions
-- **Color Selection System** - Players choose a unique color identifier
-- **Real-time Player List** - Displays online players and their character info
-- **HP Sync Display** - Sidebar shows character HP in real time
+- **DM/Player Dual Role** — DM has full control; players have restricted permissions
+- **Color Selection** — Players choose a unique color (orange/yellow/green/blue/purple)
+- **Real-time Player List** — Online players with character info
+- **HP Sync** — Sidebar shows character HP; hover over a token to inspect HP and name
 
 ### Drawing Tools
-- **Multiple Drawing Tools** - Brush, rectangle, eraser
-- **Color Picker** - 6 preset colors with circle/square differentiation
-- **Real-time Drawing Sync** - All drawing operations sync to all users in real time
-- **Clear Canvas** - DM can clear all drawings with one click
+- **Free Brush** — Draw freehand in world coordinates, no snapping, broadcasts in real time
+- **Rectangle Tool** — Corners snap to grid
+- **Eraser** — Drag to erase individual strokes or rectangles
+- **Color Picker** — Preset colors + custom color wheel
+- **Clear All** — DM clears all drawings and rectangles with one click
 
 ### Token System
-- **Player Tokens** - Colored triangle tokens; players can only move their own
-- **NPC System** - DM can spawn multi-colored NPC tokens
-- **Double-click Delete** - DM can double-click to delete individual NPCs
-- **Batch Clear** - Separate clearing for player tokens and NPCs
+- **Player Tokens** — Konva circles snap to grid; hover shows HP and player name
+- **NPC System** — DM spawns multi-color NPCs (rounded rectangles); double-click to delete
+- **Permission Isolation** — Players can only drag their own token; DM can move all
+- **Batch Clear** — Separate clear for player tokens and NPCs
+
+### Undo / Redo
+- **Ctrl/Cmd+Z** to undo, **Ctrl/Cmd+Shift+Z** to redo (DM only)
+- Covers all world edits: map placement/move/resize/lock, token moves, strokes/rects
+- Up to 20 steps each direction; server-side memory only, cleared on restart
 
 ### Character Sheet System
-- **D&D 5e Standard Character Sheet** - Six attributes, saving throws, skills
-- **Feats/Traits** - Add multiple character feats (name + detailed description)
-- **Proficiency Bonus** - Automatic proficiency bonus calculation
-- **Data Persistence** - Character sheets saved to JSON files
-- **Auto-load** - Players automatically load their matching character sheet
+- **D&D 5e Standard Sheet** — Six attributes, saving throws, skills
+- **Feats / Traits** — Multiple feats with name + description
+- **Proficiency Bonus** — Auto-calculated proficiency bonuses
+- **Persistent** — Character sheets saved to JSON files
+- **Auto-load** — Players automatically load their matching character sheet on join
 
 ### Shared Notes
-- **Real-time Collaborative Editing** - All users can edit notes simultaneously
-- **Character Records** - Right-side table for tracking character names and info, supports line breaks, persisted independently
-- **Debounced Sync** - 500ms debounce to reduce network traffic
-- **Persistent Storage** - Notes and character records saved to separate files
+- **Real-time Collaborative Editing** — All users edit simultaneously
+- **Character Records** — Right-side table for tracking character names and info
+- **Debounced Sync** — 500ms debounce to reduce network traffic
 
 ### Dice System
-- **Standard Dice Set** - D4, D6, D8, D10, D12, D20, D100
-- **Roll Animation** - Rolling animation on dice throw
-- **Result Broadcast** - Roll results broadcast to all players in real time
+- **Standard Dice** — D4, D6, D8, D10, D12, D20, D100 (right sidebar with roll animation)
+- **Chat Dice Commands** — Type `/d20`, `/2d6+3` etc. to auto-roll with full breakdown
+- **Result Broadcast** — All results broadcast to every player
 
 ### Chat System
-- **Real-time Chat** - Text message communication
-- **Role Identification** - DM and player messages displayed in different colors
-- **System Messages** - Important actions automatically generate system messages
+- **Real-time Chat** — Text messages with DM/player color differentiation
+- **Chat History** — Server retains last 100 chat/dice entries; replayed on reconnect
 
 ## Getting Started
 
@@ -80,276 +86,220 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting rea
    npm install
    ```
 
-3. **Start development server**
+3. **Start dev server**
    ```bash
    npm run dev
    ```
 
-4. **Access the app**
-   - Open browser at `http://localhost:3000`
-   - First visit shows the login page
+4. **Open the app**
+   - Navigate to `http://localhost:3000`
 
-### Production Deployment
+### Production
 ```bash
 npm start
 ```
 
 ## Usage Guide
 
-### First Use
-1. **Choose Role**
-   - **DM (Dungeon Master)**: Requires password `12138`, has full control
-   - **Player**: No password needed, limited permissions
-
-2. **Player Color Selection**
-   - Players must choose a color on first join
-   - Already taken colors are unavailable
-
-3. **Map Upload (DM)**
-   - Click the `+` icon in the sidebar map area
-   - Select a map image file (supports JPG, PNG, etc.)
-   - The map loads automatically and saves to the first slot
+### First Login
+- **DM**: enter password `12138` for full control
+- **Player**: no password, limited permissions; choose a color on first join
 
 ### Core Operations
 
-#### DM Operations
-- **Map Control**: Scroll wheel to zoom, drag to pan
-- **Drawing Tools**: Select a tool and draw on the map
-- **NPC Management**: Click NPC color blocks to spawn, double-click to delete
-- **Save Map**: Click the top-left save button to manually save
-- **Lock Map**: Click the lock button to lock/unlock the map
+#### DM
+- **Upload map**: click **＋ 添加地图** in sidebar, or click an asset thumbnail to place a new instance
+- **Drag / resize**: move tool to drag a map instance; bottom-right handle to resize
+- **Lock / delete**: hover map to reveal lock and delete controls
+- **Delete asset**: click thumbnail × → confirm → removes asset and all placed instances
+- **Drawing**: switch brush/rect/eraser, draw on empty canvas; move tool to pan
+- **NPCs**: click a color block to spawn; double-click NPC to delete
+- **Undo / redo**: Ctrl+Z / Ctrl+Shift+Z, or use buttons in top-left corner
+- **Viewport**: scroll wheel to zoom (0.2×–5×), drag empty space to pan
 
-#### Player Operations
-- **Browse Maps**: Switch between maps via sidebar thumbnails
-- **Zoom/Pan**: Freely zoom and pan maps; each map remembers its own viewport
-- **Move Tokens**: Can only drag your own colored token on the DM's active map
-- **Spawn Token**: Click your color button in the sidebar
-- **Roll Dice**: Click the dice panel on the right
-- **Edit Character Sheet**: Switch to the character sheet tab
+#### Player
+- **Viewport**: scroll to zoom, drag empty space to pan (independent from others)
+- **Move token**: drag your own colored token (auto-snaps to grid)
+- **Spawn token**: click your color button in the sidebar
+- **Roll dice**: click the right dice panel, or type a command in chat
+- **Character sheet**: switch to the Character tab
+
+#### Chat Dice Commands
+| Input | Meaning | Example output |
+|-------|---------|----------------|
+| `/d20` | 1d20 | `rolled d20, result: 15` |
+| `/2d6` | 2d6 | `rolled 2d6, result: 3 + 5 = 8` |
+| `/2d4+3` | 2d4 + 3 | `rolled 2d4+3, result: 2 + 3 + 3 = 8` |
+| `/d8-1` | 1d8 − 1 | `rolled d8-1, result: 6 - 1 = 5` |
 
 ### Tab System
-- **Map**: Main game interface showing the map and tokens
-- **Notes**: Left-side shared notes + right-side character records table
-- **Character Sheet**: Character sheet creation and editing (with feats)
+- **Map** — Main game view with Konva grid world
+- **Notes** — Left: shared notes; Right: character records table
+- **Character Sheet** — Create and edit D&D 5e character sheets
 
 ## Project Structure
 
 ```
 coc_app/
-├── server.js              # Main server file (Express + Socket.IO)
-├── package.json           # Project dependencies
-├── README.md              # Project documentation (Chinese)
-├── README-en.md           # Project documentation (English)
-├── PLAN.md                # Detailed implementation plan
-├── public/                # Static files directory
+├── server.js              # Main server (Express + Socket.IO)
+├── package.json           # Dependencies
+├── README.md              # Documentation (Chinese)
+├── README-en.md           # Documentation (English)
+├── public/
 │   ├── index.html         # Login page
-│   └── game.html          # Main game UI (inline CSS+JS)
-├── data/                  # Data storage directory
-│   ├── characters.json        # Character sheet data (JSON)
-│   ├── characters_notes.json  # Character records (JSON)
-│   └── notes.txt              # Shared notes content
-└── images/                # Map images directory (gitignored)
+│   └── game.html          # Main game UI (inline CSS+JS+Konva)
+├── data/
+│   ├── characters.json        # Character sheet data
+│   ├── characters_notes.json  # Character records
+│   ├── chat_history.json      # Last 100 chat/dice entries
+│   ├── map_assets.json        # Map image assets (Base64)
+│   ├── world.json             # World state (maps, tokens, drawings…)
+│   └── notes.txt              # Shared notes
+└── images/                # (legacy, unused)
 ```
 
 ## Technical Architecture
 
-### Backend Stack
-- **Node.js** - JavaScript runtime
-- **Express** - Web server framework
-- **Socket.IO** - Real-time bidirectional communication
-- **File System** - Persistent data storage
+### Backend
+- **Node.js** runtime
+- **Express 5** web server
+- **Socket.IO 4** real-time bidirectional communication
+- **File system** — JSON / text file persistence
 
-### Frontend Stack
-- **Vanilla HTML/CSS/JavaScript** - No framework dependencies
-- **Canvas API** - Drawing functionality
-- **Session Storage** - Client-side state management
+### Frontend
+- **Vanilla HTML/CSS/JavaScript** — no framework
+- **Konva.js 9** — grid world rendering (maps, tokens, NPCs, strokes, rects)
+- **Session Storage** — client-side state
 
-### Real-time Communication
-- **Event-driven Architecture** - Based on Socket.IO events
-- **State Synchronization** - Real-time game state sync
-- **Incremental Updates** - Optimized automatic map state saving
+### Architecture Highlights
+- **Server-authoritative world**: `gameState.world` is the single source of truth; all mutations go through Socket events with DM guard
+- **Independent viewports**: zoom/pan is purely local, never broadcast
+- **Server-side undo/redo**: history stack lives on the server; undo/redo results are broadcast to all clients
 
 ## Data Models
 
-### Game State
+### Game State (server.js)
 ```javascript
 {
   dm: { socketId, name },
-  players: Map<socketId, { name, role, color, currentMapId }>,
-  mapData: "base64_string",
-  mapTransform: { scale, originX, originY },
-  isLocked: boolean,
-  tokens: { color: { x, y } },
-  drawings: Array<DrawingData>,
-  npcs: Array<{ id, x, y, color }>,
+  players: Map<socketId, { name, color, role }>,
   notes: "string",
-  characterNotes: Array<{ name, info }>,
-  savedMaps: Array<MapArchive>,
-  activeMapId: "map_xxx"
+  characterNotes: [{ name, info }],
+  chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100
+  mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
+  world: {
+    placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
+    tokens:       [{ id, color, gridX, gridY }],
+    npcs:         [{ id, gridX, gridY, color }],
+    freeDrawings: [{ id, points: [x,y,...], color, strokeWidth }],
+    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]
+  }
 }
 ```
 
-### Character Sheet Structure
+> **Coordinate system**: 1 tile = 50 px at zoom=1. All objects use `gridX/gridY` (float).
+
+### Character Sheet
 ```javascript
 {
   name: "Character Name",
   hp: { cur: 10, max: 10 },
   proficiencyBonus: 2,
-  attributes: {
-    strength: 0,
-    dexterity: 0,
-    constitution: 0,
-    intelligence: 0,
-    wisdom: 0,
-    charisma: 0
-  },
-  savingThrows: ["dexterity", "intelligence"],  // max 2
-  skills: ["stealth", "perception"],            // max 4
-  feats: [{ name: "Feat Name", description: "Detailed description" }]
+  attributes: { strength, dexterity, constitution, intelligence, wisdom, charisma },
+  savingThrows: ["dexterity"],  // max 2
+  skills: ["stealth"],          // max 4
+  feats: [{ name: "Feat Name", description: "..." }]
 }
 ```
 
 ## Socket.IO Events
 
-### Client -> Server
-| Event | Data | Description |
-|-------|------|-------------|
-| `join` | `{ name, role, password }` | Join game |
-| `selectColor` | `color` | Select color |
-| `map:load` | `base64_data` | Upload map |
-| `map:save` | `MapArchive` | Save map |
-| `token:move` | `{ color, x, y }` | Move token |
-| `draw:path` | `DrawingData` | Drawing operation |
-| `character:save` | `CharacterData` | Save character sheet |
-| `characterNotes:update` | `[{name, info}]` | Update character records |
-| `player:viewMap` | `mapId` | Player switches viewed map |
-| `player:loadMap` | `mapId` | Player requests map data |
+### Client → Server
+| Namespace | Events |
+|-----------|--------|
+| Auth | `join`, `selectColor` |
+| MapAsset | `mapAsset:upload`, `mapAsset:fetch`, `mapAsset:remove` |
+| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
+| Token | `token:spawn`, `token:move`, `token:clearAll` |
+| NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
+| Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
+| History | `history:undo`, `history:redo` |
+| Character | `character:list`, `character:load`, `character:save` |
+| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update` |
 
-### Server -> Client
-| Event | Data | Description |
-|-------|------|-------------|
-| `joinSuccess` | `GameState` | Join successful |
-| `colorSelected` | `{ name, color }` | Color selection confirmed |
-| `map:loadedSaved` | `MapArchive` | Map loaded |
-| `token:move` | `{ color, x, y }` | Token move sync |
-| `dice:result` | `{ player, sides, result }` | Dice result |
-| `character:loaded` | `CharacterData` | Character sheet loaded |
-| `characterNotes:sync` | `[{name, info}]` | Character records sync |
-| `player:mapData` | `{mapId, mapData, ...}` | Requested map data |
-| `dm:mapSwitched` | `{activeMapId}` | DM switched active map |
+### Server → Client
+| Event | Description |
+|-------|-------------|
+| `joinSuccess` | Join confirmed with full world snapshot |
+| `mapAsset:uploaded` | Asset upload confirmed |
+| `mapAsset:fetched` | Base64 asset data returned on demand |
+| `mapAsset:removed` | Asset deletion broadcast |
+| `placedMap:added/moved/resized/lockSet/removed` | Map instance mutation broadcasts |
+| `token:spawn/move/clearAll/remove` | Token state broadcasts |
+| `npc:spawn/move/remove/clearAll` | NPC state broadcasts |
+| `draw:freeStroke/rect/liveStroke/remove/clearAll` | Drawing broadcasts |
+| `world:sync` | Full world snapshot after undo/redo |
+| `dice:result` | Dice result broadcast |
 
-## Deployment Options
+## Deployment
 
 ### Local Development
 ```bash
-npm run dev  # Hot reload with nodemon
+npm run dev  # nodemon hot reload
 ```
 
 ### Production
 ```bash
-npm start    # Run with node
+npm start
 ```
 
-### Cloud Deployment
+### Cloud
 
-#### Railway (Recommended)
+#### Render (recommended)
+1. Create a Web Service, connect GitHub repo
+2. **Mount a Persistent Disk** to `/data` — required or data is lost on restart
+
+#### Railway
 ```bash
-npm install -g @railway/cli
-railway login
-railway init
-railway up
+npm install -g @railway/cli && railway login && railway init && railway up
 ```
 
 #### AWS EC2
-1. Launch a t2.micro instance (free tier)
-2. Install Node.js
-3. Use PM2 to keep the process running
-4. Configure Nginx reverse proxy
-
-#### Render
-1. Create a Web Service
-2. Connect your GitHub repository
-3. Automatic deployment
+1. Launch a t2.micro instance, install Node.js
+2. Use PM2 to keep the process alive, set up Nginx reverse proxy
 
 ## Security
 
-- **DM Password Protection**: DM role requires password `12138`
-- **Permission Isolation**: Players cannot perform DM-exclusive operations
-- **Input Validation**: Server-side validation of all client input
-- **Session Management**: Uses sessionStorage for user state management
-
-## Performance Optimization
-
-- **On-demand Loading**: Player map data loaded on request, avoiding bulk transfer
-- **Event Filtering**: Real-time events only sent to players viewing the active map, reducing unnecessary broadcasts
-- **Debounced Updates**: Notes and character records use 500ms debounce
-- **Thumbnail Generation**: Map archives use compressed thumbnails
-- **Client-side Caching**: Player map data and viewport transforms cached locally, no reload needed on map switch
+- **DM password**: role `DM` requires password `12138`
+- **Permission isolation**: all DM-only socket handlers have server-side guard clauses
+- **Session management**: `sessionStorage` for client-side user state
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Cannot connect to server**
-   - Check if the server is running: `npm run dev`
-   - Check firewall for port 3000
-
-2. **Map upload fails**
-   - Ensure image size does not exceed 50MB
-   - Check file format (supports JPG, PNG, GIF)
-
-3. **Real-time sync delay**
-   - Check network connection
-   - Reduce concurrent online users
-
-4. **Cannot save character sheet**
-   - Check write permissions for the `data/` directory
-   - Ensure character name is not empty
-
-### Viewing Logs
-```bash
-# View server logs
-tail -f server.log
-
-# View real-time connection status
-# The server console displays connect/disconnect info
-```
-
-## Contributing
-
-1. Fork the project
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. **Cannot connect** — check `npm run dev` is running; check firewall port 3000
+2. **Map upload fails** — image must be under 50 MB; JPG/PNG supported
+3. **Sync lag** — check network; reduce concurrent users
+4. **Character sheet won't save** — check `data/` write permission; name must not be empty
+5. **World state lost after restart (production)** — ensure Persistent Disk is mounted at `/data`
 
 ## Copyright & License
 
 **Copyright (c) 2026 Mingwei Yan. All rights reserved.**
 
-### Terms of Use
-1. **Personal Use**: Permitted for personal, non-commercial use, modification, and distribution
-2. **Commercial Use**: **Prohibited** without explicit written consent from the author
-3. **Modification & Distribution**: Code may be modified, but original copyright notice must be retained
-4. **Limitation of Liability**: The author is not liable for any damages caused by use of this software
+1. **Personal use**: permitted for personal, non-commercial use, modification, and distribution
+2. **Commercial use**: **prohibited** without explicit written consent from the author
+3. **Modification**: code may be modified, but original copyright notice must be retained
 
-### Full Terms
-See the [LICENSE](LICENSE) file for full terms and conditions.
+See the [LICENSE](LICENSE) file for full terms.
 
 ## Acknowledgements
 
-- **D&D 5e** - Character sheet system based on 5th Edition rules
-- **Roll20** - UI design inspiration
-- **Socket.IO** - Real-time communication foundation
-- **All playtesters** - Invaluable feedback and suggestions
-
-## Support & Feedback
-
-If you have questions or suggestions:
-1. See [PLAN.md](PLAN.md) for the detailed implementation plan
-2. Check existing Issues
-3. Submit a new Issue or Pull Request
+- **D&D 5e** — character sheet system based on 5th Edition rules
+- **Konva.js** — grid world rendering engine
+- **Roll20** — UI design inspiration
+- **Socket.IO** — real-time communication foundation
+- **All playtesters** — invaluable feedback and suggestions
 
 ---
 
-**Begin your adventure!**
+**Begin your adventure!** 🐉⚔️🛡️

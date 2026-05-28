@@ -13,30 +13,38 @@
 
 ## ✨ 功能特性
 
-### 🗺️ 地图系统
-- **实时地图上传** - DM 可上传地图图片，保存为地图存档
-- **地图缩放与平移** - DM 和玩家均可自由缩放/拖动地图，各自独立控制
-- **玩家独立地图浏览** - 玩家可通过侧边栏缩略图自主切换查看不同地图
-- **地图存档管理** - 支持保存多张地图状态，快速切换场景
-- **智能事件过滤** - 棋子/NPC/绘图等实时事件仅同步给查看 DM 活跃地图的玩家
+### 🗺️ 地图系统（Konva 网格世界）
+- **共享网格世界** - 所有人看同一个世界，DM 负责管理地图实例，玩家仅可观看
+- **地图资产上传** - DM 上传图片自动存入资产库并放置到世界中央（默认 20 格宽）
+- **地图资产库** - 已上传地图以缩略图列表展示，DM 点击可随时放置新实例；× 删除资产时联动移除所有网格上的对应实例
+- **拖动吸附** - 地图实例拖动后自动对齐网格交点
+- **缩放调整** - 右下角拖拽手柄调整地图宽度（保持宽高比，吸附到整数格）
+- **锁定/删除** - 支持锁定防误操作，悬停显示控件
+- **独立视口** - 每个客户端独立控制自己的缩放/平移，不广播给他人
 
 ### 🎭 角色与权限
 - **DM/玩家双角色系统** - DM 拥有完整控制权，玩家权限受限
-- **颜色选择系统** - 玩家选择专属颜色标识
+- **颜色选择系统** - 玩家选择专属颜色标识（橙/黄/绿/蓝/紫）
 - **实时玩家列表** - 显示在线玩家及其角色信息
-- **HP 同步显示** - 侧边栏实时显示角色血量
+- **HP 同步显示** - 侧边栏实时显示角色血量，悬停棋子也可查看
 
 ### 🖌️ 绘图工具
-- **多种绘图工具** - 画笔、矩形、橡皮擦
-- **颜色选择器** - 6 种预设颜色，圆形/方形区分
-- **实时绘图同步** - 所有绘图操作实时同步给所有用户
-- **清空画布** - DM 可一键清空所有笔迹
+- **自由笔迹** - 画笔工具在世界坐标上自由绘画，不吸附，实时广播
+- **矩形工具** - 四顶点吸附到网格的方框绘制
+- **橡皮擦** - 拖拽擦除单条笔迹或矩形
+- **颜色选择器** - 预设颜色 + 自定义调色盘
+- **清空笔迹** - DM 可一键清空所有笔迹和矩形
 
 ### 🧩 棋子系统
-- **玩家棋子** - 彩色三角形棋子，玩家只能移动自己的棋子
-- **NPC 系统** - DM 可生成多种颜色的 NPC 棋子
-- **双击删除** - DM 可双击删除单个 NPC
+- **玩家棋子** - Konva 圆形棋子，拖动吸附网格，悬停显示 HP 和玩家名
+- **NPC 系统** - DM 可生成多种颜色的 NPC（圆角矩形），双击删除
+- **权限隔离** - 玩家只能拖动自己颜色的棋子，DM 可操作全部
 - **批量清除** - 分别清除玩家棋子或 NPC
+
+### ↩️ 撤销/重做
+- **Ctrl/Cmd+Z** 撤销，**Ctrl/Cmd+Shift+Z** 重做（仅 DM）
+- 覆盖所有世界编辑：地图放置/移动/缩放/锁定、棋子移动、笔迹/矩形
+- 最多 20 步，服务端内存维护，重启后清空
 
 ### 📋 角色卡系统
 - **D&D 5e 标准角色卡** - 支持六大属性、豁免检定、技能
@@ -47,19 +55,18 @@
 
 ### 📝 共享笔记
 - **实时协作编辑** - 所有用户可同时编辑笔记
-- **登场人物记录** - 右侧表格记录人物名字和信息，支持换行，独立持久化
+- **登场人物记录** - 右侧表格记录人物名字和信息，独立持久化
 - **防抖同步** - 500ms 防抖减少网络流量
-- **持久化存储** - 笔记和人物记录分别保存到文件
 
 ### 🎲 骰子系统
-- **标准骰子集** - D4, D6, D8, D10, D12, D20, D100
-- **动画效果** - 投掷时有滚动动画
+- **标准骰子集** - D4, D6, D8, D10, D12, D20, D100（右侧骰子栏，含滚动动画）
+- **聊天框掷骰** - 输入 `/d20`、`/2d6+3` 等指令自动掷骰，显示完整拆解式
 - **结果广播** - 投掷结果实时广播给所有玩家
 
 ### 💬 聊天系统
 - **实时聊天** - 支持文本消息交流
 - **角色标识** - DM 和玩家消息不同颜色显示
-- **系统消息** - 重要操作自动生成系统消息
+- **聊天历史** - 服务端保留最近 100 条聊天/骰子记录，重连后自动回放
 
 ## 🚀 快速开始
 
@@ -105,30 +112,35 @@ npm start
    - 玩家首次加入需要选择颜色标识
    - 已占用的颜色不可选
 
-3. **地图上传 (DM)**
-   - 点击侧边栏地图区域的 `+` 号
-   - 选择地图图片文件 (支持 JPG, PNG 等格式)
-   - 地图会自动加载并保存到第一个槽位
-
 ### 核心操作
 
 #### DM 操作
-- **地图控制**：鼠标滚轮缩放，拖拽平移
-- **绘图工具**：选择工具后在地图上绘制
-- **NPC 管理**：点击 NPC 颜色块生成，双击删除
-- **地图保存**：点击左上角 💾 按钮手动保存
-- **地图锁定**：点击 🔓 按钮锁定/解锁地图
+- **上传地图**：左侧边栏点 **＋ 添加地图**，或点击资产库缩略图放置新实例
+- **拖动/缩放地图**：移动工具下拖动地图实例，右下角手柄调整尺寸
+- **锁定/删除**：悬停地图出现控件，锁定后无法拖动
+- **删除资产**：点缩略图 × → 确认 → 同步删除网格上所有对应实例
+- **绘图工具**：切换画笔/矩形/橡皮，在空白处绘制（移动工具时平移）
+- **NPC 管理**：点击 NPC 颜色块生成，双击 NPC 删除
+- **撤销/重做**：Ctrl+Z / Ctrl+Shift+Z，或点击左上角按钮
+- **视口控制**：滚轮缩放（0.2x~5x），移动工具下拖动空白处平移
 
 #### 玩家操作
-- **浏览地图**：通过侧边栏缩略图自主切换查看不同地图
-- **缩放/平移**：自由缩放和拖动地图，每张地图独立记忆视角
-- **移动棋子**：只能在 DM 活跃地图上拖动自己颜色的棋子
+- **视口控制**：滚轮缩放，拖动空白处平移（独立，不影响他人）
+- **移动棋子**：拖动自己颜色的棋子（松手自动对齐网格）
 - **生成棋子**：点击侧边栏自己颜色的按钮
-- **投掷骰子**：点击右侧骰子栏
+- **投掷骰子**：点击右侧骰子栏，或在聊天框输入掷骰指令
 - **编辑角色卡**：切换到角色卡标签页
 
+#### 聊天框掷骰语法
+| 输入 | 含义 | 示例输出 |
+|------|------|---------|
+| `/d20` | 1 个 20 面骰 | `投掷了 d20，结果是 15` |
+| `/2d6` | 2 个 6 面骰 | `投掷了 2d6，结果是 3 + 5 = 8` |
+| `/2d4+3` | 2d4 加 3 | `投掷了 2d4+3，结果是 2 + 3 + 3 = 8` |
+| `/d8-1` | 1d8 减 1 | `投掷了 d8-1，结果是 6 - 1 = 5` |
+
 ### 标签页系统
-- **地图**：主游戏界面，显示地图和棋子
+- **地图**：主游戏界面，显示 Konva 网格世界
 - **笔记**：左侧共享笔记 + 右侧登场人物记录表
 - **角色卡**：角色卡创建和编辑界面（含特质记录）
 
@@ -138,55 +150,61 @@ npm start
 coc_app/
 ├── server.js              # 主服务器文件 (Express + Socket.IO)
 ├── package.json           # 项目依赖配置
-├── README.md             # 项目说明文档
-├── PLAN.md               # 详细实施计划
-├── public/               # 静态文件目录
-│   ├── index.html        # 登录/注册页面
-│   └── game.html         # 主游戏界面 (CSS+JS 内联)
-├── data/                 # 数据存储目录
-│   ├── characters.json        # 角色卡数据 (JSON格式)
-│   ├── characters_notes.json  # 登场人物记录 (JSON格式)
-│   └── notes.txt              # 共享笔记内容
-└── images/               # 地图图片目录 (gitignored)
+├── README.md              # 项目说明文档（中文）
+├── README-en.md           # 项目说明文档（英文）
+├── public/                # 静态文件目录
+│   ├── index.html         # 登录页面
+│   └── game.html          # 主游戏界面 (CSS+JS+Konva 内联)
+├── data/                  # 数据存储目录
+│   ├── characters.json        # 角色卡数据
+│   ├── characters_notes.json  # 登场人物记录
+│   ├── chat_history.json      # 聊天/骰子历史（最近 100 条）
+│   ├── map_assets.json        # 地图图片资产（Base64）
+│   ├── world.json             # 世界状态（地图实例、棋子、笔迹等）
+│   └── notes.txt              # 共享笔记
+└── images/                # （已废弃）
 ```
 
 ## 🔧 技术架构
 
 ### 后端技术栈
 - **Node.js** - JavaScript 运行时
-- **Express** - Web 服务器框架
-- **Socket.IO** - 实时双向通信
-- **文件系统** - 数据持久化存储
+- **Express 5** - Web 服务器框架
+- **Socket.IO 4** - 实时双向通信
+- **文件系统** - JSON/文本文件持久化
 
 ### 前端技术栈
 - **原生 HTML/CSS/JavaScript** - 无框架依赖
-- **Canvas API** - 绘图功能
+- **Konva.js 9** - 网格世界渲染（地图实例、棋子、NPC、笔迹、矩形）
 - **Session Storage** - 客户端状态管理
 
-### 实时通信
-- **事件驱动架构** - 基于 Socket.IO 事件
-- **状态同步** - 游戏状态实时同步
-- **增量更新** - 地图状态自动保存优化
+### 架构特点
+- **服务端世界权威**：`gameState.world` 为唯一数据源，所有 mutation 经由 Socket 事件，DM Guard 保护
+- **独立视口**：缩放/平移仅本地生效，不广播
+- **服务端 undo/redo**：操作历史在服务端维护，撤销/重做结果广播给所有人
 
 ## 📊 数据模型
 
-### 游戏状态
+### 游戏状态（server.js gameState）
 ```javascript
 {
   dm: { socketId, name },
-  players: Map<socketId, { name, role, color, currentMapId }>,
-  mapData: "base64_string",
-  mapTransform: { scale, originX, originY },
-  isLocked: boolean,
-  tokens: { color: { x, y } },
-  drawings: Array<DrawingData>,
-  npcs: Array<{ id, x, y, color }>,
+  players: Map<socketId, { name, color, role }>,
   notes: "string",
-  characterNotes: Array<{ name, info }>,
-  savedMaps: Array<MapArchive>,
-  activeMapId: "map_xxx"
+  characterNotes: [{ name, info }],
+  chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // 最多 100 条
+  mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
+  world: {
+    placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
+    tokens:       [{ id, color, gridX, gridY }],
+    npcs:         [{ id, gridX, gridY, color }],
+    freeDrawings: [{ id, points: [x,y,...], color, strokeWidth }],
+    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]
+  }
 }
 ```
+
+> **坐标系**：1 格 = 50px（zoom=1），所有对象使用 `gridX/gridY` 浮点坐标。
 
 ### 角色卡结构
 ```javascript
@@ -194,16 +212,9 @@ coc_app/
   name: "角色名",
   hp: { cur: 10, max: 10 },
   proficiencyBonus: 2,
-  attributes: {
-    strength: 0,      // 力量
-    dexterity: 0,     // 敏捷
-    constitution: 0,  // 体质
-    intelligence: 0,  // 智力
-    wisdom: 0,        // 感知
-    charisma: 0       // 魅力
-  },
-  savingThrows: ["dexterity", "intelligence"],  // 最多2个
-  skills: ["stealth", "perception"],            // 最多4个
+  attributes: { strength, dexterity, constitution, intelligence, wisdom, charisma },
+  savingThrows: ["dexterity"],  // 最多 2 个
+  skills: ["stealth"],          // 最多 4 个
   feats: [{ name: "特质名", description: "详细描述" }]
 }
 ```
@@ -211,31 +222,31 @@ coc_app/
 ## 🔌 Socket.IO 事件
 
 ### 客户端 → 服务端
-| 事件 | 数据 | 说明 |
-|------|------|------|
-| `join` | `{ name, role, password }` | 加入游戏 |
-| `selectColor` | `color` | 选择颜色 |
-| `map:load` | `base64_data` | 上传地图 |
-| `map:save` | `MapArchive` | 保存地图 |
-| `token:move` | `{ color, x, y }` | 移动棋子 |
-| `draw:path` | `DrawingData` | 绘图操作 |
-| `character:save` | `CharacterData` | 保存角色卡 |
-| `characterNotes:update` | `[{name, info}]` | 更新登场人物记录 |
-| `player:viewMap` | `mapId` | 玩家切换查看地图 |
-| `player:loadMap` | `mapId` | 玩家请求加载地图数据 |
+| 命名空间 | 事件 |
+|----------|------|
+| Auth | `join`, `selectColor` |
+| MapAsset | `mapAsset:upload`, `mapAsset:fetch`, `mapAsset:remove` |
+| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
+| Token | `token:spawn`, `token:move`, `token:clearAll` |
+| NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
+| Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
+| History | `history:undo`, `history:redo` |
+| Character | `character:list`, `character:load`, `character:save` |
+| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update` |
 
 ### 服务端 → 客户端
-| 事件 | 数据 | 说明 |
-|------|------|------|
-| `joinSuccess` | `GameState` | 加入成功 |
-| `colorSelected` | `{ name, color }` | 颜色选择成功 |
-| `map:loadedSaved` | `MapArchive` | 地图加载完成 |
-| `token:move` | `{ color, x, y }` | 棋子移动同步 |
-| `dice:result` | `{ player, sides, result }` | 骰子结果 |
-| `character:loaded` | `CharacterData` | 角色卡加载完成 |
-| `characterNotes:sync` | `[{name, info}]` | 登场人物记录同步 |
-| `player:mapData` | `{mapId, mapData, ...}` | 玩家请求的地图数据 |
-| `dm:mapSwitched` | `{activeMapId}` | DM 切换了活跃地图 |
+| 事件 | 说明 |
+|------|------|
+| `joinSuccess` | 加入成功，含完整世界状态快照 |
+| `mapAsset:uploaded` | 资产上传确认 |
+| `mapAsset:fetched` | 返回 Base64 资产数据 |
+| `mapAsset:removed` | 资产删除广播 |
+| `placedMap:added/moved/resized/lockSet/removed` | 地图实例变更广播 |
+| `token:spawn/move/clearAll/remove` | 棋子状态广播 |
+| `npc:spawn/move/remove/clearAll` | NPC 状态广播 |
+| `draw:freeStroke/rect/liveStroke/remove/clearAll` | 绘图广播 |
+| `world:sync` | undo/redo 后完整世界快照广播 |
+| `dice:result` | 骰子结果广播 |
 
 ## 🚢 部署选项
 
@@ -251,103 +262,50 @@ npm start    # 使用 node 运行
 
 ### 云平台部署
 
-#### Railway (推荐)
+#### Render（推荐）
+1. 创建 Web Service，连接 GitHub 仓库
+2. **必须**挂载 Persistent Disk 到 `/data`，否则重启后数据丢失
+
+#### Railway
 ```bash
-npm install -g @railway/cli
-railway login
-railway init
-railway up
+npm install -g @railway/cli && railway login && railway init && railway up
 ```
 
 #### AWS EC2
-1. 启动 t2.micro 实例 (免费套餐)
-2. 安装 Node.js
-3. 使用 PM2 保持进程运行
-4. 配置 Nginx 反向代理
-
-#### Render
-1. 创建 Web Service
-2. 连接 GitHub 仓库
-3. 自动部署
+1. 启动 t2.micro 实例，安装 Node.js
+2. 使用 PM2 保持进程运行，配置 Nginx 反向代理
 
 ## 🔒 安全说明
 
 - **DM 密码保护**：DM 角色需要密码 `12138`
-- **权限隔离**：玩家无法执行 DM 专属操作
-- **输入验证**：服务端验证所有客户端输入
+- **权限隔离**：服务端所有 DM 操作均有 Guard 保护，玩家无法触发
 - **会话管理**：使用 sessionStorage 管理用户状态
-
-## 📈 性能优化
-
-- **按需加载**：玩家地图数据按需请求，避免一次性传输所有地图
-- **事件过滤**：实时事件仅发送给查看活跃地图的玩家，减少无效广播
-- **防抖处理**：笔记和人物记录编辑使用 500ms 防抖
-- **缩略图生成**：地图存档使用压缩缩略图
-- **客户端缓存**：玩家地图数据和视角变换本地缓存，切换时无需重新加载
 
 ## 🐛 故障排除
 
-### 常见问题
-
-1. **无法连接服务器**
-   - 检查服务器是否运行 `npm run dev`
-   - 检查防火墙端口 3000
-
-2. **地图上传失败**
-   - 确保图片大小不超过 50MB
-   - 检查文件格式 (支持 JPG, PNG, GIF)
-
-3. **实时同步延迟**
-   - 检查网络连接
-   - 减少同时在线用户数
-
-4. **角色卡无法保存**
-   - 检查 `data/` 目录写入权限
-   - 确保角色名不为空
-
-### 日志查看
-```bash
-# 查看服务器日志
-tail -f server.log
-
-# 查看实时连接状态
-# 服务器控制台会显示连接/断开信息
-```
-
-## 🤝 贡献指南
-
-1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+1. **无法连接服务器** — 检查 `npm run dev` 是否运行，检查防火墙端口 3000
+2. **地图上传失败** — 确保图片不超过 50MB，格式支持 JPG/PNG
+3. **实时同步延迟** — 检查网络连接
+4. **角色卡无法保存** — 检查 `data/` 目录写入权限，角色名不能为空
+5. **生产环境重启后世界状态丢失** — 确认 `/data` 挂载了 Persistent Disk
 
 ## 📄 版权与许可证
 
 **版权所有 © 2026 Mingwei Yan。保留所有权利。**
 
-### 使用条款
 1. **个人使用**：允许个人非商业用途使用、修改和分发
 2. **商业使用**：**禁止**未经作者明确书面同意的任何商业用途
 3. **修改与分发**：可以修改代码，但必须保留原始版权声明
-4. **责任限制**：作者不对使用本软件造成的任何损害负责
 
-### 完整条款
-查看 [LICENSE](LICENSE) 文件了解完整条款和条件。
+查看 [LICENSE](LICENSE) 文件了解完整条款。
 
 ## 🙏 致谢
 
 - **D&D 5e** - 角色卡系统基于第五版规则
+- **Konva.js** - 网格世界渲染引擎
 - **Roll20** - UI 设计灵感来源
 - **Socket.IO** - 实时通信基础
 - **所有测试玩家** - 宝贵的反馈和建议
-
-## 📞 支持与反馈
-
-如有问题或建议，请：
-1. 查看 [PLAN.md](PLAN.md) 了解详细实施计划
-2. 检查现有 Issues
-3. 提交新的 Issue 或 Pull Request
 
 ---
 
