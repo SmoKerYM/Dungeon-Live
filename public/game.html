@@ -75,7 +75,7 @@
         input.draw-color-custom.selected { border-color: #f1c40f; transform: scale(1.1); }
         input.draw-color-custom::-webkit-color-swatch-wrapper { padding: 0; }
         input.draw-color-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
-        .tool-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 10px; }
+        .tool-group { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 10px; }
         .tool-btn { padding: 8px 4px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 12px; }
         .tool-btn.active { border-color: #f1c40f; background: #555; }
         .tool-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
@@ -899,6 +899,7 @@
             <div id="btn-draw" class="tool-btn" onclick="setTool('draw')">画笔</div>
             <div id="btn-rect" class="tool-btn" onclick="setTool('rect')">矩形</div>
             <div id="btn-erase" class="tool-btn" onclick="setTool('erase')">橡皮</div>
+            <div id="btn-fog" class="tool-btn" onclick="setTool('fog')" title="迷雾遮罩：拖拽绘制，双击已有遮罩删除">雾</div>
         </div>
     </div>
 
@@ -1123,10 +1124,18 @@
     const isDM = userRole === 'DM';
 
     // --- Socket 连接 ---
-    const socket = io();
+    const socket = io({ transports: ['websocket'] });
 
-    // // 重新加入（页面刷新后）
-    // socket.emit('join', { name: userName, role: userRole, password: isDM ? '12138' : '' });
+    let hasJoined = false; // 用于区分首次加入与重连
+
+    // 每次连接（含重连）都发 join，确保服务端重新注册该客户端
+    socket.on('connect', () => {
+        socket.emit('join', {
+            name: userName,
+            role: userRole,
+            password: isDM ? '12138' : ''
+        });
+    });
 
     // --- DOM 元素 ---
     const chatMessages = document.getElementById('chat-messages');
@@ -1325,14 +1334,6 @@
             document.getElementById('color-modal').style.display = 'flex';
         }
 
-        // 所有监听器注册完毕后发送加入请求
-        console.log('正在发送加入请求...');
-        socket.emit('join', {
-            name: userName,
-            role: userRole,
-            password: isDM ? '12138' : ''
-        });
-
         // 初始化 Konva 世界（容器已默认可见）
         initKonvaWorld();
     }
@@ -1354,7 +1355,7 @@
 
     // --- 工具切换 ---
     function setTool(tool) {
-        if (!isDM && (tool === 'draw' || tool === 'erase' || tool === 'rect')) return;
+        if (!isDM && (tool === 'draw' || tool === 'erase' || tool === 'rect' || tool === 'fog')) return;
         currentTool = tool;
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('btn-' + tool).classList.add('active');
@@ -1569,6 +1570,32 @@
     // --- Socket 事件监听 ---
     socket.on('joinSuccess', (data) => {
         console.log('加入成功，同步游戏数据...', data);
+
+        // 重连时清理旧状态，防止 Konva 节点堆叠和数据重复
+        if (hasJoined) {
+            ['orange', 'yellow', 'green', 'blue', 'purple'].forEach(c => hidePlayerCard(c));
+            if (konvaStage) {
+                placedMapNodes.forEach(node => node.destroy());
+                placedMapNodes.clear();
+                placedMapOverlays.forEach(ov => ov.wrap.remove());
+                placedMapOverlays.clear();
+                selectedPlacedMapId = null;
+                worldTokenNodes.forEach(node => node.destroy());
+                worldTokenNodes.clear();
+                worldNpcNodes.forEach(node => node.destroy());
+                worldNpcNodes.clear();
+                worldDrawingNodes.forEach(node => node.destroy());
+                worldDrawingNodes.clear();
+                worldRectNodes.forEach(node => node.destroy());
+                worldRectNodes.clear();
+                liveStrokeNodes.forEach(node => node.destroy());
+                liveStrokeNodes.clear();
+                worldFogNodes.forEach(node => node.destroy());
+                worldFogNodes.clear();
+            }
+        }
+        hasJoined = true;
+
         if (data.dmName) {
             document.getElementById('dm-name').textContent = data.dmName;
         }
@@ -1613,8 +1640,15 @@
             });
         }
 
-        // 恢复 Konva 世界状态
+        // 恢复 Konva 世界状态（先清空防止重连时重复 push）
         if (gs.world) {
+            placedMapsData.length = 0;
+            worldTokensData.length = 0;
+            worldNpcsData.length = 0;
+            worldDrawingsData.length = 0;
+            worldRectsData.length = 0;
+            worldFogData.length = 0;
+
             if (Array.isArray(gs.world.placedMaps) && gs.world.placedMaps.length > 0) {
                 gs.world.placedMaps.forEach(pm => placedMapsData.push(pm));
                 const assetIds = [...new Set(gs.world.placedMaps.map(pm => pm.assetId))];
@@ -1632,10 +1666,18 @@
             if (Array.isArray(gs.world.rects)) {
                 gs.world.rects.forEach(r => worldRectsData.push(r));
             }
+            if (Array.isArray(gs.world.fogRects)) {
+                gs.world.fogRects.forEach(f => worldFogData.push(f));
+            }
         }
 
         // stage 已初始化（startApp 中调用），此处直接渲染待渲染对象
         if (konvaStage) renderPendingWorldObjects();
+
+        // 重连时自动重选颜色，恢复玩家侧边栏卡片和服务端颜色注册
+        if (userColor) {
+            socket.emit('selectColor', userColor);
+        }
     });
 
     socket.on('playerJoined', (data) => {
@@ -1793,6 +1835,20 @@
         liveStrokeNodes.forEach(node => node.destroy());
         liveStrokeNodes.clear();
         if (drawingLayer) drawingLayer.batchDraw();
+    });
+
+    // Phase 8-C 迷雾遮罩事件
+    socket.on('fog:added', (fogRect) => {
+        if (!worldFogData.some(f => f.id === fogRect.id)) worldFogData.push(fogRect);
+        if (fogLayer) renderWorldFog(fogRect);
+    });
+
+    socket.on('fog:removed', ({ id }) => {
+        const idx = worldFogData.findIndex(f => f.id === id);
+        if (idx !== -1) worldFogData.splice(idx, 1);
+        const node = worldFogNodes.get(id);
+        if (node) { node.destroy(); worldFogNodes.delete(id); }
+        if (fogLayer) fogLayer.batchDraw();
     });
 
     socket.on('dice:result', (data) => {
@@ -2322,6 +2378,7 @@
     let konvaStage = null;
     let gridLayer = null;
     let staticLayer = null;   // 放置地图（最底层）
+    let fogLayer = null;      // 迷雾遮罩（gridLayer 之上，棋子之下）
     let dynamicLayer = null;  // 棋子 + NPC（中间层）
     let drawingLayer = null;  // 笔画/矩形 + 实时预览 + HP tooltip（顶层）
 
@@ -2366,6 +2423,17 @@
     // 橡皮拖拽状态
     let isErasing = false;
 
+    // ===== Phase 8-C 迷雾遮罩状态 =====
+    const worldFogData = [];            // [{ id, x, y, w, h }]（镜像 world.fogRects，世界像素坐标）
+    const worldFogNodes = new Map();    // id -> Konva.Rect（fogLayer）
+    let fogPatternCanvas = null;        // 预生成的马赛克 canvas（懒初始化）
+    // 迷雾绘制中间状态
+    let isKonvaFog = false;
+    let konvaFogStartPos = null;        // { x, y } 世界坐标（mousedown 时记录）
+    let konvaTempFog = null;            // 正在拖拽中的临时 Konva.Rect
+    // 地图拖拽时迷雾实时跟随的初始状态（DM 端视觉效果，不同步服务端）
+    let fogDragStartData = null;        // { origWorldX, origWorldY, wrappedFog: [{id, origX, origY}] }
+
     function initKonvaWorld() {
         if (konvaStage) return;
         const rect = worldContainer.getBoundingClientRect();
@@ -2377,10 +2445,12 @@
         });
         gridLayer = new Konva.Layer({ listening: false });
         staticLayer = new Konva.Layer();  // 放置地图
+        fogLayer = new Konva.Layer();     // 迷雾遮罩（gridLayer 之上，棋子之下）
         dynamicLayer = new Konva.Layer(); // 棋子 + NPC
         drawingLayer = new Konva.Layer(); // 笔画/矩形（最顶，覆盖棋子）
         konvaStage.add(staticLayer);
         konvaStage.add(gridLayer);
+        konvaStage.add(fogLayer);
         konvaStage.add(dynamicLayer);
         konvaStage.add(drawingLayer);
 
@@ -2798,10 +2868,27 @@
     function onStageDrawMouseDown(e) {
         if (!isDM) return;
         if (currentTool === 'erase') { isErasing = true; eraseAtPointer(); return; }
-        if (currentTool !== 'draw' && currentTool !== 'rect') return;
+        if (currentTool !== 'draw' && currentTool !== 'rect' && currentTool !== 'fog') return;
         // updateNodeListening 已禁用棋子/地图节点的事件，点击会穿透到 stage，无需检查 e.target
         const pos = getMousePosInWorld();
         if (!pos) return;
+
+        if (currentTool === 'fog') {
+            // 若点击到已有迷雾节点则不开始绘制（保留 dblclick 删除功能）
+            if (e.target !== konvaStage) return;
+            isKonvaFog = true;
+            konvaFogStartPos = { x: pos.x, y: pos.y };
+            konvaTempFog = new Konva.Rect({
+                x: pos.x, y: pos.y,
+                width: 0, height: 0,
+                fill: 'rgba(30,30,50,0.5)',
+                strokeEnabled: false,
+                listening: false,
+            });
+            fogLayer.add(konvaTempFog);
+            fogLayer.batchDraw();
+            return;
+        }
 
         if (currentTool === 'draw') {
             isKonvaDrawing = true;
@@ -2841,6 +2928,18 @@
         const pos = getMousePosInWorld();
         if (!pos) return;
 
+        if (isKonvaFog && konvaTempFog && konvaFogStartPos) {
+            const x1 = Math.min(konvaFogStartPos.x, pos.x);
+            const y1 = Math.min(konvaFogStartPos.y, pos.y);
+            konvaTempFog.setAttrs({
+                x: x1, y: y1,
+                width: Math.abs(pos.x - konvaFogStartPos.x),
+                height: Math.abs(pos.y - konvaFogStartPos.y),
+            });
+            fogLayer.batchDraw();
+            return;
+        }
+
         if (isKonvaDrawing && konvaTempLine) {
             konvaDrawPoints.push(pos.x, pos.y);
             konvaTempLine.points(konvaDrawPoints);
@@ -2873,6 +2972,22 @@
 
     function finalizeWorldDraw() {
         if (isErasing) { isErasing = false; return; }
+
+        if (isKonvaFog && konvaTempFog) {
+            const x = konvaTempFog.x();
+            const y = konvaTempFog.y();
+            const w = konvaTempFog.width();
+            const h = konvaTempFog.height();
+            konvaTempFog.destroy();
+            if (fogLayer) fogLayer.batchDraw();
+            konvaTempFog = null;
+            konvaFogStartPos = null;
+            isKonvaFog = false;
+            if (w >= 5 && h >= 5) {
+                socket.emit('fog:add', { x, y, w, h });
+            }
+            return;
+        }
         if (isKonvaDrawing && konvaTempLine) {
             if (konvaDrawPoints.length >= 4) {
                 const data = {
@@ -2924,6 +3039,68 @@
         }
     }
 
+    // ===== Phase 8-C 迷雾遮罩渲染 =====
+
+    function createFogPattern() {
+        const size = 64;
+        const cellSize = 8;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const colors = ['#1a1a2e', '#16213e', '#0f3460', '#1a1a2e'];
+        for (let row = 0; row < size / cellSize; row++) {
+            for (let col = 0; col < size / cellSize; col++) {
+                ctx.fillStyle = colors[(row + col) % colors.length];
+                ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+            }
+        }
+        return canvas;
+    }
+
+    function renderWorldFog(fogRect) {
+        if (worldFogNodes.has(fogRect.id)) return;
+        if (!fogPatternCanvas) fogPatternCanvas = createFogPattern();
+        const rect = new Konva.Rect({
+            x: fogRect.x, y: fogRect.y,
+            width: fogRect.w, height: fogRect.h,
+            fillPatternImage: fogPatternCanvas,
+            fillPatternRepeat: 'repeat',
+            strokeEnabled: false,
+            opacity: 0.92,
+            listening: isDM,
+        });
+        if (isDM) {
+            rect.on('dblclick dbltap', () => {
+                socket.emit('fog:remove', fogRect.id);
+            });
+        }
+        fogLayer.add(rect);
+        worldFogNodes.set(fogRect.id, rect);
+        fogLayer.batchDraw();
+    }
+
+    // 返回被指定地图"包裹"的迷雾遮罩列表（至少一个顶点在地图边界内）
+    // 使用操作前的旧坐标调用，然后再更新 placed 坐标
+    function getFogRectsWrappedByMap(placed) {
+        const asset = mapAssetCache[placed.assetId];
+        if (!asset) return [];
+        const ratio = asset.originalHeight / asset.originalWidth;
+        const mapX1 = placed.gridX * GRID_SIZE;
+        const mapY1 = placed.gridY * GRID_SIZE;
+        const mapX2 = (placed.gridX + placed.gridWidth) * GRID_SIZE;
+        const mapY2 = (placed.gridY + placed.gridWidth * ratio) * GRID_SIZE;
+        return worldFogData.filter(f => {
+            const corners = [
+                [f.x, f.y], [f.x + f.w, f.y],
+                [f.x, f.y + f.h], [f.x + f.w, f.y + f.h],
+            ];
+            return corners.some(([cx, cy]) =>
+                cx >= mapX1 && cx <= mapX2 && cy >= mapY1 && cy <= mapY2
+            );
+        });
+    }
+
     // 开启世界视图时一次性渲染所有待渲染的世界对象
     function renderPendingWorldObjects() {
         renderPendingPlacedMaps();
@@ -2938,6 +3115,9 @@
         });
         worldRectsData.forEach(r => {
             if (!worldRectNodes.has(r.id)) renderWorldRect(r);
+        });
+        worldFogData.forEach(f => {
+            if (!worldFogNodes.has(f.id)) renderWorldFog(f);
         });
     }
 
@@ -3086,14 +3266,48 @@
                 e.cancelBubble = true;       // 阻止冒泡到 stage 触发其 drag
                 selectPlacedMap(placed.id);
             });
-            node.on('dragmove', () => updatePlacedMapOverlay(placed.id));
+            node.on('dragstart', () => {
+                fogDragStartData = {
+                    origWorldX: placed.gridX * GRID_SIZE,
+                    origWorldY: placed.gridY * GRID_SIZE,
+                    wrappedFog: getFogRectsWrappedByMap(placed).map(f => ({ id: f.id, origX: f.x, origY: f.y })),
+                };
+            });
+            node.on('dragmove', () => {
+                updatePlacedMapOverlay(placed.id);
+                if (fogDragStartData && fogDragStartData.wrappedFog.length > 0) {
+                    const dx = node.x() - fogDragStartData.origWorldX;
+                    const dy = node.y() - fogDragStartData.origWorldY;
+                    fogDragStartData.wrappedFog.forEach(({ id: fid, origX, origY }) => {
+                        const fogNode = worldFogNodes.get(fid);
+                        if (fogNode) fogNode.position({ x: origX + dx, y: origY + dy });
+                    });
+                    if (fogLayer) fogLayer.batchDraw();
+                }
+            });
             node.on('dragend', () => {
                 const snapped = snapToGrid(node.x() / GRID_SIZE, node.y() / GRID_SIZE);
+                // 移动前先算 delta 和被包裹迷雾（placed 仍为旧坐标）
+                const dgx = snapped.gx - placed.gridX;
+                const dgy = snapped.gy - placed.gridY;
+                const movedFogRects = getFogRectsWrappedByMap(placed).map(f => ({
+                    id: f.id,
+                    x: f.x + dgx * GRID_SIZE,
+                    y: f.y + dgy * GRID_SIZE,
+                }));
                 placed.gridX = snapped.gx;
                 placed.gridY = snapped.gy;
                 node.position({ x: placed.gridX * GRID_SIZE, y: placed.gridY * GRID_SIZE });
+                // 乐观应用迷雾移动
+                movedFogRects.forEach(({ id: fid, x, y }) => {
+                    const fog = worldFogData.find(f => f.id === fid);
+                    if (fog) { fog.x = x; fog.y = y; }
+                    const fogNode = worldFogNodes.get(fid);
+                    if (fogNode) fogNode.position({ x, y });
+                });
+                if (movedFogRects.length > 0 && fogLayer) fogLayer.batchDraw();
                 updatePlacedMapOverlay(placed.id);
-                socket.emit('placedMap:move', { id: placed.id, gridX: placed.gridX, gridY: placed.gridY });
+                socket.emit('placedMap:move', { id: placed.id, gridX: placed.gridX, gridY: placed.gridY, movedFogRects });
             });
             staticLayer.add(node);
             node.moveToBottom(); // 地图始终在 staticLayer 最底部（图片异步加载，防止覆盖网格）
@@ -3252,6 +3466,9 @@
             startWidthWorld: node.width(),
             ratio: node.height() / node.width(),
             scale: konvaStage.scaleX(),
+            origGridX: placed.gridX,
+            origGridY: placed.gridY,
+            wrappedFog: getFogRectsWrappedByMap(placed).map(f => ({ id: f.id, origX: f.x, origY: f.y, origW: f.w, origH: f.h })),
         };
         const overlay = placedMapOverlays.get(mapId);
         if (overlay) {
@@ -3273,6 +3490,22 @@
         node.height(newWidthWorld * resizeState.ratio);
         updatePlacedMapOverlay(resizeState.mapId);
         updateSizeLabel(resizeState.mapId);
+        // 实时缩放被包裹的迷雾（DM 端视觉效果，不同步服务端）
+        if (resizeState.wrappedFog && resizeState.wrappedFog.length > 0) {
+            const scaleFactor = newWidthWorld / resizeState.startWidthWorld;
+            const mapX1 = resizeState.origGridX * GRID_SIZE;
+            const mapY1 = resizeState.origGridY * GRID_SIZE;
+            resizeState.wrappedFog.forEach(({ id: fid, origX, origY, origW, origH }) => {
+                const fogNode = worldFogNodes.get(fid);
+                if (fogNode) fogNode.setAttrs({
+                    x: mapX1 + (origX - mapX1) * scaleFactor,
+                    y: mapY1 + (origY - mapY1) * scaleFactor,
+                    width: origW * scaleFactor,
+                    height: origH * scaleFactor,
+                });
+            });
+            if (fogLayer) fogLayer.batchDraw();
+        }
         konvaStage.batchDraw();
     }
 
@@ -3282,12 +3515,32 @@
         const placed = placedMapsData.find(m => m.id === resizeState.mapId);
         if (node && placed) {
             const gw = Math.max(1, Math.round(node.width() / GRID_SIZE));
+            // 缩放前先算被包裹迷雾（placed.gridWidth 仍为旧值）
+            const oldGw = placed.gridWidth;
+            const scaleFactor = gw / oldGw;
+            const mapX1 = placed.gridX * GRID_SIZE;
+            const mapY1 = placed.gridY * GRID_SIZE;
+            const scaledFogRects = getFogRectsWrappedByMap(placed).map(f => ({
+                id: f.id,
+                x: mapX1 + (f.x - mapX1) * scaleFactor,
+                y: mapY1 + (f.y - mapY1) * scaleFactor,
+                w: f.w * scaleFactor,
+                h: f.h * scaleFactor,
+            }));
             placed.gridWidth = gw;
             node.width(gw * GRID_SIZE);
             node.height(gw * resizeState.ratio * GRID_SIZE);
+            // 乐观应用迷雾缩放
+            scaledFogRects.forEach(({ id: fid, x, y, w, h }) => {
+                const fog = worldFogData.find(f => f.id === fid);
+                if (fog) { fog.x = x; fog.y = y; fog.w = w; fog.h = h; }
+                const fogNode = worldFogNodes.get(fid);
+                if (fogNode) fogNode.setAttrs({ x, y, width: w, height: h });
+            });
+            if (scaledFogRects.length > 0 && fogLayer) fogLayer.batchDraw();
             updatePlacedMapOverlay(resizeState.mapId);
             konvaStage.batchDraw();
-            socket.emit('placedMap:resize', { id: resizeState.mapId, gridWidth: gw });
+            socket.emit('placedMap:resize', { id: resizeState.mapId, gridWidth: gw, scaledFogRects });
         }
         const overlay = placedMapOverlays.get(resizeState.mapId);
         if (overlay) overlay.sizeLabel.style.display = 'none';
@@ -3341,7 +3594,7 @@
         }
     });
 
-    socket.on('placedMap:moved', ({ id, gridX, gridY }) => {
+    socket.on('placedMap:moved', ({ id, gridX, gridY, movedFogRects }) => {
         const placed = placedMapsData.find(m => m.id === id);
         if (placed) { placed.gridX = gridX; placed.gridY = gridY; }
         const node = placedMapNodes.get(id);
@@ -3350,9 +3603,18 @@
             updatePlacedMapOverlay(id);
             if (staticLayer) staticLayer.batchDraw();
         }
+        if (Array.isArray(movedFogRects) && movedFogRects.length > 0) {
+            movedFogRects.forEach(({ id: fid, x, y }) => {
+                const fog = worldFogData.find(f => f.id === fid);
+                if (fog) { fog.x = x; fog.y = y; }
+                const fogNode = worldFogNodes.get(fid);
+                if (fogNode) fogNode.position({ x, y });
+            });
+            if (fogLayer) fogLayer.batchDraw();
+        }
     });
 
-    socket.on('placedMap:resized', ({ id, gridWidth }) => {
+    socket.on('placedMap:resized', ({ id, gridWidth, scaledFogRects }) => {
         const placed = placedMapsData.find(m => m.id === id);
         if (!placed) return;
         placed.gridWidth = gridWidth;
@@ -3365,6 +3627,15 @@
         node.height(gridWidth * ratio * GRID_SIZE);
         updatePlacedMapOverlay(id);
         if (staticLayer) staticLayer.batchDraw();
+        if (Array.isArray(scaledFogRects) && scaledFogRects.length > 0) {
+            scaledFogRects.forEach(({ id: fid, x, y, w, h }) => {
+                const fog = worldFogData.find(f => f.id === fid);
+                if (fog) { fog.x = x; fog.y = y; fog.w = w; fog.h = h; }
+                const fogNode = worldFogNodes.get(fid);
+                if (fogNode) fogNode.setAttrs({ x, y, width: w, height: h });
+            });
+            if (fogLayer) fogLayer.batchDraw();
+        }
     });
 
     socket.on('placedMap:lockSet', ({ id, isLocked }) => {
@@ -3432,11 +3703,13 @@
         worldNpcsData.length = 0;
         worldDrawingsData.length = 0;
         worldRectsData.length = 0;
+        worldFogData.length = 0;
         (world.placedMaps || []).forEach(m => placedMapsData.push(m));
         (world.tokens || []).forEach(t => worldTokensData.push(t));
         (world.npcs || []).forEach(n => worldNpcsData.push(n));
         (world.freeDrawings || []).forEach(d => worldDrawingsData.push(d));
         (world.rects || []).forEach(r => worldRectsData.push(r));
+        (world.fogRects || []).forEach(f => worldFogData.push(f));
 
         if (konvaStage) {
             // 销毁所有 Konva 节点
@@ -3455,6 +3728,8 @@
             worldRectNodes.clear();
             liveStrokeNodes.forEach(node => node.destroy());
             liveStrokeNodes.clear();
+            worldFogNodes.forEach(node => node.destroy());
+            worldFogNodes.clear();
             renderPendingWorldObjects();
         }
         // 按需拉取缺失的地图资产（undo 后可能出现之前未缓存的资产）

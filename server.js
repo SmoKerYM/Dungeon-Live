@@ -196,12 +196,13 @@ function loadWorld() {
       if (!Array.isArray(data.npcs)) data.npcs = [];
       if (!Array.isArray(data.freeDrawings)) data.freeDrawings = [];
       if (!Array.isArray(data.rects)) data.rects = [];
+      if (!Array.isArray(data.fogRects)) data.fogRects = [];
       return data;
     }
   } catch (err) {
     console.error('读取世界状态失败:', err);
   }
-  return { placedMaps: [], tokens: [], npcs: [], freeDrawings: [], rects: [] };
+  return { placedMaps: [], tokens: [], npcs: [], freeDrawings: [], rects: [], fogRects: [] };
 }
 
 // 保存世界状态
@@ -237,7 +238,8 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   maxHttpBufferSize: 50 * 1024 * 1024, // 50MB - 支持大尺寸地图图片
-  pingTimeout: 60000
+  pingTimeout: 60000,
+  transports: ['websocket'] // 强制 WebSocket，避免 HTTP polling 被浏览器后台节流断线
 });
 
 const PORT = process.env.PORT || 3000;
@@ -579,8 +581,8 @@ io.on('connection', (socket) => {
     scheduleWorldSave();
   });
 
-  // 移动地图 (仅 DM)
-  socket.on('placedMap:move', ({ id, gridX, gridY }) => {
+  // 移动地图 (仅 DM)，可选附带联动迷雾坐标
+  socket.on('placedMap:move', ({ id, gridX, gridY, movedFogRects }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
@@ -588,19 +590,31 @@ io.on('connection', (socket) => {
     pushWorldUndo();
     map.gridX = gridX;
     map.gridY = gridY;
-    io.emit('placedMap:moved', { id, gridX, gridY });
+    if (Array.isArray(movedFogRects)) {
+      movedFogRects.forEach(({ id: fid, x, y }) => {
+        const fog = gameState.world.fogRects.find(f => f.id === fid);
+        if (fog) { fog.x = x; fog.y = y; }
+      });
+    }
+    io.emit('placedMap:moved', { id, gridX, gridY, movedFogRects: movedFogRects || [] });
     scheduleWorldSave();
   });
 
-  // 缩放地图 (仅 DM)
-  socket.on('placedMap:resize', ({ id, gridWidth }) => {
+  // 缩放地图 (仅 DM)，可选附带联动迷雾新坐标/尺寸
+  socket.on('placedMap:resize', ({ id, gridWidth, scaledFogRects }) => {
     const player = gameState.players.get(socket.id);
     if (player?.role !== 'DM') return;
     const map = gameState.world.placedMaps.find(m => m.id === id);
     if (!map) return;
     pushWorldUndo();
     map.gridWidth = gridWidth;
-    io.emit('placedMap:resized', { id, gridWidth });
+    if (Array.isArray(scaledFogRects)) {
+      scaledFogRects.forEach(({ id: fid, x, y, w, h }) => {
+        const fog = gameState.world.fogRects.find(f => f.id === fid);
+        if (fog) { fog.x = x; fog.y = y; fog.w = w; fog.h = h; }
+      });
+    }
+    io.emit('placedMap:resized', { id, gridWidth, scaledFogRects: scaledFogRects || [] });
     scheduleWorldSave();
   });
 
@@ -676,6 +690,31 @@ io.on('connection', (socket) => {
     gameState.world.freeDrawings = [];
     gameState.world.rects = [];
     io.emit('draw:clearAll');
+    scheduleWorldSave();
+  });
+
+  // 添加迷雾遮罩 (仅 DM)
+  socket.on('fog:add', ({ x, y, w, h }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (!(w > 0 && h > 0)) return;
+    pushWorldUndo();
+    const id = `fog_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const fogRect = { id, x, y, w, h };
+    gameState.world.fogRects.push(fogRect);
+    io.emit('fog:added', fogRect);
+    scheduleWorldSave();
+  });
+
+  // 删除迷雾遮罩 (仅 DM)
+  socket.on('fog:remove', (id) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    const idx = gameState.world.fogRects.findIndex(f => f.id === id);
+    if (idx === -1) return;
+    pushWorldUndo();
+    gameState.world.fogRects.splice(idx, 1);
+    io.emit('fog:removed', { id });
     scheduleWorldSave();
   });
 

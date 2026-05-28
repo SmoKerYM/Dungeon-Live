@@ -89,8 +89,20 @@
     - [public/game.html](public/game.html) HTML：聊天输入框 placeholder 改为 `"输入消息，或 /2d6+3 投骰..."`
     - [server.js](server.js)：`dice:roll` handler 改为透传 `expr/rolls/modifier/count` 字段（按需附加到 `historyEntry` 和 `broadcast`），兼容旧骰子按钮（无 `expr` 时不变）
 
+  - **8-C 战争迷雾（马赛克遮罩）** (2026-05-28)：
+    - [server.js](server.js)：`loadWorld()` 默认值/读取旧数据时补 `fogRects: []`；新事件 `fog:add`（DM guard + pushWorldUndo → push `world.fogRects` → `io.emit('fog:added')` → `scheduleWorldSave`）；`fog:remove`（DM guard + pushWorldUndo → splice + `io.emit('fog:removed')` → `scheduleWorldSave`）
+    - [public/game.html](public/game.html) CSS：`tool-group` 从 `repeat(4, 1fr)` 改为 `repeat(5, 1fr)`
+    - [public/game.html](public/game.html) HTML：工具栏新增 `#btn-fog`（"雾"按钮，`.dm-only` 区域）
+    - [public/game.html](public/game.html) JS：新增 `fogLayer`（插入 `gridLayer` 与 `dynamicLayer` 之间）；Phase 8-C 状态变量（`worldFogData`、`worldFogNodes`、`fogPatternCanvas`、`isKonvaFog` 等）；`createFogPattern()`（64×64 深蓝色系马赛克 canvas）；`renderWorldFog(fogRect)`（`Konva.Rect` + `fillPatternImage`，DM 端 `dblclick` → `fog:remove`）；`setTool('fog')` DM guard；`onStageDrawMouseDown/Move/finalizeWorldDraw` fog 分支（拖拽绘制临时矩形，松手 emit `fog:add`，w/h < 5 丢弃）；`fog:added/removed` socket handler；`joinSuccess` 初始化 `worldFogData`；`world:sync` 全量销毁重渲（`worldFogNodes.clear()`）；`renderPendingWorldObjects` 补充 fog 渲染
+    - **地图-迷雾强制联动**（移动联动 + 缩放联动，无需 isBound 开关）：
+      - `getFogRectsWrappedByMap(placed)` 工具函数（至少一个顶点在地图边界内 → 包裹）
+      - 地图 `dragend`：计算 delta → `getFogRectsWrappedByMap` → 计算新坐标 → 乐观更新本地 fog → emit `placedMap:move { ..., movedFogRects }`
+      - `onResizeEnd`：计算 scaleFactor = newGw / oldGw → 等比重映射每个被包裹的 fog `x/y/w/h`（锚点为地图左上角）→ 乐观更新 → emit `placedMap:resize { ..., scaledFogRects }`
+      - `placedMap:moved/resized` socket handler 补充 fog 节点同步（其他客户端接收时应用）
+      - server `placedMap:move/resize` 接受可选 `movedFogRects/scaledFogRects`，原子更新 `world.fogRects` + 广播
+
 ## 下一步
-Phase 8 完成，进入实际跑团测试阶段。如有新的小功能需求在 8-B 之后追加。
+Phase 8 全部完成（8-A、8-B、8-C），进入实际跑团测试阶段。后续进入 Phase 9（吸附开关 + 地图绑定联动 + 选框批量操作）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
