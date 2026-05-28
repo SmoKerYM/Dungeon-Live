@@ -292,6 +292,262 @@ world: {            // 世界状态（落盘）
 
 ---
 
+## Phase 9: 吸附开关 + 地图绑定联动 + 选框批量操作
+
+**目标 / Goal**：在稳定的 Konva 世界上增加三组交互增强，每组作为独立子任务：(9-A) 为地图/矩形/棋子分别增加"吸附网格"开关，关闭后可自由放置于非格子位置；(9-B) 为地图实例增加"固定对象"开关，移动/缩放地图时被该地图包裹的笔迹、矩形、棋子跟随联动；(9-C) 增加"选框"工具，框选多类对象后批量平移或删除。
+
+**前置条件 / Prerequisites**：Phase 8 完成（Konva 世界为唯一渲染路径，所有对象通过 socket 事件管理）。
+
+---
+
+### 9-A: 吸附开关
+
+**功能说明**
+
+工具栏新增三个独立开关（DM 可见，全局生效）：
+
+| 开关 | 默认 | 控制范围 |
+|------|------|----------|
+| 地图吸附 | 开 | 地图 `dragend` 是否 `snapToGrid` |
+| 矩形吸附 | 开 | 矩形工具起/终点是否 `snapToGrid` |
+| 棋子吸附 | 开 | 棋子/NPC `dragend` 是否 `snapToGrid` |
+
+开关状态为客户端局部变量，不同步服务端、不持久化（刷新恢复默认）。关闭吸附后对象的 `gridX/gridY` 以鼠标释放位置换算的浮点值传输（数据模型本已定义为 float，兼容）。
+
+**交付物 / Deliverables**：
+
+- [public/game.html](public/game.html) CSS：三个 toggle 按钮的激活/非激活样式（激活时高亮边框，非激活时灰色）
+- [public/game.html](public/game.html) HTML：工具栏 `.dm-only` 区域新增三个按钮（建议文字"格/图"、"格/矩"、"格/棋"，`title` 属性为完整提示文字）
+- [public/game.html](public/game.html) JS：
+  - 全局变量 `snapMap = true`、`snapRect = true`、`snapToken = true`
+  - 点击按钮时 toggle 对应变量并同步按钮视觉状态
+  - 地图 `dragend` handler：将 `if (snapMap) pos = snapToGrid(pos)` 包裹原有吸附逻辑
+  - 矩形工具 `mousedown`（起点）和 `mouseup`（终点）：分别按 `snapRect` 决定是否 `snapToGrid`
+  - 棋子/NPC `dragend` handler：按 `snapToken` 决定是否 `snapToGrid`
+
+**验收标准 / Acceptance criteria**：
+
+- 关闭地图吸附后，拖动地图松手时停在鼠标释放位置，不跳格；其他客户端看到相同的非整数格位置
+- 关闭矩形吸附后，矩形四角不对齐格子交点
+- 关闭棋子吸附后，棋子可停在格子中间位置
+- 三个开关独立，互不影响
+- 刷新页面后三个开关恢复默认开启
+
+**本阶段不做 / Out of scope**：持久化开关状态；玩家侧的独立棋子吸附开关（可后续追加至玩家工具栏）；自由笔迹（本就不吸附，不需要开关）。
+
+---
+
+### 9-B: 地图固定对象联动
+
+**功能说明**
+
+每个放置的地图实例新增 `isBound` 布尔字段（默认 `false`）。开启后，DM 对该地图实例的移动和缩放会触发被"包裹"对象的联动更新。
+
+**包裹判断规则**（以操作**前**地图的世界坐标边界为准）：
+
+- 边界换算：地图 `gridX/gridY` 为网格单位，世界坐标 = `grid * GRID_SIZE`；`gridHeight = gridWidth * (asset.originalHeight / asset.originalWidth)`
+- `freeDrawing`：`points` 数组中**至少有一个** (x, y)（世界坐标）在地图边界内，即视为包裹
+- `rect`：四个顶点中**至少有一个**（换算为世界坐标后）在地图边界内，即视为包裹
+- `token` / `npc`：渲染圆心（`(gridX + 0.5) * GRID_SIZE`，取 `renderWorldToken` 相同计算方式）在地图边界内
+
+**移动联动**（`dragend`）：
+
+- 计算 delta：`dgx = newGridX - oldGridX`，`dgy = newGridY - oldGridY`
+- 所有被包裹的 `freeDrawing` 的每个点 `+= (dgx * GRID_SIZE, dgy * GRID_SIZE)`
+- 所有被包裹的 `rect` 的 `gridX += dgx`，`gridY += dgy`
+- 所有被包裹的 `token/npc` 的 `gridX += dgx`，`gridY += dgy`
+
+**缩放联动**（resize 结束）：
+
+- 旧地图网格尺寸：`oldW = gridWidth`，`oldH = oldW * aspectRatio`
+- 新地图网格尺寸：`newW = newGridWidth`，`newH = newW * aspectRatio`（gridX/gridY 不变，锚点为左上角）
+- `freeDrawing` 每个点（世界坐标）：
+  `newX = mapX1 + (x - mapX1) / (oldW * G) * (newW * G)`，Y 同理（`mapX1 = gridX * G`）
+- `rect`（网格坐标）：
+  `newRx = gridX + (rx - gridX) / oldW * newW`，`newRy/newRw/newRh` 类似等比缩放
+- `token/npc`（网格坐标）：
+  `newTx = gridX + (tx + 0.5 - gridX) / oldW * newW - 0.5`（保持圆心在地图内相对比例不变，结果按 `snapToken` 决定是否 `Math.round`）
+
+**数据模型变更**：
+
+```javascript
+// world.placedMaps 条目新增字段
+{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }
+```
+
+**交付物 / Deliverables**：
+
+- [server.js](server.js)：
+  - `loadWorld()` 默认值中 `placedMaps` 条目读取时补 `isBound: map.isBound ?? false`（兼容旧存档）
+  - 新事件 `placedMap:setBound`（DM guard）：更新 `world.placedMaps` 中对应条目的 `isBound`，`io.emit('placedMap:boundSet', { id, isBound })`，`scheduleWorldSave()`，**不**纳入 undoStack（与 `placedMap:setLock` 一致）
+  - 新事件 `world:boundedMove`（DM guard）：payload `{ mapId, mapGridX, mapGridY, movedTokens: [{id, gridX, gridY}], movedNpcs: [{id, gridX, gridY}], movedFreeDrawings: [{id, points}], movedRects: [{id, gridX, gridY, gridW, gridH}] }`；handler：`pushWorldUndo()` → 更新 `world.placedMaps` 中 mapId 的坐标 → 批量更新四类对象 → `io.emit('world:boundedMoved', payload)` → `scheduleWorldSave()`
+  - 新事件 `world:boundedResize`（DM guard）：payload `{ mapId, newGridWidth, scaledFreeDrawings: [{id, points}], scaledRects: [{id, gridX, gridY, gridW, gridH}], movedTokens: [{id, gridX, gridY}], movedNpcs: [{id, gridX, gridY}] }`；handler：`pushWorldUndo()` → 更新地图 `gridWidth` → 批量更新四类对象 → `io.emit('world:boundedResized', payload)` → `scheduleWorldSave()`
+
+- [public/game.html](public/game.html) CSS：`.bind-btn` 绑定/解绑视觉样式（激活时用与锁定按钮同色系但不同图标区分）
+- [public/game.html](public/game.html) JS：
+  - `createOverlayForPlacedMap()`：新增 bind 按钮（DM only），图标建议 📌（已绑）/ 📍（未绑），`click` 调 `togglePlacedMapBound(id)`
+  - `togglePlacedMapBound(id)`：emit `placedMap:setBound`，传 `{ id, isBound: !current }`
+  - `socket.on('placedMap:boundSet', { id, isBound })`：更新 `placedMapsData[id].isBound`，刷新 overlay 按钮图标与样式
+  - 新增 `getWrappedObjects(placedData)`：返回 `{ tokens, npcs, freeDrawings, rects }`，基于 `worldTokensData / worldNpcsData / worldDrawingsData / worldRectsData` 按包裹规则过滤（使用操作前的旧坐标）
+  - 地图 `dragend` handler：若 `isBound`，先调 `getWrappedObjects`，计算新坐标，emit `world:boundedMove`；否则 emit 原 `placedMap:move`
+  - 地图 resize 结束 handler：若 `isBound`，调 `getWrappedObjects`，按缩放公式算新坐标，emit `world:boundedResize`；否则 emit 原 `placedMap:resize`
+  - `socket.on('world:boundedMoved', payload)`：用 payload 更新 `placedMapsData`、`worldTokensData`、`worldNpcsData`、`worldDrawingsData`、`worldRectsData`，对应 Konva 节点调用 `.position()` / `.points()` 更新，`batchDraw`
+  - `socket.on('world:boundedResized', payload)`：同上（freeDrawing 节点需 `.points(newPoints)` 重绘，rect 节点需更新 `.x()/.y()/.width()/.height()`）
+  - `world:sync`（undo/redo）已有的全量销毁重渲逻辑自动覆盖，无需额外修改
+
+**验收标准 / Acceptance criteria**：
+
+- 默认 `isBound=false`；DM toggle 后服务器持久化，刷新后保留
+- 地图开启绑定，地图内放置棋子，以及一条完整在地图内的笔迹 → 拖动地图 → 两者平移相同 delta，其他客户端同步
+- 笔迹有至少一点在地图内（哪怕只有一端在地图内）→ 跟随移动（"部分交叉 = 包裹"）
+- 缩放已绑定地图 → 地图内的矩形顶点等比重映射；地图内棋子维持相对比例位置
+- Ctrl+Z 一次性还原地图 + 所有联动对象的位置（单个 undo 槽）
+- 地图处于锁定状态时无法拖动，`isBound` 不触发联动
+
+**本阶段不做 / Out of scope**：一个对象同时被两张绑定地图包裹时的仲裁（实现时取 `placedMapsData` 中第一个匹配项即可）；NPC 缩放（仅平移位置，不改变圆形大小）；`isBound` toggle 纳入 undoStack。
+
+---
+
+### 9-C: 选框批量操作
+
+**功能说明**
+
+工具栏新增"选框"工具（DM only，图标建议 ⬚）。激活后：
+
+1. DM 在世界空白处按住拖拽，绘制半透明矩形选框（`fill: rgba(99,179,237,0.15)`，`stroke: #63b3ed`，`dash: [6,3]`，`strokeWidth: 1.5/scale`）
+2. 松手时，计算被选框包裹的对象（规则见下），高亮已选对象，选框右上角出现 DOM "🗑 删除" 按钮
+3. 拖动**任意**已选对象（或选框矩形本身），全部已选对象跟随平移相同 delta，松手后 emit 批量移动事件
+4. 点击选框外空白处或切换工具：清除选框与高亮
+
+**包裹判断规则**（选框作为边界）：
+
+- `placedMap`：地图四顶点均在选框内（**全包含**）；已锁定地图不可被选中
+- `freeDrawing`：`points` 中**至少有一个**点在选框内，即视为包裹
+- `rect`：四顶点中**至少有一个**在选框内，即视为包裹
+- `token` / `npc`：渲染圆心在选框内
+
+**交付物 / Deliverables**：
+
+- [server.js](server.js)：
+  - 新事件 `world:selectionMove`（DM guard）：payload `{ movedPlacedMaps: [{id, gridX, gridY}], movedTokens: [{id, gridX, gridY}], movedNpcs: [{id, gridX, gridY}], movedFreeDrawings: [{id, points}], movedRects: [{id, gridX, gridY, gridW, gridH}] }`；handler：`pushWorldUndo()` → 批量更新五类对象 → `io.emit('world:selectionMoved', payload)` → `scheduleWorldSave()`
+  - 删除操作复用现有单条 remove 事件（客户端循环 emit），不新增批量删除事件
+
+- [public/game.html](public/game.html) CSS：
+  - `#selection-overlay`：绝对定位于 `#world-container` 内，`pointer-events: none`，子按钮单独 `pointer-events: auto`
+  - `.selection-delete-btn`：右上角红色删除按钮样式（参照 `.placed-map-remove`）
+- [public/game.html](public/game.html) HTML：`#world-container` 内新增 `<div id="selection-overlay"></div>`
+- [public/game.html](public/game.html) JS：
+  - `setTool('select-box')` 分支：`konvaStage.draggable(false)`，container 鼠标样式 `crosshair`；切离时调 `clearSelection()`
+  - 选框绘制：`onStageDrawMouseDown` 在工具为 'select-box' 且 `e.target === konvaStage` 时，于 `dynamicLayer` 创建临时 `Konva.Rect`（上述样式）；`mousemove` 更新宽高（处理负向拖拽，统一换算为 `x=min, y=min, w=|Δ|, h=|Δ|`）；`mouseup` 调 `finalizeSelection()`
+  - `finalizeSelection()`：
+    1. 将选框换算为世界坐标范围 `selBox { x1, y1, x2, y2 }`（grid 单位）
+    2. 遍历五类数据数组，按包裹规则填入 `selectedIds: { placedMaps[], tokens[], npcs[], freeDrawings[], rects[] }`
+    3. 若全为空：销毁临时选框 Konva 节点，不进入选中态
+    4. 否则：在 `dynamicLayer` 保留选框 Rect（设 `listening: true` 以支持拖拽）；对各 Konva 节点加高亮描边（`node.shadowEnabled(true)` 或 `stroke` 覆盖）；调 `updateSelectionOverlay()` 定位 DOM 删除按钮到选框右上角（Konva 世界坐标 → stage 屏幕坐标）
+  - 选中态拖动：选框 Rect 和各已选 Konva 节点均 `draggable(true)`；任一节点 `dragmove` 时计算 dx/dy 并同步移动其余所有已选节点（`node.x(node.x() + dx)`）；`dragend` 调 `finalizeSelectionMove()` emit `world:selectionMove`；每次 `dragmove` 末尾调 `updateSelectionOverlay()` 保持删除按钮跟随
+  - `finalizeSelectionMove()`：将各已选节点当前屏幕坐标逆变换回世界网格坐标，组装 payload，emit `world:selectionMove`，重算高亮
+  - `socket.on('world:selectionMoved', payload)`：批量更新五类本地数据数组 + Konva 节点位置，`batchDraw`
+  - `clearSelection()`：销毁选框 Konva 节点，移除已选节点高亮，清空 `selectedIds`，隐藏 `#selection-overlay`；幂等（重复调用无副作用）
+  - 工具切换时调 `clearSelection()`；`world:sync`（undo/redo）后调 `clearSelection()`
+  - 删除按钮 `onclick`：`confirm` 弹窗 → 按 `selectedIds` 循环 emit 各类型 remove 事件（`token:remove`、`npc:remove`、`draw:remove`、`placedMap:remove`）→ `clearSelection()`
+  - `onStageTransformChanged` 末尾：若存在活跃选框，调 `updateSelectionOverlay()` 重算删除按钮屏幕坐标
+
+**验收标准 / Acceptance criteria**：
+
+- 激活选框工具，拖出矩形，松手后包裹规则命中的对象显示高亮
+- 已锁定地图不被选框选中；笔迹/矩形只要有一端在选框内即被选中
+- 拖动任一已选对象，全部已选对象平移相同 delta，松手后其他客户端同步看到新位置
+- 缩放/平移 stage 时，删除按钮始终贴在选框右上角
+- 点击删除按钮，已选对象全部消失，其他客户端同步
+- 点击选框外空白处或切换工具，选框与高亮立即消失
+- Ctrl+Z 还原批量移动（单个 undo 槽）
+- 选框为纯本地交互，其他客户端不可见选框本身
+
+**本阶段不做 / Out of scope**：Shift+点击追加单个对象到选中集；选框内对象的统一缩放/旋转；批量删除纳入单一 undo 槽（循环 emit remove 会产生多个 undo 条目，可在后续修复）；选框广播给其他客户端。
+
+---
+
+### 9-D: 战争迷雾（马赛克遮罩）
+
+**功能说明**
+
+DM 可在地图上绘制矩形马赛克遮罩，视觉上遮蔽地图对应区域（对所有人可见）；双击某个马赛克即可删除，揭示下方地图。马赛克不吸附网格，坐标使用**世界像素单位**（与 `freeDrawing.points` 相同坐标系，`worldPx = gridUnit * GRID_SIZE`）。
+
+**Layer 位置**：新增 `fogLayer`，插入在 `gridLayer` 与 `dynamicLayer` 之间。
+
+```
+staticLayer（地图）→ gridLayer（网格）→ fogLayer（马赛克）→ dynamicLayer（棋子）→ drawingLayer（笔迹）
+```
+
+**马赛克视觉效果**：
+
+- 预生成一张 64×64 像素的可平铺 canvas（`createFogPattern()`），在其上绘制 8×8 的彩色小方块网格（色调参考：深灰/黑色系方块，营造"遮挡"感）
+- `Konva.Rect` 使用 `fillPatternImage` 加载该 canvas，`fillPatternRepeat: 'repeat'`，不需要随缩放更新（马赛克格子随世界缩放放大/缩小，符合直觉）
+- 无边框（`strokeEnabled: false`）；透明度可设 `opacity: 0.92`
+
+**被地图"包裹"判断规则**（以地图操作前边界为准）：
+
+- 马赛克四个顶点 `(x, y)、(x+w, y)、(x, y+h)、(x+w, y+h)`（世界像素坐标）中，**至少有一个**在地图边界内，即视为被包裹
+- 地图边界（世界像素）：`x1 = gridX * G, y1 = gridY * G, x2 = (gridX + gridWidth) * G, y2 = (gridY + gridHeight) * G`
+
+**联动计算**（配合 9-B 地图绑定，若两者同时实现）：
+
+- 移动联动：`newX = x + dgx * GRID_SIZE`，`newY = y + dgy * GRID_SIZE`；`w/h` 不变
+- 缩放联动：`newX = mapX1 + (x - mapX1) / (oldW * G) * (newW * G)`，`newY` 同理；`newW = w / (oldW * G) * (newW * G)`，`newH` 同理
+
+**数据模型变更**：
+
+```javascript
+// world 新增字段
+world.fogRects: [{ id, x, y, w, h }]  // 世界像素单位（非网格单位）
+```
+
+**交付物 / Deliverables**：
+
+- [server.js](server.js)：
+  - `loadWorld()` 默认值加入 `fogRects: []`，读取旧数据时补全
+  - 新事件 `fog:add`（DM guard）：校验 `w > 0 && h > 0` → push 到 `world.fogRects` → `io.emit('fog:added', fogRect)` → `pushWorldUndo()` → `scheduleWorldSave()`
+  - 新事件 `fog:remove`（DM guard）：按 id 从 `world.fogRects` 删除 → `io.emit('fog:removed', { id })` → `pushWorldUndo()` → `scheduleWorldSave()`
+  - 9-B 扩展（若实现）：`world:boundedMove` payload 加入 `movedFogRects: [{id, x, y, w, h}]`，handler 同步更新 `world.fogRects`；`world:boundedResize` 同理加入 `scaledFogRects`
+  - `joinSuccess` 中 `world` 整体下发，`fogRects` 随之同步，无需单独处理
+
+- [public/game.html](public/game.html) CSS：无需新增（按钮复用已有工具栏样式）
+- [public/game.html](public/game.html) HTML：工具栏 `.dm-only` 区域新增"迷雾"工具按钮（图标建议 🌫 或文字"雾"）
+- [public/game.html](public/game.html) JS：
+  - `initKonvaWorld()` 中在 `gridLayer` 与 `dynamicLayer` 之间插入 `fogLayer = new Konva.Layer()`：
+    ```
+    konvaStage.add(staticLayer);
+    konvaStage.add(gridLayer);
+    konvaStage.add(fogLayer);   // ← 新增
+    konvaStage.add(dynamicLayer);
+    konvaStage.add(drawingLayer);
+    ```
+  - `createFogPattern()`：创建 64×64 的 `HTMLCanvasElement`，在上面绘制 8×8 的彩色小方块（建议 `#1a1a2e` 深蓝色系混入少量灰度方块以形成马赛克感），返回该 canvas
+  - 全局变量 `fogLayer = null`，`worldFogData = []`（数据数组），`worldFogNodes = new Map()`（id → Konva.Rect）
+  - `renderWorldFog(fogData)`：在 `fogLayer` 创建 `Konva.Rect`（`x, y, width: w, height: h`，`fillPatternImage: fogPatternCanvas`，`listening: isDM`，`opacity: 0.92`）；DM 端绑定 `dblclick` → emit `fog:remove`；存入 `worldFogNodes`；`fogLayer.batchDraw()`
+  - `setTool('fog')` 分支：`konvaStage.draggable(false)`，container 鼠标样式 `crosshair`
+  - 绘制流程（复用 `onStageDrawMouseDown/Move/finalizeWorldDraw` 框架）：工具为 'fog' 且 `e.target === konvaStage` 时，在 `fogLayer` 创建临时 `Konva.Rect`（`fill: rgba(30,30,50,0.5)` 预览色，无 pattern）；`mousemove` 更新尺寸（处理负向拖拽）；`mouseup` 时若 `w < 5 || h < 5` 则丢弃，否则 emit `fog:add { x, y, w, h }`（世界坐标，通过 `getMousePosInWorld` 换算）
+  - `socket.on('fog:added', fogRect)`：push 到 `worldFogData`（去重）→ `renderWorldFog(fogRect)`
+  - `socket.on('fog:removed', { id })`：销毁 `worldFogNodes.get(id)`，`worldFogNodes.delete(id)`，从 `worldFogData` 过滤，`fogLayer.batchDraw()`
+  - `renderPendingWorldObjects()` 加入 `worldFogData` 的延迟渲染（stage 初始化前加入的迷雾）
+  - `joinSuccess` handler 加入 `gs.world.fogRects` 初始化到 `worldFogData`
+  - `world:sync`（undo/redo）已有全量销毁重渲逻辑：补充销毁 `worldFogNodes` 所有节点，清空 `worldFogData`，`fogLayer` 在 `renderPendingWorldObjects` 中重渲
+  - 9-B 扩展（若实现）：`getWrappedObjects` 加入 fog 顶点检查；`world:boundedMoved/boundedResized` handler 加入对 `worldFogData/worldFogNodes` 的更新
+
+**验收标准 / Acceptance criteria**：
+
+- 激活迷雾工具，拖拽绘制一个矩形，松手后出现马赛克遮罩，DM 和玩家均可见，遮盖下方地图内容
+- 马赛克的 z 轴：地图图片在其下方，网格线在其下方，棋子/NPC 在其上方（棋子走到马赛克区域时显示在马赛克上面）
+- DM 双击某个马赛克 → 消失，其他客户端同步看到消失；玩家双击无效果
+- 缩放 stage 时马赛克随世界缩放，视觉上马赛克格子变大/变小（无跳变）
+- 服务器重启后马赛克保留（`world.fogRects` 已落盘）
+- Ctrl+Z 撤销"添加马赛克"或"删除马赛克"操作
+- 若已实现 9-B：将地图设为"固定对象"后拖动地图，与之包裹的马赛克跟随平移；缩放地图时马赛克等比重映射
+
+**本阶段不做 / Out of scope**：玩家视角完全不可见迷雾下方内容（当前方案是视觉遮挡，非渲染隔离）；圆形/多边形迷雾形状；迷雾透明度/颜色 UI 调整；迷雾作为 9-C 选框的选中目标（可后续追加）。
+
+---
+
 ## 风险与回滚策略
 
 - **Phase 1-2 风险最低**：纯前端，旧系统并行运行，随时可弃
@@ -318,3 +574,9 @@ world: {            // 世界状态（落盘）
 | — | `draw:rect`（新增） | Phase 5 |
 | — | `history:undo` / `history:redo`（新增） | Phase 6 |
 | — | `world:sync`（服务端 → 全员，undo/redo 后广播完整 world 快照） | Phase 6 |
+| — | `placedMap:setBound` / `placedMap:boundSet`（新增，固定对象开关） | Phase 9-B |
+| — | `world:boundedMove` / `world:boundedMoved`（新增，地图移动联动批量更新） | Phase 9-B |
+| — | `world:boundedResize` / `world:boundedResized`（新增，地图缩放联动批量更新） | Phase 9-B |
+| — | `world:selectionMove` / `world:selectionMoved`（新增，选框批量平移） | Phase 9-C |
+| — | `fog:add` / `fog:added`（新增，添加马赛克遮罩） | Phase 9-D |
+| — | `fog:remove` / `fog:removed`（新增，删除马赛克遮罩） | Phase 9-D |
