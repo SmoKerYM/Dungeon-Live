@@ -167,7 +167,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io();
+        const socket = io({ transports: ['websocket'] });
         let selectedRole = null;
 
         function selectRole(role, element) {
