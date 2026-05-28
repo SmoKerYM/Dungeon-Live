@@ -3168,15 +3168,21 @@
     function renderWorldFog(fogRect) {
         if (worldFogNodes.has(fogRect.id)) return;
         if (!fogPatternCanvas) fogPatternCanvas = createFogPattern();
-        const rect = new Konva.Rect({
+        const rectConfig = {
             x: fogRect.x, y: fogRect.y,
             width: fogRect.w, height: fogRect.h,
-            fillPatternImage: fogPatternCanvas,
-            fillPatternRepeat: 'repeat',
             strokeEnabled: false,
-            opacity: 0.92,
             listening: isDM,
-        });
+        };
+        if (isDM) {
+            rectConfig.fill = 'rgba(180,180,180,1)';
+            rectConfig.opacity = 0.7;
+        } else {
+            rectConfig.fillPatternImage = fogPatternCanvas;
+            rectConfig.fillPatternRepeat = 'repeat';
+            rectConfig.opacity = 0.99;
+        }
+        const rect = new Konva.Rect(rectConfig);
         if (isDM) {
             rect.on('dblclick dbltap', () => {
                 socket.emit('fog:remove', fogRect.id);

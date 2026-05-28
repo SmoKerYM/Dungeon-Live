@@ -1,7 +1,7 @@
 # Progress (for plan-extend.md)
 
 ## 当前状态
-- **当前阶段**：Phase 7 完成，待进入 Phase 8
+- **当前阶段**：Phase 9 全部完成（9-A / 9-B / 9-C），待进入 Phase 10
 - **最后更新**：2026-05-28
 
 ## 已完成的 Phase
@@ -123,8 +123,11 @@
   - [public/game.html](public/game.html) JS：`startResize` 保存 `isBound` + 4 类 wrapped 对象初始坐标快照；`onResizeMove` hoisted scaleFactor/mapX1/mapY1，isBound 时实时更新 4 类对象节点视觉；`onResizeEnd` 计算 scaled* 数组（token/npc 锚点公式：`placed.gridX + (orig+0.5-placed.gridX)*scale - 0.5`；freeDrawing 按像素锚点重映射；rect 四字段均缩放），乐观更新本地数据，emit `placedMap:resize` 带全部 scaled* 字段
   - [public/game.html](public/game.html) JS：新增 `placedMap:boundSet` handler（更新 `placedMapsData[i].isBound` + 切换 bindBtn 文本/class）；`placedMap:moved/resized` handler 补充应用 moved*/scaled* 字段到本地数据数组和 Konva 节点，调用 `batchDraw`
 
+- **Phase 9-C 战争迷雾视觉分层** (2026-05-28)：
+  - [public/game.html](public/game.html) JS：`renderWorldFog(fogRect)` 改为按 `isDM` 分支构造 rectConfig：DM 端 `fill: 'rgba(180,180,180,1)'` + `opacity: 0.7`（浅灰半透明，可透视地图）；玩家端 `fillPatternImage: fogPatternCanvas` + `fillPatternRepeat: 'repeat'` + `opacity: 0.99`（深色马赛克方块，类网格背景质感，视觉上完全遮挡地图）；其余逻辑不变（`listening: isDM`，DM `dblclick → fog:remove`）
+
 ## 下一步
-Phase 9-B 完成。后续进入 Phase 9-C（战争迷雾视觉分层）。
+Phase 9-C 完成。后续进入 Phase 10（吸附开关 + 选框批量操作）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
