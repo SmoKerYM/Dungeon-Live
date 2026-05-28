@@ -50,7 +50,7 @@
         .hp-danger { color: #ff4757 !important; font-weight: 900; }
 
         /* 绘图工具 */
-        .draw-color-selector { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; }
+        .draw-color-selector { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; align-items: center; }
         .draw-color {
             width: 28px; height: 28px;
             border-radius: 50%;  /* 圆形，与 NPC 方形选择器区分 */
@@ -60,6 +60,21 @@
         }
         .draw-color:hover { transform: scale(1.15); }
         .draw-color.selected { border-color: #f1c40f; transform: scale(1.1); }
+        input.draw-color-custom {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            padding: 0;
+            -webkit-appearance: none;
+            appearance: none;
+            overflow: hidden;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        input.draw-color-custom:hover { transform: scale(1.15); }
+        input.draw-color-custom.selected { border-color: #f1c40f; transform: scale(1.1); }
+        input.draw-color-custom::-webkit-color-swatch-wrapper { padding: 0; }
+        input.draw-color-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
         .tool-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 10px; }
         .tool-btn { padding: 8px 4px; border: 2px solid transparent; background: #444; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; text-align: center; font-size: 12px; }
         .tool-btn.active { border-color: #f1c40f; background: #555; }
@@ -93,14 +108,10 @@
 
         /* 画布与地图 */
         #viewport { flex-grow: 1; display: flex; background: #1a1a1a; position: relative; overflow: hidden; padding: 15px; }
-        #map-frame { width: 100%; height: 100%; background: #000; position: relative; overflow: hidden; contain: layout paint; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        #map-container { position: absolute; transform-origin: 0 0; isolation: isolate; }
-        #map-img { display: block; pointer-events: none; border-radius: 4px; }
-        #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: auto; border-radius: 8px; }
 
-        /* 新地图世界占位（Konva 网格世界重构，Phase 0 引入，默认隐藏） */
+        /* Konva 网格世界容器 */
         #world-container {
-            display: none;
+            display: block;
             position: relative;
             width: 100%;
             height: 100%;
@@ -231,45 +242,6 @@
         .dice-label { font-size: 9px; opacity: 0.8; }
         .dice-val { font-size: 16px; font-weight: bold; }
         .dice-big { width: 50px; height: 50px; border: 1px solid rgba(255,255,255,0.3); }
-        /* 锁定地图按钮（与保存按钮并排） */
-        #lock-btn {
-            position: absolute;
-            top: 30px;
-            left: 147px;
-            z-index: 25;
-            padding: 8px 15px;
-            background: #f39c12;
-            border: none;
-            border-radius: 5px;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            display: none;
-            font-size: 13px;
-        }
-        #lock-btn:hover { background: #f1c40f; }
-        #lock-btn.locked { background: #e74c3c; }
-        #lock-btn.locked:hover { background: #c0392b; }
-        #lock-btn.disabled { opacity: 0.5; cursor: not-allowed; }
-        #top-controls { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 20px; z-index: 20; font-size: 13px; }
-
-        /* 临时视图切换按钮（Phase 1 引入，Phase 7 删除） */
-        #world-toggle-btn {
-            position: absolute;
-            top: 30px;
-            right: 30px;
-            z-index: 25;
-            padding: 8px 14px;
-            background: #16a085;
-            border: none;
-            border-radius: 5px;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        #world-toggle-btn:hover { background: #1abc9c; }
-
         /* 世界视图左上角撤销/重做按钮（Phase 6） */
         #world-history-btns {
             position: absolute;
@@ -488,129 +460,6 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-        }
-
-        /* 地图存档槽 */
-        #map-slots {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 15px;
-        }
-        .map-slot {
-            aspect-ratio: 1;
-            background: rgba(0,0,0,0.3);
-            border: 2px dashed #555;
-            border-radius: 8px;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-            transition: border-color 0.2s;
-        }
-        .map-slot:hover {
-            border-color: #3498db;
-        }
-        .map-slot.empty::after {
-            content: '+';
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            color: #555;
-        }
-        .map-slot.empty:hover::after {
-            color: #3498db;
-        }
-        .map-slot img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .map-slot .delete-btn {
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            width: 20px;
-            height: 20px;
-            background: #e74c3c;
-            border-radius: 50%;
-            color: white;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            transition: opacity 0.2s;
-            line-height: 1;
-        }
-        .map-slot:hover .delete-btn {
-            opacity: 1;
-        }
-        .map-slot .delete-btn:hover {
-            background: #c0392b;
-        }
-
-        /* 玩家地图列表 */
-        #player-map-slots {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 15px;
-        }
-        .player-map-slot {
-            aspect-ratio: 1;
-            background: rgba(0,0,0,0.3);
-            border: 2px solid #555;
-            border-radius: 8px;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-            transition: border-color 0.2s;
-        }
-        .player-map-slot:hover {
-            border-color: #3498db;
-        }
-        .player-map-slot.active {
-            border-color: #2ecc71;
-            box-shadow: 0 0 8px rgba(46, 204, 113, 0.4);
-        }
-        .player-map-slot img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .player-map-slot .dm-active-badge {
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            width: 10px;
-            height: 10px;
-            background: #e74c3c;
-            border-radius: 50%;
-            box-shadow: 0 0 4px rgba(231, 76, 60, 0.6);
-        }
-
-        /* 保存地图按钮 */
-        #save-map-btn {
-            position: absolute;
-            top: 30px;
-            left: 30px;
-            z-index: 25;
-            padding: 8px 15px;
-            background: #27ae60;
-            border: none;
-            border-radius: 5px;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            display: none;
-            font-size: 13px;
-        }
-        #save-map-btn:hover {
-            background: #2ecc71;
         }
 
         /* DM Toast 通知 */
@@ -1020,25 +869,8 @@
         <div class="name" id="dm-name">等待中...</div>
     </div>
 
-    <div id="section-map" class="dm-only">
-        <div class="section-title">地图上传及保存</div>
-        <!-- 隐藏的文件选择器，由空槽位触发 -->
-        <input type="file" id="file-input" accept="image/*" style="display: none;">
-        <div id="map-slots">
-            <!-- 动态渲染：已保存地图 + 1个空槽位 -->
-        </div>
-    </div>
-
-    <div id="section-player-maps" class="player-only" style="display: none;">
-        <div class="section-title">地图列表</div>
-        <div id="player-map-slots">
-            <!-- 动态渲染：玩家地图缩略图列表 -->
-        </div>
-    </div>
-
-    <!-- 新世界地图（Phase 2，本地放置，Phase 3 接服务端） -->
     <div id="section-world-map" class="dm-only">
-        <div class="section-title">网格世界（新）</div>
+        <div class="section-title">地图</div>
         <input type="file" id="world-file-input" accept="image/*" style="display: none;">
         <button id="add-world-map-btn" class="action-btn" onclick="onAddWorldMapClick()">＋ 添加地图</button>
     </div>
@@ -1048,11 +880,9 @@
         <!-- 颜色选择（始终显示，圆形按钮） -->
         <div class="draw-color-selector">
             <div class="draw-color selected" style="background:#ff0000;" onclick="setDrawColor('#ff0000', this)" title="红色"></div>
-            <div class="draw-color" style="background:#ffffff; border: 1px solid #bdc3c7;" onclick="setDrawColor('#ffffff', this)" title="白色"></div>            
             <div class="draw-color" style="background:#1a1a1a;" onclick="setDrawColor('#1a1a1a', this)" title="黑色"></div>
-            <div class="draw-color" style="background:#0000ff;" onclick="setDrawColor('#0000ff', this)" title="蓝色"></div>
-            <div class="draw-color" style="background:#00ff00;" onclick="setDrawColor('#00ff00', this)" title="绿色"></div>
-            <div class="draw-color" style="background:#f1f101;" onclick="setDrawColor('#f1f101', this)" title="黄色"></div>
+            <div class="draw-color" style="background:#ffffff; border: 1px solid #bdc3c7;" onclick="setDrawColor('#ffffff', this)" title="白色"></div>
+            <input type="color" id="draw-custom-color-input" class="draw-color-custom" value="#ff0000" title="自定义颜色">
         </div>
         <!-- 工具按钮 -->
         <div class="tool-group">
@@ -1150,11 +980,6 @@
     </div>
 
     <div id="viewport">
-    <div id="top-controls">缩放: <input type="range" id="zoom-slider" min="0.1" max="3" step="0.1" value="1"></div>
-    <button id="save-map-btn" class="dm-only" onclick="handleManualSave()">💾 保存地图</button>
-    <button id="lock-btn" class="dm-only" onclick="toggleLock()">🔓 锁定地图</button>
-    <button id="world-toggle-btn" onclick="toggleWorldView()">🌍 新世界视图</button>
-    <div id="map-frame"><div id="map-container"><img id="map-img" src="" style="display: none;"><canvas id="drawing-canvas"></canvas></div></div>
     <div id="world-container"><div id="konva-stage"></div><div id="placed-map-overlays"></div><div id="world-history-btns" class="dm-only"><button onclick="emitWorldUndo()" title="撤销 (Ctrl+Z)">↩ 撤销</button><button onclick="emitWorldRedo()" title="重做 (Ctrl+Shift+Z)">↪ 重做</button></div></div>
 </div>
 
@@ -1278,8 +1103,6 @@
 <script>
     // --- 用户信息 ---
     const userData = JSON.parse(sessionStorage.getItem('userData') || '{}');
-    const savedGameState = JSON.parse(sessionStorage.getItem('gameState') || '{}');
-    const savedDmName = sessionStorage.getItem('dmName') || '';
 
     if (!userData.name) {
         window.location.href = '/';
@@ -1297,22 +1120,10 @@
     // socket.emit('join', { name: userName, role: userRole, password: isDM ? '12138' : '' });
 
     // --- DOM 元素 ---
-    const mapImg = document.getElementById('map-img');
-    const mapContainer = document.getElementById('map-container');
-    const mapFrame = document.getElementById('map-frame');
-    const canvas = document.getElementById('drawing-canvas');
-    const ctx = canvas.getContext('2d');
-    const zoomSlider = document.getElementById('zoom-slider');
-    const fileInput = document.getElementById('file-input');
-    const lockBtn = document.getElementById('lock-btn');
     const chatMessages = document.getElementById('chat-messages');
 
-    let scale = 1, originX = 0, originY = 0;
-    let isDraggingMap = false, isLocked = false, startX, startY;
-    let currentTool = 'move', isPainting = false, penColor = '#ff0000';
-    let lastDrawPoint = null; // 记录上一个绘图点
-    let rectStartPoint = null; // 矩形绘制起始点
-    let rectCanvasState = null; // 矩形绘制前的画布状态（用于预览）
+    let currentTool = 'move';
+    let penColor = '#ff0000';
 
     // --- Tab 切换 ---
     const notesTextarea = document.getElementById('notes-textarea');
@@ -1497,62 +1308,24 @@
         });
     }
 
-    // --- 初始化 ---
-    function init() {
-        // 设置 DM 名称
-        if (savedDmName) {
-            document.getElementById('dm-name').textContent = savedDmName;
-        }
-
-        // 应用权限
-        applyPermissions();
-
-        // 如果是玩家，显示颜色选择弹窗
-        if (!isDM) {
-            document.getElementById('color-modal').style.display = 'flex';
-        }
-
-        // 恢复游戏状态
-        if (savedGameState.mapData) {
-            loadMapFromData(savedGameState.mapData, () => {
-                // 地图加载完成后恢复绘图
-                if (savedGameState.drawings && savedGameState.drawings.length > 0) {
-                    restoreDrawings(savedGameState.drawings);
-                }
-            });
-        }
-        if (savedGameState.mapTransform) {
-            scale = savedGameState.mapTransform.scale;
-            originX = savedGameState.mapTransform.originX;
-            originY = savedGameState.mapTransform.originY;
-            updateTransform();
-        }
-        if (savedGameState.isLocked) {
-            isLocked = savedGameState.isLocked;
-            updateLockButton();
-        }
-        // 恢复笔记
-        if (savedGameState.notes) {
-            notesTextarea.value = savedGameState.notes;
-        }
-    }
-
-    // 清理旧的 init 逻辑，只保留权限和 UI 初始化
     function startApp() {
         applyPermissions();
-        
+
         // 如果是玩家且还没选颜色，显示弹窗
         if (!isDM && !userColor) {
             document.getElementById('color-modal').style.display = 'flex';
         }
 
-        // 【最后一步】：所有监听器注册完毕后，再发送加入请求
+        // 所有监听器注册完毕后发送加入请求
         console.log('正在发送加入请求...');
-        socket.emit('join', { 
-            name: userName, 
-            role: userRole, 
-            password: isDM ? '12138' : '' 
+        socket.emit('join', {
+            name: userName,
+            role: userRole,
+            password: isDM ? '12138' : ''
         });
+
+        // 初始化 Konva 世界（容器已默认可见）
+        initKonvaWorld();
     }
 
     // --- 颜色选择 ---
@@ -1570,107 +1343,12 @@
         addSystemMessage(`你选择了 ${color} 颜色`);
     }
 
-    // --- 地图加载 ---
-    function loadMapFromData(data, callback) {
-        mapImg.src = data;
-        mapImg.onload = () => {
-            mapImg.style.display = 'block';
-            canvas.width = mapImg.naturalWidth;
-            canvas.height = mapImg.naturalHeight;
-            if (callback) callback();
-        };
-    }
-
-    // --- 绘图恢复 ---
-    function restoreDrawings(drawings) {
-        drawings.forEach(data => {
-            if (data.type === 'rect') {
-                // 绘制矩形
-                ctx.strokeStyle = data.color;
-                ctx.lineWidth = data.lineWidth;
-                ctx.strokeRect(data.x, data.y, data.width, data.height);
-            } else {
-                // 绘制线段（兼容旧数据，没有 type 字段的默认为 path）
-                ctx.beginPath();
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.moveTo(data.fromX, data.fromY);
-                if (data.tool === 'draw') {
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.strokeStyle = data.color;
-                } else {
-                    ctx.globalCompositeOperation = 'destination-out';
-                }
-                ctx.lineWidth = data.lineWidth;
-                ctx.lineTo(data.toX, data.toY);
-                ctx.stroke();
-            }
-        });
-        // 重置合成模式
-        ctx.globalCompositeOperation = 'source-over';
-    }
-
-    fileInput.onchange = (e) => {
-        if (!isDM) return;
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const data = event.target.result;
-
-            // 清空旧地图系统的笔迹（世界 tokens/NPCs 独立于地图，不清除）
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            localDrawings = [];
-
-            // 加载地图到视图
-            loadMapFromData(data, () => {
-                updateSaveButtonVisibility();
-                // 地图加载完成后自动保存
-                saveCurrentMap();
-            });
-
-            resetMap();
-
-            socket.emit('map:load', data);
-            socket.emit('draw:clear');
-        };
-        reader.readAsDataURL(file);
-
-        // 重置 input 以便重复选择同一文件
-        fileInput.value = '';
-    };
-
-    function resetMap() {
-        scale = 1; originX = 0; originY = 0;
-        updateTransform();
-        if (isDM) socket.emit('map:transform', { scale, originX, originY });
-    }
-
-    function updateTransform() {
-        mapContainer.style.transform = `translate(${originX}px, ${originY}px) scale(${scale})`;
-        zoomSlider.value = scale;
-    }
-
-    function updateLockButton() {
-        lockBtn.innerText = isLocked ? "🔒 已锁定" : "🔓 锁定地图";
-        lockBtn.classList.toggle('locked', isLocked);
-    }
-
     // --- 工具切换 ---
     function setTool(tool) {
         if (!isDM && (tool === 'draw' || tool === 'erase' || tool === 'rect')) return;
         currentTool = tool;
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('btn-' + tool).classList.add('active');
-        if (tool === 'move') {
-            mapFrame.style.cursor = (isDM && isLocked) ? 'default' : 'grab';
-        } else {
-            mapFrame.style.cursor = 'crosshair';
-        }
-        // 重置矩形起始点
-        rectStartPoint = null;
-        // 同步 Konva stage
         if (konvaStage) {
             konvaStage.draggable(tool === 'move');
             const konvaCursor = tool === 'move' ? 'grab' : (tool === 'erase' ? 'default' : 'crosshair');
@@ -1713,12 +1391,9 @@
     function setDrawColor(c, el) {
         penColor = c;
         document.querySelectorAll('.draw-color').forEach(b => b.classList.remove('selected'));
+        document.getElementById('draw-custom-color-input')?.classList.remove('selected');
         el.classList.add('selected');
-
-        // 如果当前工具是"移动"或"橡皮"，自动切换到"画笔"
-        if (currentTool === 'move' || currentTool === 'erase') {
-            setTool('draw');
-        }
+        if (currentTool === 'move' || currentTool === 'erase') setTool('draw');
     }
 
     // 兼容旧函数名
@@ -1728,191 +1403,7 @@
 
     function clearCanvas() {
         if (!isDM) return;
-        if (isWorldViewActive) {
-            clearWorldDrawings();
-            return;
-        }
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        localDrawings = [];
-        socket.emit('draw:clear');
-        markDirty();
-    }
-
-    // --- 地图拖动与绘图 ---
-    mapFrame.onmousedown = (e) => {
-        if (e.target.classList.contains('token')) return;
-        if (currentTool === 'move') {
-            if (isDM && isLocked) return;
-            if (!isDM && !playerViewingMapId) return; // 玩家未选择地图时不允许
-            isDraggingMap = true;
-            startX = e.clientX - originX;
-            startY = e.clientY - originY;
-            mapFrame.style.cursor = 'grabbing';
-        } else if (isDM) {
-            const rect = mapFrame.getBoundingClientRect();
-            const x = (e.clientX - rect.left - originX) / scale;
-            const y = (e.clientY - rect.top - originY) / scale;
-
-            if (currentTool === 'rect') {
-                // 矩形工具：记录起始点，并保存当前画布状态用于预览
-                rectStartPoint = { x, y };
-                rectCanvasState = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            } else {
-                // 画笔/橡皮：开始绘制
-                isPainting = true;
-                lastDrawPoint = { x, y };
-            }
-        }
-        e.preventDefault();
-    };
-
-    window.onmousemove = (e) => {
-        if (isDraggingMap) {
-            originX = e.clientX - startX;
-            originY = e.clientY - startY;
-            updateTransform();
-        } else if (isPainting && isDM && lastDrawPoint && (currentTool === 'draw' || currentTool === 'erase')) {
-            const rect = mapFrame.getBoundingClientRect();
-            const x = (e.clientX - rect.left - originX) / scale;
-            const y = (e.clientY - rect.top - originY) / scale;
-            const lineWidth = currentTool === 'draw' ? 5 / scale : 25 / scale;
-
-            // 绘制线段
-            ctx.beginPath();
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            ctx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
-            if (currentTool === 'draw') {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = penColor;
-            } else {
-                ctx.globalCompositeOperation = 'destination-out';
-            }
-            ctx.lineWidth = lineWidth;
-            ctx.lineTo(x, y);
-            ctx.stroke();
-
-            // 发送完整线段数据（包含起点和终点）
-            const drawData = {
-                type: 'path',
-                fromX: lastDrawPoint.x,
-                fromY: lastDrawPoint.y,
-                toX: x,
-                toY: y,
-                color: penColor,
-                tool: currentTool,
-                lineWidth: lineWidth
-            };
-            localDrawings.push(drawData);
-            socket.emit('draw:path', drawData);
-            markDirty();
-
-            lastDrawPoint = { x, y };
-
-            // 重置合成模式，防止影响其他渲染
-            ctx.globalCompositeOperation = 'source-over';
-        } else if (currentTool === 'rect' && rectStartPoint && rectCanvasState && isDM) {
-            // 矩形工具：绘制预览
-            const rect = mapFrame.getBoundingClientRect();
-            const x = (e.clientX - rect.left - originX) / scale;
-            const y = (e.clientY - rect.top - originY) / scale;
-            const lineWidth = 5 / scale;
-
-            // 恢复画布到拖动开始时的状态
-            ctx.putImageData(rectCanvasState, 0, 0);
-
-            // 绘制预览矩形
-            ctx.strokeStyle = penColor;
-            ctx.lineWidth = lineWidth;
-            ctx.strokeRect(
-                Math.min(rectStartPoint.x, x),
-                Math.min(rectStartPoint.y, y),
-                Math.abs(x - rectStartPoint.x),
-                Math.abs(y - rectStartPoint.y)
-            );
-        }
-    };
-
-    window.onmouseup = (e) => {
-        if (isDraggingMap) {
-            if (isDM) {
-                socket.emit('map:transform', { scale, originX, originY });
-                markDirty();
-            }
-        }
-
-        // 矩形工具：绘制矩形
-        if (currentTool === 'rect' && rectStartPoint && isDM) {
-            const rect = mapFrame.getBoundingClientRect();
-            const x = (e.clientX - rect.left - originX) / scale;
-            const y = (e.clientY - rect.top - originY) / scale;
-            const lineWidth = 5 / scale;
-
-            // 计算矩形参数（支持任意方向拖动）
-            const rectData = {
-                type: 'rect',
-                x: Math.min(rectStartPoint.x, x),
-                y: Math.min(rectStartPoint.y, y),
-                width: Math.abs(x - rectStartPoint.x),
-                height: Math.abs(y - rectStartPoint.y),
-                color: penColor,
-                lineWidth: lineWidth
-            };
-
-            // 绘制矩形
-            ctx.strokeStyle = penColor;
-            ctx.lineWidth = lineWidth;
-            ctx.strokeRect(rectData.x, rectData.y, rectData.width, rectData.height);
-
-            // 保存并同步
-            localDrawings.push(rectData);
-            socket.emit('draw:path', rectData);
-            markDirty();
-
-            rectStartPoint = null;
-            rectCanvasState = null;
-        }
-
-        isDraggingMap = false;
-        isPainting = false;
-        lastDrawPoint = null;
-        if (currentTool === 'move') {
-            if (isDM && !isLocked) mapFrame.style.cursor = 'grab';
-            else if (!isDM && playerViewingMapId) mapFrame.style.cursor = 'grab';
-        }
-    };
-
-    mapFrame.onwheel = (e) => {
-        if (isDM && isLocked) return;
-        if (!isDM && !playerViewingMapId) return;
-        e.preventDefault();
-        scale *= (e.deltaY > 0 ? 0.9 : 1.1);
-        scale = Math.min(Math.max(0.1, scale), 5);
-        updateTransform();
-        if (isDM) {
-            socket.emit('map:transform', { scale, originX, originY });
-            markDirty();
-        }
-    };
-
-    zoomSlider.oninput = (e) => {
-        if (isDM && isLocked) {
-            zoomSlider.value = scale;
-            return;
-        }
-        if (!isDM && !playerViewingMapId) return;
-        scale = parseFloat(e.target.value);
-        updateTransform();
-        if (isDM) {
-            socket.emit('map:transform', { scale, originX, originY });
-            markDirty();
-        }
-    };
-
-    function toggleLock() {
-        if (!isDM) return;
-        isLocked = !isLocked;
-        updateLockButton();
-        socket.emit('map:lock', isLocked);
+        clearWorldDrawings();
     }
 
     // --- 棋子系统（Phase 4：Konva.Circle，旧 DOM token 已移除） ---
@@ -1929,8 +1420,7 @@
     // 点击侧边栏玩家按钮 → 在世界视图中央生成棋子
     function spawnToken(color) {
         if (!isDM && userColor !== color) return;
-        // toggleWorldView 负责初始化 stage（container 可见后才能拿到正确尺寸）
-        if (!isWorldViewActive) toggleWorldView();
+        if (!konvaStage) initKonvaWorld();
         if (!konvaStage) return;
         const s = konvaStage.scaleX();
         const gx = Math.round((konvaStage.width() / 2 - konvaStage.x()) / s / GRID_SIZE);
@@ -1949,7 +1439,7 @@
     // 点击色块 → 在世界视图中央生成对应颜色的 NPC
     function spawnNPCWithColor(color) {
         if (!isDM) return;
-        if (!isWorldViewActive) toggleWorldView();
+        if (!konvaStage) initKonvaWorld();
         if (!konvaStage) return;
         const id = 'npc_' + Date.now() + '_' + (npcCounter++);
         const s = konvaStage.scaleX();
@@ -1962,10 +1452,6 @@
         if (!isDM) return;
         socket.emit('npc:clearAll');
     }
-
-    // 供 map:updateState 等旧地图系统读取（旧系统保留至 Phase 7）
-    function getCurrentTokens() { return {}; }
-    function getCurrentNPCs() { return []; }
 
     // --- DM Toast 通知系统 ---
     let toastTimeout = null;
@@ -1987,214 +1473,6 @@
         }, 2000);
     }
 
-    // --- 地图存档系统 ---
-    let localSavedMaps = []; // 本地存储的地图存档信息（仅 id 和 thumbnail）
-    let localDrawings = [];  // 本地维护的笔迹数据副本
-    let currentMapId = null; // 当前加载的地图 ID
-    let isDirty = false;     // 是否有未保存的变更
-    let autoSaveInterval = null; // 自动保存定时器
-
-    // --- 玩家独立地图浏览 ---
-    let playerViewingMapId = null;  // 玩家当前查看的地图 ID
-    let dmActiveMapId = null;       // DM 当前编辑的地图 ID
-    const mapDataCache = {};        // { mapId: base64 } 缓存已加载的地图图片
-    const playerTransforms = {};    // { mapId: { scale, originX, originY } }
-
-    // 标记为脏（有未保存的变更）
-    function markDirty() {
-        if (isDM && currentMapId) {
-            isDirty = true;
-        }
-    }
-
-    // 保存地图状态（轻量级，不含 mapData）
-    function saveMapState(silent = false) {
-        if (!isDM || !currentMapId) return;
-
-        socket.emit('map:updateState', {
-            mapId: currentMapId,
-            mapTransform: { scale, originX, originY },
-            tokens: getCurrentTokens(),
-            npcs: getCurrentNPCs(),
-            drawings: [...localDrawings],
-            silent: silent
-        });
-
-        if (!silent) {
-            showDmToast('✓ 地图更新成功');
-        }
-    }
-
-    // 启动自动保存（每秒检查）
-    function startAutoSave() {
-        if (autoSaveInterval) return;
-        autoSaveInterval = setInterval(() => {
-            if (isDirty && currentMapId) {
-                saveMapState(true);  // silent = true
-                isDirty = false;
-            }
-        }, 1000);
-    }
-
-    // 手动保存按钮处理
-    function handleManualSave() {
-        if (!isDM || !mapImg.src || mapImg.style.display === 'none') {
-            showDmToast('✗ 请先上传地图', true);
-            return;
-        }
-
-        if (currentMapId) {
-            // 已有地图 ID，使用轻量级状态更新
-            saveMapState(false);  // silent = false，显示 toast
-        } else {
-            // 没有地图 ID，使用完整保存（会创建新存档）
-            saveCurrentMap();
-        }
-    }
-
-    function generateThumbnail(mapData, callback) {
-        const img = new Image();
-        img.onload = () => {
-            const thumbCanvas = document.createElement('canvas');
-            const maxSize = 150;
-            const ratio = Math.min(maxSize / img.width, maxSize / img.height);
-            thumbCanvas.width = img.width * ratio;
-            thumbCanvas.height = img.height * ratio;
-            const thumbCtx = thumbCanvas.getContext('2d');
-            thumbCtx.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
-            callback(thumbCanvas.toDataURL('image/jpeg', 0.6));
-        };
-        img.src = mapData;
-    }
-
-    function saveCurrentMap() {
-        if (!isDM || !mapImg.src || mapImg.style.display === 'none') {
-            showDmToast('✗ 请先上传地图', true);
-            return;
-        }
-
-        // 不再在客户端检查存档数量，因为 save-or-update 逻辑允许更新已有地图
-        // 服务端会判断是新增还是更新，并在真正满的时候返回错误
-
-        generateThumbnail(mapImg.src, (thumbnail) => {
-            const data = {
-                thumbnail,
-                mapData: mapImg.src,
-                mapTransform: { scale, originX, originY },
-                tokens: getCurrentTokens(),
-                npcs: getCurrentNPCs(),
-                drawings: [...localDrawings]
-            };
-            socket.emit('map:save', data);
-        });
-    }
-
-    function loadSavedMap(mapId) {
-        if (!isDM) return;
-        switchTab('map');
-        socket.emit('map:loadSaved', mapId);
-    }
-
-    function deleteSavedMap(mapId, event) {
-        event.stopPropagation();
-        if (!isDM) return;
-        socket.emit('map:deleteSaved', mapId);
-    }
-
-    function renderMapSlots() {
-        const container = document.getElementById('map-slots');
-        container.innerHTML = '';
-
-        // 渲染已保存的地图
-        localSavedMaps.forEach((map, i) => {
-            const slot = document.createElement('div');
-            slot.className = 'map-slot';
-
-            const img = document.createElement('img');
-            img.src = map.thumbnail;
-            slot.appendChild(img);
-
-            const deleteBtn = document.createElement('div');
-            deleteBtn.className = 'delete-btn';
-            deleteBtn.innerHTML = '×';
-            deleteBtn.onclick = (e) => {
-                e.stopPropagation();
-                socket.emit('map:deleteSaved', map.id);
-            };
-            slot.appendChild(deleteBtn);
-
-            slot.onclick = () => loadSavedMap(map.id);
-            container.appendChild(slot);
-        });
-
-        // 始终添加一个空槽位
-        const emptySlot = document.createElement('div');
-        emptySlot.className = 'map-slot empty';
-        emptySlot.onclick = () => fileInput.click();  // 点击触发文件选择
-        container.appendChild(emptySlot);
-    }
-
-    // --- 玩家地图列表渲染 ---
-    function renderPlayerMapSlots() {
-        const container = document.getElementById('player-map-slots');
-        if (!container) return;
-        container.innerHTML = '';
-
-        localSavedMaps.forEach((map) => {
-            const slot = document.createElement('div');
-            slot.className = 'player-map-slot';
-            if (map.id === playerViewingMapId) {
-                slot.classList.add('active');
-            }
-
-            const img = document.createElement('img');
-            img.src = map.thumbnail;
-            slot.appendChild(img);
-
-            // DM 活跃地图标识（红点）
-            if (map.id === dmActiveMapId) {
-                const badge = document.createElement('div');
-                badge.className = 'dm-active-badge';
-                badge.title = 'DM 当前地图';
-                slot.appendChild(badge);
-            }
-
-            slot.onclick = () => playerLoadMap(map.id);
-            container.appendChild(slot);
-        });
-    }
-
-    // 玩家点击地图缩略图加载地图
-    function playerLoadMap(mapId) {
-        if (isDM) return;
-        switchTab('map');
-
-        // 保存当前地图的 transform
-        if (playerViewingMapId) {
-            playerTransforms[playerViewingMapId] = { scale, originX, originY };
-        }
-
-        playerViewingMapId = mapId;
-        socket.emit('player:viewMap', mapId);
-        socket.emit('player:loadMap', mapId);
-
-        // 更新侧边栏高亮
-        renderPlayerMapSlots();
-    }
-
-    function updateSaveButtonVisibility() {
-        const saveBtn = document.getElementById('save-map-btn');
-        const lockButton = document.getElementById('lock-btn');
-        if (isDM && mapImg.src && mapImg.style.display !== 'none') {
-            saveBtn.style.display = 'block';
-            lockButton.style.display = 'block';
-        } else {
-            saveBtn.style.display = 'none';
-            lockButton.style.display = 'none';
-        }
-    }
-
-    
     // --- 骰子系统 ---
     function rollDice(sides, element) {
         const valEl = element.querySelector('.dice-val');
@@ -2249,7 +1527,7 @@
         if (data.dmName) {
             document.getElementById('dm-name').textContent = data.dmName;
         }
-        
+
         // 更新颜色选择弹窗
         if (data.takenColors) {
             updateColorOptions(data.takenColors);
@@ -2258,35 +1536,12 @@
         const gs = data.gameState;
         if (!gs) return;
 
-        if (isDM) {
-            // DM: 恢复地图、缩放、笔迹（旧地图系统）
-            if (gs.mapData) {
-                loadMapFromData(gs.mapData, () => {
-                    if (gs.drawings) {
-                        restoreDrawings(gs.drawings);
-                        localDrawings = [...gs.drawings];
-                    }
-                });
-            }
-            if (gs.mapTransform) {
-                scale = gs.mapTransform.scale;
-                originX = gs.mapTransform.originX;
-                originY = gs.mapTransform.originY;
-                updateTransform();
-            }
-            if (gs.isLocked !== undefined) {
-                isLocked = gs.isLocked;
-                updateLockButton();
-            }
-        }
-        // 玩家不自动加载地图，通过侧边栏缩略图手动选择
-
         // 恢复笔记
         if (gs.notes) {
             notesTextarea.value = gs.notes;
         }
 
-        // 回放聊天历史（玩家聊天 + 骰子结果，服务端限制最多 100 条）
+        // 回放聊天历史
         if (Array.isArray(gs.chatHistory) && gs.chatHistory.length > 0) {
             chatMessages.innerHTML = '';
             gs.chatHistory.forEach(entry => {
@@ -2303,33 +1558,18 @@
         localCharacterNotes = gs.characterNotes || [];
         renderCharacterNotes();
 
-        // 【核心修复】：恢复所有已加入玩家的侧边栏卡片
+        // 恢复所有已加入玩家的侧边栏卡片
         if (gs.players) {
             gs.players.forEach(p => {
                 if (p.color) {
-                    // 识别是否是自己：通过名称和角色匹配
                     const isMe = (p.name === userName && p.role === userRole);
-                    if (isMe) userColor = p.color; // 找回颜色状态
+                    if (isMe) userColor = p.color;
                     showPlayerCard(p.color, p.name, isMe, p.characterHP);
                 }
             });
         }
 
-        // 恢复地图存档槽
-        localSavedMaps = gs.savedMaps || [];
-        dmActiveMapId = gs.activeMapId || null;
-
-        if (isDM) {
-            renderMapSlots();
-        } else {
-            // 玩家渲染地图缩略图列表
-            renderPlayerMapSlots();
-        }
-
-        // 更新保存按钮可见性
-        updateSaveButtonVisibility();
-
-        // 恢复 Konva 世界状态：拉取地图资产 + 初始化 tokens/npcs（渲染在开启世界视图时触发）
+        // 恢复 Konva 世界状态
         if (gs.world) {
             if (Array.isArray(gs.world.placedMaps) && gs.world.placedMaps.length > 0) {
                 gs.world.placedMaps.forEach(pm => placedMapsData.push(pm));
@@ -2349,6 +1589,9 @@
                 gs.world.rects.forEach(r => worldRectsData.push(r));
             }
         }
+
+        // stage 已初始化（startApp 中调用），此处直接渲染待渲染对象
+        if (konvaStage) renderPendingWorldObjects();
     });
 
     socket.on('playerJoined', (data) => {
@@ -2383,71 +1626,6 @@
 
     socket.on('colorError', (message) => {
         alert(message);
-    });
-
-    // DM 仍接收自己的 map:load 回显（如有需要），玩家不再接收
-    socket.on('map:load', (data) => {
-        if (isDM) loadMapFromData(data);
-    });
-
-    // 玩家不再接收 DM 的 transform（各自独立控制）
-    socket.on('map:transform', (data) => {
-        if (isDM) {
-            scale = data.scale;
-            originX = data.originX;
-            originY = data.originY;
-            updateTransform();
-        }
-    });
-
-    // 锁定现在是 DM 本地功能
-    socket.on('map:lock', (locked) => {
-        if (isDM) {
-            isLocked = locked;
-            updateLockButton();
-        }
-    });
-
-    // --- 玩家地图数据接收 ---
-    socket.on('player:mapData', (data) => {
-        if (isDM) return;
-
-        // 缓存地图图片
-        mapDataCache[data.mapId] = data.mapData;
-
-        // 清空画布（旧地图系统，tokens/NPCs 在世界视图中独立存在）
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 加载地图
-        loadMapFromData(data.mapData, () => {
-            if (data.drawings) {
-                restoreDrawings(data.drawings);
-                localDrawings = [...data.drawings];
-            }
-        });
-
-        // 恢复该地图的 transform（客户端本地存储）
-        const savedTransform = playerTransforms[data.mapId];
-        if (savedTransform) {
-            scale = savedTransform.scale;
-            originX = savedTransform.originX;
-            originY = savedTransform.originY;
-        } else {
-            scale = 1; originX = 0; originY = 0;
-        }
-        updateTransform();
-
-        // 设置 grab 光标
-        if (currentTool === 'move') mapFrame.style.cursor = 'grab';
-    });
-
-    // --- DM 切换地图通知 ---
-    socket.on('dm:mapSwitched', (data) => {
-        dmActiveMapId = data.activeMapId;
-        if (!isDM) {
-            renderPlayerMapSlots();
-            addSystemMessage('DM 切换了地图');
-        }
     });
 
     // --- Phase 4 Socket 事件：世界 token/NPC 同步（Konva.Circle） ---
@@ -2519,36 +1697,6 @@
         if (dynamicLayer) dynamicLayer.batchDraw();
     });
 
-    socket.on('draw:path', (data) => {
-        if (data.type === 'rect') {
-            // 绘制矩形
-            ctx.strokeStyle = data.color;
-            ctx.lineWidth = data.lineWidth;
-            ctx.strokeRect(data.x, data.y, data.width, data.height);
-        } else {
-            // 绘制线段
-            ctx.beginPath();
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.moveTo(data.fromX, data.fromY);
-            if (data.tool === 'draw') {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = data.color;
-            } else {
-                ctx.globalCompositeOperation = 'destination-out';
-            }
-            ctx.lineWidth = data.lineWidth;
-            ctx.lineTo(data.toX, data.toY);
-            ctx.stroke();
-            // 重置合成模式
-            ctx.globalCompositeOperation = 'source-over';
-        }
-    });
-
-    socket.on('draw:clear', () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    });
-
     // Konva 世界笔画/矩形事件（Phase 5）
     socket.on('draw:liveStroke', ({ id, points, color, strokeWidth }) => {
         if (!drawingLayer) return;
@@ -2610,110 +1758,6 @@
 
     socket.on('chat:message', (data) => {
         addChatMessage(data.name, data.role, data.message);
-    });
-
-    // --- 地图存档 Socket 事件 ---
-    socket.on('map:saved', (data) => {
-        if (isDM) {
-            // DM: 记录当前地图 ID，用于自动保存
-            currentMapId = data.id;
-            isDirty = false;
-        }
-
-        dmActiveMapId = data.id;
-
-        if (data.isUpdate) {
-            // 更新现有槽位的缩略图
-            if (localSavedMaps[data.slotIndex]) {
-                localSavedMaps[data.slotIndex].thumbnail = data.thumbnail;
-            }
-            if (isDM) {
-                showDmToast('✓ 地图更新成功');
-            }
-            addSystemMessage('DM 更新了地图存档');
-        } else {
-            // 添加新槽位
-            localSavedMaps.push({ id: data.id, thumbnail: data.thumbnail });
-            if (isDM) {
-                showDmToast('✓ 地图保存成功');
-            }
-            addSystemMessage('DM 保存了一张新地图');
-        }
-
-        // 更新对应角色的地图槽位 UI
-        if (isDM) {
-            renderMapSlots();
-            startAutoSave();
-        } else {
-            renderPlayerMapSlots();
-        }
-    });
-
-    socket.on('map:saveError', (message) => {
-        showDmToast('✗ ' + message, true);
-    });
-
-    socket.on('map:loadedSaved', (archive) => {
-        if (!isDM) return; // 现在仅 DM 接收此事件
-
-        // 记录当前地图 ID，用于自动保存
-        currentMapId = archive.id;
-        isDirty = false;
-
-        // 清空旧地图系统画布（tokens/NPCs 在世界视图中，不受影响）
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 加载地图
-        loadMapFromData(archive.mapData, () => {
-            if (archive.drawings) {
-                restoreDrawings(archive.drawings);
-                localDrawings = [...archive.drawings];
-            }
-            updateSaveButtonVisibility();
-        });
-
-        // 恢复变换
-        scale = archive.mapTransform.scale;
-        originX = archive.mapTransform.originX;
-        originY = archive.mapTransform.originY;
-        updateTransform();
-
-        showDmToast('✓ 地图读取成功');
-        startAutoSave();
-    });
-
-    socket.on('map:deletedSaved', (mapId) => {
-        if (isDM) {
-            if (currentMapId === mapId) {
-                currentMapId = null;
-                isDirty = false;
-            }
-            showDmToast('✓ 地图删除成功');
-        } else {
-            // 玩家：如果正在查看被删除的地图，重置旧地图视图
-            if (playerViewingMapId === mapId) {
-                playerViewingMapId = null;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                mapImg.style.display = 'none';
-            }
-            // 清理缓存
-            delete mapDataCache[mapId];
-            delete playerTransforms[mapId];
-        }
-
-        localSavedMaps = localSavedMaps.filter(m => m.id !== mapId);
-
-        if (isDM) {
-            renderMapSlots();
-        } else {
-            renderPlayerMapSlots();
-        }
-        addSystemMessage('DM 删除了一张地图');
-    });
-
-    // 地图状态更新（非静默模式时触发）
-    socket.on('map:stateUpdated', (data) => {
-        addSystemMessage('DM 更新了地图存档');
     });
 
     // ========== 角色卡系统 ==========
@@ -3223,9 +2267,6 @@
     // 初始化角色卡 UI
     initCharacterUI();
 
-    // 初始化应用
-    startApp();
-
     // ===== Konva 网格世界（Phase 1 引入，并行旧地图视图） =====
     const GRID_SIZE = 50;
     const MIN_ZOOM = 0.2;
@@ -3233,7 +2274,6 @@
     const ZOOM_STEP = 1.05;
 
     const worldContainer = document.getElementById('world-container');
-    const worldToggleBtn = document.getElementById('world-toggle-btn');
     const placedMapOverlaysEl = document.getElementById('placed-map-overlays');
 
     let konvaStage = null;
@@ -3241,7 +2281,6 @@
     let staticLayer = null;   // 放置地图（最底层）
     let dynamicLayer = null;  // 棋子 + NPC（中间层）
     let drawingLayer = null;  // 笔画/矩形 + 实时预览 + HP tooltip（顶层）
-    let isWorldViewActive = false;
 
     // ===== Phase 3 服务端同步状态 =====
     const mapAssetCache = {};       // assetId -> { base64, originalWidth, originalHeight }（本地缓存）
@@ -3260,6 +2299,7 @@
     const worldNpcNodes = new Map();     // id -> Konva.Circle
     const TOKEN_RADIUS = GRID_SIZE * 0.4;
     let hpTooltip = null;                // 共享 HP tooltip 节点
+    let nameTooltip = null;              // 共享玩家名称 tooltip 节点（显示在棋子上方）
 
     // ===== Phase 5 世界笔画/矩形状态 =====
     const worldDrawingsData = [];        // [{ id, points, color, strokeWidth }]（镜像 world.freeDrawings）
@@ -3316,7 +2356,6 @@
 
         // 容器尺寸变化时同步 stage 与网格
         new ResizeObserver(() => {
-            if (!isWorldViewActive) return;
             const r = worldContainer.getBoundingClientRect();
             konvaStage.size({ width: r.width, height: r.height });
             onStageTransformChanged();
@@ -3324,6 +2363,7 @@
 
         onStageTransformChanged();
         initHpTooltip();
+        initNameTooltip();
     }
 
     function onStageWheel(e) {
@@ -3454,6 +2494,47 @@
         drawingLayer.batchDraw();
     }
 
+    function initNameTooltip() {
+        if (nameTooltip) return;
+        const tag = new Konva.Tag({ fill: 'rgba(0,0,0,0.78)', cornerRadius: 4, pointerEnabled: false });
+        const text = new Konva.Text({
+            text: '', fill: 'white', fontSize: 12, padding: 5,
+            fontFamily: 'Segoe UI, sans-serif',
+        });
+        nameTooltip = new Konva.Label({ x: 0, y: 0, visible: false, listening: false });
+        nameTooltip.add(tag);
+        nameTooltip.add(text);
+        drawingLayer.add(nameTooltip);
+    }
+
+    function getTokenPlayerName(color) {
+        const el = document.getElementById(`name-${color}`);
+        if (!el) return null;
+        return el.textContent.replace('（这是我）', '').trim() || null;
+    }
+
+    function showNameTooltip(color, circle) {
+        const name = getTokenPlayerName(color);
+        if (!name || !nameTooltip) return;
+        const textNode = nameTooltip.getText();
+        textNode.text(name);
+        const tw = textNode.width();
+        const lh = nameTooltip.height();
+        nameTooltip.position({
+            x: circle.x() - tw / 2,
+            y: circle.y() - TOKEN_RADIUS - lh - 6,
+        });
+        nameTooltip.visible(true);
+        nameTooltip.moveToTop();
+        drawingLayer.batchDraw();
+    }
+
+    function hideNameTooltip() {
+        if (!nameTooltip) return;
+        nameTooltip.visible(false);
+        drawingLayer.batchDraw();
+    }
+
     function renderWorldToken(tokenData) {
         // 移除已有同色节点
         const existing = worldTokenNodes.get(tokenData.color);
@@ -3479,20 +2560,33 @@
 
         if (canDrag) {
             // 开始拖动时立即显示 tooltip（hover 可能被 dragstart 打断）
-            circle.on('dragstart', () => showTokenTooltip(tokenData.color, circle));
-            // 拖动过程中 tooltip 跟随
+            circle.on('dragstart', () => {
+                showTokenTooltip(tokenData.color, circle);
+                showNameTooltip(tokenData.color, circle);
+            });
+            // 拖动过程中两个 tooltip 同步跟随
             circle.on('dragmove', () => {
-                if (!hpTooltip || !hpTooltip.visible()) return;
-                const tw = hpTooltip.getText().width();
-                hpTooltip.position({
-                    x: circle.x() - tw / 2,
-                    y: circle.y() + TOKEN_RADIUS + 6,
-                });
+                if (hpTooltip && hpTooltip.visible()) {
+                    const tw = hpTooltip.getText().width();
+                    hpTooltip.position({
+                        x: circle.x() - tw / 2,
+                        y: circle.y() + TOKEN_RADIUS + 6,
+                    });
+                }
+                if (nameTooltip && nameTooltip.visible()) {
+                    const tw = nameTooltip.getText().width();
+                    const lh = nameTooltip.height();
+                    nameTooltip.position({
+                        x: circle.x() - tw / 2,
+                        y: circle.y() - TOKEN_RADIUS - lh - 6,
+                    });
+                }
                 dynamicLayer.batchDraw();
-                drawingLayer.batchDraw(); // tooltip 在 drawingLayer，需一并刷新
+                drawingLayer.batchDraw();
             });
             circle.on('dragend', () => {
                 hideTokenTooltip();
+                hideNameTooltip();
                 const gx = Math.round((circle.x() - GRID_SIZE / 2) / GRID_SIZE);
                 const gy = Math.round((circle.y() - GRID_SIZE / 2) / GRID_SIZE);
                 circle.position({ x: (gx + 0.5) * GRID_SIZE, y: (gy + 0.5) * GRID_SIZE });
@@ -3501,9 +2595,17 @@
             });
         }
 
-        circle.on('mouseenter', () => showTokenTooltip(tokenData.color, circle));
+        circle.on('mouseenter', () => {
+            showTokenTooltip(tokenData.color, circle);
+            showNameTooltip(tokenData.color, circle);
+        });
         // 拖动时不触发 mouseleave 隐藏（isDragging() 为 true 时跳过）
-        circle.on('mouseleave', () => { if (!circle.isDragging()) hideTokenTooltip(); });
+        circle.on('mouseleave', () => {
+            if (!circle.isDragging()) {
+                hideTokenTooltip();
+                hideNameTooltip();
+            }
+        });
 
         dynamicLayer.add(circle);
         worldTokenNodes.set(tokenData.color, circle);
@@ -3651,7 +2753,7 @@
 
     // 世界绘图事件处理（由 initKonvaWorld 注册，全局函数方便 window mouseup 引用）
     function onStageDrawMouseDown(e) {
-        if (!isDM || !isWorldViewActive) return;
+        if (!isDM) return;
         if (currentTool === 'erase') { isErasing = true; eraseAtPointer(); return; }
         if (currentTool !== 'draw' && currentTool !== 'rect') return;
         // updateNodeListening 已禁用棋子/地图节点的事件，点击会穿透到 stage，无需检查 e.target
@@ -3691,7 +2793,7 @@
     }
 
     function onStageDrawMouseMove(e) {
-        if (!isDM || !isWorldViewActive) return;
+        if (!isDM) return;
         if (isErasing) { eraseAtPointer(); return; }
         const pos = getMousePosInWorld();
         if (!pos) return;
@@ -3796,28 +2898,6 @@
         });
     }
 
-    function toggleWorldView() {
-        isWorldViewActive = !isWorldViewActive;
-        if (isWorldViewActive) {
-            mapFrame.style.display = 'none';
-            worldContainer.style.display = 'block';
-            worldToggleBtn.textContent = '🗺️ 回到旧地图';
-            if (!konvaStage) {
-                initKonvaWorld();
-                renderPendingWorldObjects();
-            } else {
-                const r = worldContainer.getBoundingClientRect();
-                konvaStage.size({ width: r.width, height: r.height });
-                onStageTransformChanged();
-                renderPendingWorldObjects();
-            }
-        } else {
-            worldContainer.style.display = 'none';
-            mapFrame.style.display = '';
-            worldToggleBtn.textContent = '🌍 新世界视图';
-        }
-    }
-
     // 鼠标在 stage 外松开时也能正常结束绘制（window 级兜底）
     window.addEventListener('mouseup', finalizeWorldDraw);
 
@@ -3842,7 +2922,7 @@
 
     function onAddWorldMapClick() {
         if (!isDM) return;
-        if (!isWorldViewActive) toggleWorldView();
+        if (!konvaStage) initKonvaWorld();
         document.getElementById('world-file-input').click();
     }
 
@@ -3938,7 +3018,14 @@
             staticLayer.add(node);
             node.moveToBottom(); // 地图始终在 staticLayer 最底部（图片异步加载，防止覆盖网格）
             placedMapNodes.set(placed.id, node);
-            if (isDM) createOverlayForPlacedMap(placed);
+            if (isDM) {
+                createOverlayForPlacedMap(placed);
+                const ov = placedMapOverlays.get(placed.id);
+                if (ov) {
+                    node.on('mouseenter', ov.showBtns);
+                    node.on('mouseleave', ov.scheduleHide);
+                }
+            }
             updatePlacedMapOverlay(placed.id);
         };
         imgEl.onerror = () => console.error('Konva.Image 加载失败:', placed.id);
@@ -3953,6 +3040,7 @@
         lockBtn.className = 'placed-map-lock' + (placed.isLocked ? ' locked' : '');
         lockBtn.textContent = placed.isLocked ? '🔒' : '🔓';
         lockBtn.title = placed.isLocked ? '点击解锁' : '点击锁定';
+        lockBtn.style.display = 'none';
         lockBtn.addEventListener('click', (ev) => {
             ev.stopPropagation();
             togglePlacedMapLock(placed.id);
@@ -3983,9 +3071,35 @@
         wrap.appendChild(resizeHandle);
         wrap.appendChild(sizeLabel);
         placedMapOverlaysEl.appendChild(wrap);
-        placedMapOverlays.set(placed.id, { wrap, lockBtn, deleteBtn, resizeHandle, sizeLabel });
-        // 上传后选中是在节点异步加载前就置位的，overlay 创建好后补上选中态 UI
-        if (selectedPlacedMapId === placed.id) setPlacedMapSelectionUI(placed.id, true);
+
+        const ov = { wrap, lockBtn, deleteBtn, resizeHandle, sizeLabel, hoverTimer: null, isHovered: false };
+
+        ov.showBtns = function() {
+            clearTimeout(ov.hoverTimer);
+            ov.isHovered = true;
+            const pm = placedMapsData.find(m => m.id === placed.id);
+            lockBtn.style.display = '';
+            const unlocked = pm && !pm.isLocked;
+            deleteBtn.style.display = unlocked ? '' : 'none';
+            resizeHandle.style.display = unlocked ? '' : 'none';
+        };
+
+        ov.scheduleHide = function() {
+            ov.hoverTimer = setTimeout(() => {
+                if (resizeState && resizeState.mapId === placed.id) return;
+                ov.isHovered = false;
+                lockBtn.style.display = 'none';
+                deleteBtn.style.display = 'none';
+                resizeHandle.style.display = 'none';
+            }, 120);
+        };
+
+        [lockBtn, deleteBtn, resizeHandle].forEach(el => {
+            el.addEventListener('mouseenter', () => clearTimeout(ov.hoverTimer));
+            el.addEventListener('mouseleave', ov.scheduleHide);
+        });
+
+        placedMapOverlays.set(placed.id, ov);
     }
 
     function updatePlacedMapOverlay(mapId) {
@@ -4017,10 +3131,6 @@
     function setPlacedMapSelectionUI(mapId, selected) {
         const overlay = placedMapOverlays.get(mapId);
         if (!overlay) return;
-        const placed = placedMapsData.find(m => m.id === mapId);
-        overlay.deleteBtn.style.display = selected ? '' : 'none';
-        // 缩放手柄仅在选中且未锁定时显示
-        overlay.resizeHandle.style.display = (selected && placed && !placed.isLocked) ? '' : 'none';
         if (!selected) overlay.sizeLabel.style.display = 'none';
     }
 
@@ -4185,7 +3295,8 @@
             overlay.lockBtn.textContent = isLocked ? '🔒' : '🔓';
             overlay.lockBtn.title = isLocked ? '点击解锁' : '点击锁定';
             overlay.lockBtn.classList.toggle('locked', isLocked);
-            if (selectedPlacedMapId === id) setPlacedMapSelectionUI(id, true);
+            // 若当前正在 hover，刷新 delete/resize 可见性（锁定后隐藏，解锁后显示）
+            if (overlay.isHovered) overlay.showBtns();
         }
     });
 
@@ -4193,6 +3304,15 @@
     document.getElementById('npc-custom-color-input').addEventListener('change', (e) => {
         if (!isDM) return;
         spawnNPCWithColor(e.target.value);
+    });
+
+    // 自定义画笔颜色（input 实时更新颜色，无需等待 change）
+    document.getElementById('draw-custom-color-input').addEventListener('input', (e) => {
+        if (!isDM) return;
+        penColor = e.target.value;
+        document.querySelectorAll('.draw-color').forEach(b => b.classList.remove('selected'));
+        e.target.classList.add('selected');
+        if (currentTool === 'move' || currentTool === 'erase') setTool('draw');
     });
 
     socket.on('placedMap:removed', (id) => {
@@ -4219,7 +3339,7 @@
         (world.freeDrawings || []).forEach(d => worldDrawingsData.push(d));
         (world.rects || []).forEach(r => worldRectsData.push(r));
 
-        if (isWorldViewActive && konvaStage) {
+        if (konvaStage) {
             // 销毁所有 Konva 节点
             placedMapNodes.forEach(node => node.destroy());
             placedMapNodes.clear();
@@ -4243,6 +3363,9 @@
             if (!mapAssetCache[pm.assetId]) socket.emit('mapAsset:fetch', pm.assetId);
         });
     });
+
+    // 所有变量和监听器就绪后启动应用
+    startApp();
 
 </script>
 </body>

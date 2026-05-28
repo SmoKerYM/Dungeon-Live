@@ -16,29 +16,32 @@ Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial 
 ## File Structure
 ```
 coc_app/
-├── server.js              # Main server, Socket.IO events (~713 lines)
+├── server.js              # Main server, Socket.IO events
 ├── package.json           # Dependencies: express, socket.io, nodemon
 ├── nodemon.json           # Watch config: ignores data/
-├── plan-extend.md         # Planned Konva grid-world refactor (multi-phase)
+├── plan-extend.md         # Konva grid-world refactor plan (Phase 0-7 complete)
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
-│   └── game.html          # Main game UI (~3206 lines, inline CSS+JS)
+│   └── game.html          # Main game UI (inline CSS+JS, Konva VTT model)
 ├── data/
 │   ├── characters.json        # Character card data (name-keyed object)
 │   ├── characters_notes.json  # Character records table [{name, info}]
 │   ├── chat_history.json      # Last 100 chat + dice entries (FIFO)
+│   ├── map_assets.json        # Map image assets { assetId: { base64, originalWidth, originalHeight } }
+│   ├── world.json             # World state (placedMaps, tokens, npcs, freeDrawings, rects)
 │   └── notes.txt              # Shared notes (plain text)
-└── images/                # Map images (gitignored)
+└── images/                # (legacy, no longer used)
 ```
 
 ## Architecture
 - Single-room game instance per server (no multi-room)
-- Event-driven via Socket.IO with `namespace:action` pattern (e.g., `map:load`, `token:move`)
+- Event-driven via Socket.IO with `namespace:action` pattern (e.g., `placedMap:add`, `token:move`)
 - Role-based: DM vs Player, DM password is `12138`
-- Game state lives in memory (`gameState` object in server.js), persisted to files for characters, character notes, shared notes, and chat history
+- **Konva VTT model**: map canvas is a shared Konva.Stage world; all objects (maps, tokens, NPCs, drawings) use grid coordinates (`gridX/gridY`, 1 grid = 50px at zoom=1)
+- Game state lives in memory (`gameState` object in server.js), persisted to files for characters, character notes, shared notes, chat history, map assets, and world state
 - All CSS and JS are inline in HTML files (no separate css/js files)
-- **Player independent map viewing**: Players browse maps independently, server tracks each player's `currentMapId` and filters real-time events (token/npc/draw) to only reach players viewing the DM's active map
-- **Player independent zoom/pan**: Players control their own map transform (scale/origin), stored client-side per map in `playerTransforms`
+- **Independent viewport**: every client controls their own zoom/pan on the Konva stage; transforms are not broadcast
+- **World authority**: server holds canonical `world` object; all mutations go through socket events with DM guard; undo/redo stack maintained server-side (20 entries, memory only)
 
 ## Key Conventions
 - **Language**: UI text and comments in Chinese (简体中文), code identifiers in English
@@ -56,21 +59,27 @@ coc_app/
 | Namespace | Events |
 |-----------|--------|
 | Auth | `join`, `selectColor` |
-| Map | `map:load`, `map:transform`, `map:lock`, `map:save`, `map:loadSaved`, `map:deleteSaved`, `map:updateState` |
+| MapAsset | `mapAsset:upload`, `mapAsset:fetch` |
+| PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
-| Draw | `draw:path`, `draw:clear` |
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
-| Player | `player:viewMap`, `player:loadMap` |
+| Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
+| History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save` |
 | CharacterNotes | `characterNotes:update` |
-| Other | `chat:message`, `dice:roll`, `notes:update` (chat + dice persisted to `chat_history.json`) |
+| Other | `chat:message`, `dice:roll`, `notes:update` |
 
-### Server -> Client (new events)
+### Server -> Client
 | Event | Description |
 |-------|-------------|
-| `player:mapData` | Full map data sent to a single player on request |
-| `dm:mapSwitched` | Notifies all players that DM switched active map |
-| `characterNotes:sync` | Broadcasts updated character records to other clients |
+| `mapAsset:uploaded` | Confirms asset saved, returns `assetId` |
+| `mapAsset:fetched` | Returns base64 asset data on demand |
+| `placedMap:added/moved/resized/lockSet/removed` | World map mutation broadcasts |
+| `token:spawn/move/clearAll/remove` | Token state broadcasts |
+| `npc:spawn/move/remove/clearAll` | NPC state broadcasts |
+| `draw:freeStroke/rect/liveStroke/remove/clearAll` | Drawing broadcasts |
+| `world:sync` | Full world snapshot after undo/redo |
+| `characterNotes:sync` | Broadcasts updated character records |
 
 ## Data Models
 
@@ -78,18 +87,18 @@ coc_app/
 ```javascript
 {
   dm: { socketId, name },
-  players: Map<socketId, { name, color, role, currentMapId }>,
-  mapData: "base64",
-  mapTransform: { scale, originX, originY },
-  isLocked: boolean,
-  tokens: { color: { x, y } },
-  drawings: [],
-  npcs: [{ id, x, y, color }],
+  players: Map<socketId, { name, color, role }>,
   notes: "string",
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100, FIFO
-  savedMaps: [],
-  activeMapId: "map_xxx"
+  mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
+  world: {
+    placedMaps: [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
+    tokens:     [{ id, color, gridX, gridY }],
+    npcs:       [{ id, gridX, gridY, color }],
+    freeDrawings: [{ id, points: [x,y,...], color, strokeWidth }],
+    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]
+  }
 }
 ```
 
@@ -115,15 +124,14 @@ npm start       # Production server
 ```
 
 ## Important Notes
-- Map images are Base64-encoded and can be large (50MB max buffer)
-- Map deduplication uses hash: `substring(0, 1000) + '_' + length`
+- Map images are Base64-encoded and can be large (50MB max buffer); stored in `data/map_assets.json`
+- World state persisted to `data/world.json`; debounced 500ms on every mutation
 - Notes, character records, and chat history writes are debounced at 500ms
 - Chat history retains last 100 entries total (chat messages + dice rolls), older entries dropped FIFO; system messages (joins/leaves) are NOT persisted
 - Notes tab split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
-- DM-only UI elements use `.dm-only` CSS class, player-only use `.player-only`
-- game.html has ~780 lines of inline CSS in `<head>`, JS starts around line 1090
-- Real-time events (token/npc/draw) use `broadcastToMapViewers()` — only sent to players viewing DM's active map
-- `map:transform` and `map:load` no longer broadcast to players (independent control)
-- Player map data loaded on demand via `player:loadMap`, cached in client `mapDataCache`
-- Player transforms stored client-side in `playerTransforms` object (per mapId)
+- DM-only UI elements use `.dm-only` CSS class
+- Grid: 1 grid = 50px (`GRID_SIZE`) at zoom=1; all object coords in `gridX/gridY` (float)
+- Grid rendered as Konva.Line in `gridLayer`; shared stage transform — never misaligns
+- Undo/redo stack: 20 entries each, server-side memory only, cleared on restart
+- `io.emit` used for all world mutations (no per-player filtering)

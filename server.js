@@ -233,11 +233,6 @@ function pushWorldUndo() {
   redoStack = [];
 }
 
-// 地图哈希函数（用于判断是否为同一张地图）
-function getMapHash(mapData) {
-  return mapData.substring(0, 1000) + '_' + mapData.length;
-}
-
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
@@ -253,33 +248,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 游戏状态存储
 const gameState = {
   dm: null,           // 当前 DM 信息
-  players: new Map(), // socketId -> { name, color, role, currentMapId }
-  mapData: null,      // Base64 地图数据
-  mapTransform: { scale: 1, originX: 0, originY: 0 },
-  isLocked: false,
-  drawings: [],       // 绘图数据（旧地图系统，Phase 7 清理）
+  players: new Map(), // socketId -> { name, color, role }
   notes: loadNotes(), // 共享笔记（从文件加载）
   characterNotes: loadCharacterNotes(), // 登场人物记录 [{name, info}]
   chatHistory: loadChatHistory(), // 聊天 + 骰子历史（最多 100 条，从文件加载）
-  savedMaps: [],      // 地图存档
-  activeMapId: null,  // DM 当前编辑的地图 ID
   mapAssets: loadMapAssets(), // 地图图片资产 { assetId: { base64, originalWidth, originalHeight } }
-  world: loadWorld(),         // 世界状态 { placedMaps: [...] }
+  world: loadWorld(),         // 世界状态 { placedMaps, tokens, npcs, freeDrawings, rects }
 };
-
-// 向正在查看 DM 活跃地图的玩家广播（排除指定 socket）
-// 同时也发送给 DM（DM 始终在活跃地图上，但不设置 currentMapId）
-function broadcastToMapViewers(excludeSocketId, event, data) {
-  if (!gameState.activeMapId) return;
-  gameState.players.forEach((player, socketId) => {
-    if (socketId === excludeSocketId) return;
-    // DM 始终在活跃地图上
-    const isOnActiveMap = player.role === 'DM' || player.currentMapId === gameState.activeMapId;
-    if (isOnActiveMap) {
-      io.to(socketId).emit(event, data);
-    }
-  });
-}
 
 // Socket.IO 连接处理
 io.on('connection', (socket) => {
@@ -302,7 +277,7 @@ io.on('connection', (socket) => {
     }
 
     // 保存玩家信息
-    gameState.players.set(socket.id, { name, role, color: null, currentMapId: null });
+    gameState.players.set(socket.id, { name, role, color: null });
 
     // 获取已被占用的颜色
     const takenColors = [];
@@ -323,17 +298,11 @@ io.on('connection', (socket) => {
       dmName: gameState.dm?.name || null,
       takenColors,
       gameState: {
-        mapData: gameState.mapData,
-        mapTransform: gameState.mapTransform,
-        isLocked: gameState.isLocked,
         players: playersWithHP,
-        drawings: gameState.drawings,
         notes: gameState.notes,
         characterNotes: gameState.characterNotes,
         chatHistory: gameState.chatHistory,
-        savedMaps: gameState.savedMaps.map(m => ({ id: m.id, thumbnail: m.thumbnail })),
-        activeMapId: gameState.activeMapId,
-        world: gameState.world  // 包含 placedMaps / tokens / npcs
+        world: gameState.world
       }
     });
 
@@ -376,33 +345,6 @@ io.on('connection', (socket) => {
     io.emit('takenColors', getTakenColors());
   });
 
-  // 地图上传 (仅 DM) - 不再广播给玩家，玩家独立控制地图视图
-  socket.on('map:load', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    gameState.mapData = data;
-    // 不广播：玩家通过侧边栏自行选择地图
-  });
-
-  // 地图变换 (仅 DM) - 不再广播，玩家独立控制缩放/平移
-  socket.on('map:transform', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    gameState.mapTransform = data;
-    // 不广播：玩家各自控制自己的 transform
-  });
-
-  // 地图锁定 (仅 DM，DM 本地功能)
-  socket.on('map:lock', (isLocked) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    gameState.isLocked = isLocked;
-    // 不广播：锁定是 DM 本地控制
-  });
-
   // 棋子生成 (DM 可生成所有，玩家只能生成自己的)
   socket.on('token:spawn', ({ color, gridX, gridY }) => {
     const player = gameState.players.get(socket.id);
@@ -440,24 +382,6 @@ io.on('connection', (socket) => {
     gameState.world.tokens = [];
     io.emit('token:clearAll');
     scheduleWorldSave();
-  });
-
-  // 绘图 (仅 DM)
-  socket.on('draw:path', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    gameState.drawings.push(data);
-    broadcastToMapViewers(socket.id, 'draw:path', data);
-  });
-
-  // 清空画布 (仅 DM)
-  socket.on('draw:clear', () => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    gameState.drawings = [];
-    broadcastToMapViewers(socket.id, 'draw:clear', null);
   });
 
   // NPC 生成 (仅 DM)
@@ -505,40 +429,6 @@ io.on('connection', (socket) => {
     gameState.world.npcs = [];
     io.emit('npc:clearAll');
     scheduleWorldSave();
-  });
-
-  // 玩家告知服务端正在查看的地图
-  socket.on('player:viewMap', (mapId) => {
-    const player = gameState.players.get(socket.id);
-    if (!player) return;
-    player.currentMapId = mapId;
-  });
-
-  // 玩家请求加载某张地图的完整数据
-  socket.on('player:loadMap', (mapId) => {
-    const player = gameState.players.get(socket.id);
-    if (!player) return;
-
-    let mapData, drawings;
-
-    // 如果请求的是 DM 活跃地图，从 gameState 读取最新数据
-    if (mapId === gameState.activeMapId) {
-      const archive = gameState.savedMaps.find(m => m.id === mapId);
-      mapData = archive ? archive.mapData : gameState.mapData;
-      drawings = gameState.drawings;
-    } else {
-      // 非活跃地图从存档读取
-      const archive = gameState.savedMaps.find(m => m.id === mapId);
-      if (!archive) return;
-      mapData = archive.mapData;
-      drawings = archive.drawings || [];
-    }
-
-    player.currentMapId = mapId;
-    socket.emit('player:mapData', {
-      mapId, mapData, drawings
-      // tokens/npcs 现在在 world 中，不含 mapTransform（玩家自己控制缩放/平移）
-    });
   });
 
   // 骰子投掷 (所有人)
@@ -635,115 +525,6 @@ io.on('connection', (socket) => {
       io.emit('character:hpUpdated', { name: data.name, hp: data.hp });
     } else {
       socket.emit('character:error', { message: '保存失败: ' + result.error });
-    }
-  });
-
-  // 保存地图 (仅 DM)
-  socket.on('map:save', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    const mapHash = getMapHash(data.mapData);
-
-    // 查找是否已存在相同地图
-    const existingIndex = gameState.savedMaps.findIndex(m => m.mapHash === mapHash);
-
-    if (existingIndex !== -1) {
-      // 更新现有存档
-      const archive = gameState.savedMaps[existingIndex];
-      archive.thumbnail = data.thumbnail;
-      archive.mapTransform = data.mapTransform;
-      archive.tokens = data.tokens;
-      archive.npcs = data.npcs;
-      archive.drawings = data.drawings;
-
-      gameState.activeMapId = archive.id;
-
-      io.emit('map:saved', {
-        slotIndex: existingIndex,
-        thumbnail: data.thumbnail,
-        id: archive.id,
-        isUpdate: true
-      });
-    } else {
-      // 创建新存档（无数量上限）
-      const mapArchive = {
-        id: 'map_' + Date.now(),
-        mapHash,
-        thumbnail: data.thumbnail,
-        mapData: data.mapData,
-        mapTransform: data.mapTransform,
-        tokens: data.tokens,
-        npcs: data.npcs,
-        drawings: data.drawings
-      };
-
-      gameState.savedMaps.push(mapArchive);
-      gameState.activeMapId = mapArchive.id;
-
-      io.emit('map:saved', {
-        slotIndex: gameState.savedMaps.length - 1,
-        thumbnail: data.thumbnail,
-        id: mapArchive.id,
-        isUpdate: false
-      });
-    }
-  });
-
-  // 加载已保存的地图 (仅 DM) - 仅回复 DM，不再强制所有玩家切换
-  socket.on('map:loadSaved', (mapId) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    const archive = gameState.savedMaps.find(m => m.id === mapId);
-    if (!archive) return;
-
-    // 更新当前游戏状态
-    gameState.mapData = archive.mapData;
-    gameState.mapTransform = { ...archive.mapTransform };
-    gameState.drawings = [...(archive.drawings || [])];
-    gameState.activeMapId = mapId;
-
-    // 仅回复给 DM
-    socket.emit('map:loadedSaved', archive);
-
-    // 通知所有玩家 DM 切换了地图
-    socket.broadcast.emit('dm:mapSwitched', { activeMapId: mapId });
-  });
-
-  // 删除地图存档 (仅 DM)
-  socket.on('map:deleteSaved', (mapId) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    const index = gameState.savedMaps.findIndex(m => m.id === mapId);
-    if (index === -1) return;
-
-    gameState.savedMaps.splice(index, 1);
-    io.emit('map:deletedSaved', mapId);
-  });
-
-  // 更新地图状态 (仅 DM，轻量级，不含 mapData)
-  socket.on('map:updateState', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player?.role !== 'DM') return;
-
-    const archive = gameState.savedMaps.find(m => m.id === data.mapId);
-    if (!archive) return;
-
-    // 仅更新状态字段，不更新 mapData
-    archive.mapTransform = data.mapTransform;
-    archive.tokens = data.tokens;
-    archive.npcs = data.npcs;
-    archive.drawings = data.drawings;
-
-    // 同时更新当前游戏状态
-    gameState.mapTransform = { ...data.mapTransform };
-    gameState.drawings = [...(data.drawings || [])];
-
-    // 仅在非静默模式下广播系统消息
-    if (!data.silent) {
-      io.emit('map:stateUpdated', { mapId: data.mapId });
     }
   });
 

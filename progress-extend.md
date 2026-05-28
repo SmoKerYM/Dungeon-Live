@@ -1,7 +1,7 @@
 # Progress (for plan-extend.md)
 
 ## 当前状态
-- **当前阶段**：Phase 6 完成（待人工验收），待进入 Phase 7
+- **当前阶段**：Phase 7 完成，待进入 Phase 8
 - **最后更新**：2026-05-28
 
 ## 已完成的 Phase
@@ -68,20 +68,15 @@
   - [public/game.html](public/game.html)：`window.addEventListener('keydown', ...)` 监听 Ctrl/Cmd+Z（`history:undo`）和 Ctrl/Cmd+Shift+Z（`history:redo`），仅 DM 触发，调用 `e.preventDefault()` 防止浏览器默认行为
   - [public/game.html](public/game.html)：`socket.on('world:sync', ...)` handler：更新 5 个本地数据数组 → 若世界视图已激活则销毁所有 Konva 节点（placedMapNodes/Overlays、worldTokenNodes、worldNpcNodes、worldDrawingNodes、worldRectNodes、liveStrokeNodes）→ `renderPendingWorldObjects()` 重渲 → 对 placedMaps 中未缓存的 assetId 发 `mapAsset:fetch`
 
+- **Phase 7** (2026-05-28)：
+  - [server.js](server.js)：删除 `getMapHash()`、`broadcastToMapViewers()`；移除 `gameState` 中的 `mapData/mapTransform/isLocked/drawings/savedMaps/activeMapId` 字段；移除 `players` Map 中的 `currentMapId`；删除 `map:load/transform/lock/save/loadSaved/deleteSaved/updateState`、`player:viewMap/loadMap`、`draw:path/clear` 全部旧 handler；`joinSuccess` payload 仅含 `players/notes/characterNotes/chatHistory/world`
+  - [public/game.html](public/game.html) CSS：删除 `#map-frame/#map-container/#map-img/#drawing-canvas/#lock-btn/#top-controls/#world-toggle-btn/#save-map-btn/#map-slots/.map-slot/#player-map-slots/.player-map-slot` 等旧规则；`#world-container` 改为 `display: block`
+  - [public/game.html](public/game.html) HTML：删除 `#section-map`（旧 DM 上传 + 存档槽）和 `#section-player-maps`（玩家地图列表）；`#section-world-map` 标题从 "网格世界（新）" 改为 "地图"；viewport 仅保留 `#world-container`
+  - [public/game.html](public/game.html) JS：删除 `savedGameState/savedDmName` sessionStorage 解析；删除 `init()` 函数；`startApp()` 末尾直接调 `initKonvaWorld()`；删除 `loadMapFromData/restoreDrawings/resetMap/updateTransform/updateLockButton/toggleLock`、旧鼠标/滚轮地图事件、`fileInput.onchange` 旧上传逻辑；删除旧地图存档系统全部变量和函数（`localSavedMaps/localDrawings/currentMapId/isDirty/autoSaveInterval` 等）；删除旧 socket 监听（`map:load/transform/lock/draw:path/draw:clear` 等）；删除 `isWorldViewActive` 变量和 `toggleWorldView()` 函数；简化 `setTool()` 和 `clearCanvas()`；`world:sync` 守卫简化为 `if (konvaStage)`
+  - [CLAUDE.md](CLAUDE.md)：更新文件结构（加 `map_assets.json/world.json`）、架构说明（Konva VTT 模型）、Socket 事件表（新事件命名空间）、数据模型（`gameState` 新结构）、重要说明（网格坐标、undo/redo 20 条、`io.emit` 全播）
+
 ## 下一步
-进入 Phase 7：清理旧代码 & 更新文档（详见 [plan-extend.md](plan-extend.md#L237)）。
-
-## Phase 7 清理时需注意（Phase 5 产生的变化）
-- 旧 `draw:path` / `draw:clear` socket handler（服务端和客户端）仍保留，Phase 7 连同旧 canvas 系统一起删除
-- `clearCanvas()` 中的 `isWorldViewActive` 分支在 Phase 7 移除（届时只有世界视图，直接调 `clearWorldDrawings`）
-- `<canvas id="drawing-canvas">` 及其 JS 引用（`canvas`、`ctx`、`localDrawings`、`restoreDrawings`、`rectStartPoint` 等旧画布变量）在 Phase 7 统一删除
-- `世界视图` 切换按钮 `#world-toggle-btn` 在 Phase 7 删除（届时默认即世界视图）
-
-## Phase 7 清理时需注意（Phase 4 产生的变化）
-- `getCurrentTokens()`/`getCurrentNPCs()` 现已是返回空值的 stub，Phase 7 连同调用方一起删除
-- 旧地图系统 `map:save` payload 中 `tokens/npcs` 字段已为空，Phase 7 删除这些字段
-- `fileInput.onchange` 中不再 emit `token:clearAll`/`npc:clearAll`（Phase 7 清理整个旧地图上传流程）
-- `getCurrentTokens`/`getCurrentNPCs` stubs 在 `saveMapState`/`saveCurrentMap` 中仍被调用，Phase 7 一并移除
+进入 Phase 8：小功能 & 小 bug 修复（详见 [plan-extend.md](plan-extend.md)）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。
