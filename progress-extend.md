@@ -35,6 +35,12 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 退出按钮
+  - [public/game.html](public/game.html)：顶栏右上角 `#exit-btn`，`exitGame()` 二次确认后 emit `player:leave` → 清 sessionStorage → 回 `/`
+  - [server.js](server.js)：`player:leave` 直接调 `finalizePlayerLeave(socket.id, '主动退出游戏')`，跳过宽限期
+  - 沿用已有的 `playerLeft` 广播，别人看到的还是「xxx 离开了游戏」
+  - 退出后 socket 断开时 `players.get()` 已为空，disconnect 分支自然短路，不会重复处理或起宽限期计时器
+  - 注：按钮暂放顶栏，前端大改时会随 tab-bar 一起重新安排位置
 - 2026-09-25: 断线宽限期（修 Safari 后台标签页掉线导致玩家从名单/地图消失）
   - 根因：浏览器挂起后台标签页的 JS → 回不了 Socket.IO 的 PONG → `pingTimeout`(60s) 到期判死；客户端的退避重连定时器同样被挂起，所以只有切回前台才重连
   - [server.js](server.js)：`DISCONNECT_GRACE_MS`（默认 120s，env 可调）；`disconnect` 只标记 `online:false` 并起计时器，保留名单项/棋子/颜色；到期才走新抽出的 `finalizePlayerLeave()`

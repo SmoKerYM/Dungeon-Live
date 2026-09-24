@@ -462,6 +462,14 @@
             margin-bottom: -2px;
         }
         .tab:hover { color: white; background: rgba(52, 152, 219, 0.1); }
+        #exit-btn {
+            margin-left: auto; align-self: center; margin-right: 14px;
+            padding: 6px 16px; font-size: 13px; font-weight: bold;
+            color: #e8a0a0; background: rgba(231, 76, 60, 0.15);
+            border: 1px solid rgba(231, 76, 60, 0.5); border-radius: 5px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        #exit-btn:hover { background: #e74c3c; color: white; border-color: #e74c3c; }
         .tab.active {
             color: white;
             background: rgba(52, 152, 219, 0.2);
@@ -1092,6 +1100,7 @@
         <div class="tab active" data-tab="map" onclick="switchTab('map')">地图</div>
         <div class="tab" data-tab="notes" onclick="switchTab('notes')">笔记</div>
         <div class="tab" data-tab="character" onclick="switchTab('character')">角色卡</div>
+        <button id="exit-btn" onclick="exitGame()" title="退出到登录页">退出</button>
     </div>
 
     <div id="viewport">
@@ -2041,6 +2050,16 @@
             return;
         }
         socket.emit('chat:message', { message, to: resolvePrivateTarget(message) });
+    }
+
+    // --- 退出游戏 ---
+    // 主动退出不走宽限期：立刻释放颜色、移除棋子，别人会看到「xxx 离开了游戏」
+    function exitGame() {
+        if (!confirm('确定要退出游戏吗？退出后需要重新输入名字登录。')) return;
+        socket.emit('player:leave');
+        sessionStorage.removeItem('userData');
+        // 给退出事件留一点发送时间，再回登录页
+        setTimeout(() => { window.location.href = '/'; }, 150);
     }
 
     // --- 展开式聊天面板 ---

@@ -58,7 +58,7 @@ coc_app/
 ### Client -> Server
 | Namespace | Events |
 |-----------|--------|
-| Auth | `join`, `selectColor` |
+| Auth | `join`, `selectColor`, `player:leave` |
 | MapAsset | `mapAsset:upload`, `mapAsset:fetch` |
 | PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
@@ -144,5 +144,6 @@ npm start       # Production server
 - `io.emit` used for all world mutations (no per-player filtering)
 - **Disconnect grace period** (`DISCONNECT_GRACE_MS`, default 120s, overridable via env): a dropped socket does NOT mean the player left. Browsers (Safari especially) suspend background tabs, which kills the Socket.IO heartbeat. On `disconnect` the player is only flagged `online: false` — roster entry, token, and color are all retained — and a timer runs `finalizePlayerLeave()` when it expires. Reconnecting with the same name+role inside the window silently takes over the old session (`takeOverPreviousSession()`), with no `playerJoined` system message
 - A DM's seat is held for the whole grace window; only the same name may reclaim it
+- `player:leave` (the 退出 button) bypasses the grace period entirely — `finalizePlayerLeave()` runs immediately, so a deliberate exit is instant while a suspended tab is not
 - `selectColor` compares against colors held by *other* sockets, so a reconnecting player can re-assert their own color
 - Whispers to a player mid-grace are accepted and persisted; the filtered history replay delivers them on reconnect

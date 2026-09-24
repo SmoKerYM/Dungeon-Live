@@ -23,6 +23,10 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Lock / Delete** — Lock to prevent accidental drags; controls appear on hover
 - **Independent Viewports** — Each client controls its own zoom/pan independently
 
+### Leaving the Game
+- **Exit button** — Top-right of the tab bar; after confirming, returns to the name-entry login page and clears the local identity
+- **Immediate** — A deliberate exit skips the grace period: the colour is released and the token removed at once, and everyone sees "xxx left the game" straight away
+
 ### Disconnect Grace Period
 - **Problem** — Browsers (Safari especially) suspend background tabs' JS; the Socket.IO heartbeat dies, the connection is declared dead, and the player vanishes from the roster with their token removed from the map
 - **Grace window** — A dropped player is retained for 120s by default (`DISCONNECT_GRACE_MS` env var): dimmed in the roster but still mentionable, token left in place, colour not released

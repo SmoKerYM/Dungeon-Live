@@ -994,6 +994,11 @@ io.on('connection', (socket) => {
     saveUiPrefs(gameState.uiPrefs);
   });
 
+  // 主动退出：不走宽限期，立刻清理（与「被浏览器挂起」是两回事）
+  socket.on('player:leave', () => {
+    finalizePlayerLeave(socket.id, '主动退出游戏');
+  });
+
   // 断开连接：先进入宽限期，不立刻判定离开
   // （Safari 等浏览器会挂起后台标签页的 JS，心跳中断并不代表人走了）
   socket.on('disconnect', (reason) => {
