@@ -306,10 +306,106 @@
         .chat-msg .name { font-weight: bold; }
         .chat-msg .dm { color: #e74c3c; }
         .chat-msg .player { color: #3498db; }
-        .chat-msg .system { color: #f1c40f; font-style: italic; }
-        #chat-input-container { display: flex; padding: 8px; border-top: 1px solid #555; }
+        .chat-msg .system { color: #f1c40f; font-style: italic; font-family: 'Courier New', Consolas, monospace; }
+        .chat-msg .mine { color: #2ecc71; }
+        .chat-msg .private-name { color: #e91e63; }
+        .chat-msg.private-msg { background: rgba(233,30,99,0.12); border-left: 2px solid #e91e63; padding: 3px 6px; border-radius: 4px; }
+        .chat-msg .mention { color: #f39c12; font-weight: bold; }
+        #chat-input-container { display: flex; padding: 8px; border-top: 1px solid #555; position: relative; }
         #chat-input { flex: 1; padding: 8px; border: none; border-radius: 4px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; }
         #chat-send { padding: 8px 15px; background: #3498db; border: none; border-radius: 4px; color: white; cursor: pointer; margin-left: 5px; }
+
+        /* @ 提及建议框 */
+        .mention-popup {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 4px);
+            left: 8px; right: 8px;
+            max-height: 230px;
+            overflow-y: auto;
+            background: #1f1f1f;
+            border: 1px solid #3d3d3d;
+            border-radius: 6px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.55);
+            z-index: 200;
+            padding: 6px 0;
+        }
+        .mention-popup.open { display: block; }
+        .mention-popup-title { font-size: 11px; color: #9aa0a6; padding: 2px 12px 6px; }
+        .mention-item { display: flex; align-items: center; gap: 10px; padding: 6px 12px; cursor: pointer; }
+        .mention-item.active, .mention-item:hover { background: rgba(255,255,255,0.12); }
+        .mention-avatar {
+            width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: bold; color: white;
+        }
+        .mention-meta { min-width: 0; }
+        .mention-name { font-size: 13px; color: #e8eaed; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mention-sub { font-size: 11px; color: #9aa0a6; }
+
+        /* 展开式聊天面板（覆盖玩家列表 + 聊天框） */
+        #sidebar-lower { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        #chat-section-title { display: flex; align-items: center; justify-content: space-between; }
+        #open-chat-panel-btn {
+            font-size: 11px; padding: 2px 8px; border: 1px solid #3498db;
+            background: rgba(52,152,219,0.2); color: #5dade2;
+            border-radius: 10px; cursor: pointer;
+        }
+        #open-chat-panel-btn:hover { background: #3498db; color: white; }
+        #chat-panel {
+            position: absolute; inset: 0; z-index: 60;
+            display: none; flex-direction: column;
+            background: #2b3b4d; border: 1px solid #46617d; border-radius: 8px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5); overflow: hidden;
+        }
+        #chat-panel.open { display: flex; }
+        #chat-panel-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 10px; background: rgba(0,0,0,0.25); border-bottom: 1px solid #46617d;
+        }
+        #chat-panel-title { font-size: 13px; font-weight: bold; color: #ecf0f1; }
+        #chat-panel-close {
+            background: transparent; border: none; color: #bdc3c7;
+            font-size: 18px; line-height: 1; cursor: pointer; padding: 0 5px; border-radius: 4px;
+        }
+        #chat-panel-close:hover { background: rgba(255,255,255,0.15); color: white; }
+        #chat-panel-messages {
+            flex: 1; overflow-y: auto; padding: 10px 8px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        #chat-panel-input-container { display: flex; padding: 8px; border-top: 1px solid #46617d; position: relative; }
+        #chat-panel-input { flex: 1; padding: 8px; border: none; border-radius: 4px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; }
+        #chat-panel-send { padding: 8px 14px; background: #3498db; border: none; border-radius: 4px; color: white; cursor: pointer; margin-left: 5px; }
+
+        /* 气泡消息（Teams 风格） */
+        .panel-msg { display: flex; gap: 8px; align-items: flex-start; }
+        .panel-msg.mine { flex-direction: row-reverse; }
+        .panel-avatar {
+            width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: bold; color: white;
+        }
+        .panel-body { display: flex; flex-direction: column; max-width: 78%; min-width: 0; }
+        .panel-msg.mine .panel-body { align-items: flex-end; }
+        .panel-sender { font-size: 11px; color: #bdc3c7; margin-bottom: 3px; padding: 0 2px; }
+        .panel-private-tag { font-size: 10px; color: #f48fb1; margin-bottom: 3px; padding: 0 2px; }
+        .panel-bubble {
+            background: #46617d; color: #ecf0f1;
+            padding: 7px 10px; border-radius: 10px 10px 10px 2px;
+            font-size: 12px; line-height: 1.45;
+            word-break: break-word; white-space: pre-wrap;
+        }
+        .panel-msg.from-dm .panel-bubble { background: #7d3b3b; }
+        .panel-msg.mine .panel-bubble { background: #2f6fa8; border-radius: 10px 10px 2px 10px; }
+        .panel-bubble.private { background: #6d2450; border: 1px solid #e91e63; }
+        .panel-msg.mine .panel-bubble.private { background: #8e2b64; border: 1px solid #e91e63; }
+        .panel-bubble .mention { color: #ffd479; font-weight: bold; }
+        .panel-msg.system { justify-content: center; }
+        .panel-system-text {
+            font-family: 'Courier New', Consolas, monospace;
+            font-size: 11px; color: #f1c40f; font-style: italic; text-align: center;
+            background: rgba(0,0,0,0.25); padding: 4px 10px; border-radius: 10px;
+        }
 
         /* 颜色选择弹窗 */
         #color-modal {
@@ -905,6 +1001,7 @@
         <div id="player-asset-library"></div>
     </div>
 
+    <div id="sidebar-lower">
     <div class="section-title">玩家列表</div>
     <div id="player-list">
         <div class="player-row" id="row-orange" style="display: none;">
@@ -956,14 +1053,35 @@
     </div>
 
     <!-- 聊天框 -->
-    <div class="section-title">聊天</div>
+    <div class="section-title" id="chat-section-title">
+        <span>聊天</span>
+        <button id="open-chat-panel-btn" onclick="openChatPanel()">Click Me</button>
+    </div>
     <div id="chat-container">
         <div id="chat-messages"></div>
         <div id="chat-input-container">
-            <input type="text" id="chat-input" placeholder="输入消息，或 /2d6+3 投骰..." onkeypress="handleChatKeypress(event)">
+            <div class="mention-popup" id="mention-popup-main"></div>
+            <input type="text" id="chat-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
+                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
             <button id="chat-send" onclick="sendChat()">发送</button>
         </div>
     </div>
+
+    <!-- 展开式聊天面板（覆盖玩家列表 + 聊天框） -->
+    <div id="chat-panel">
+        <div id="chat-panel-header">
+            <span id="chat-panel-title">聊天室</span>
+            <button id="chat-panel-close" onclick="closeChatPanel()" title="关闭">✕</button>
+        </div>
+        <div id="chat-panel-messages"></div>
+        <div id="chat-panel-input-container">
+            <div class="mention-popup" id="mention-popup-panel"></div>
+            <input type="text" id="chat-panel-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
+                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
+            <button id="chat-panel-send" onclick="sendChat(document.getElementById('chat-panel-input'))">发送</button>
+        </div>
+    </div>
+    </div><!-- end sidebar-lower -->
 </div>
 
 <div id="main-content">
@@ -1153,6 +1271,7 @@
 
     // --- DOM 元素 ---
     const chatMessages = document.getElementById('chat-messages');
+    const chatPanelMessages = document.getElementById('chat-panel-messages');
 
     let currentTool = 'move';
     let penColor = '#cc0000';     // 画笔当前颜色
@@ -1608,28 +1727,284 @@
     }
 
     // --- 聊天系统 ---
-    function addChatMessage(name, role, message) {
+    // 头像配色：玩家用自选颜色，DM 用红色，未选色用灰色
+    const PLAYER_COLOR_HEX = {
+        orange: '#e67e22', yellow: '#f1c40f', green: '#27ae60',
+        blue: '#3498db', purple: '#9b59b6'
+    };
+    const DM_AVATAR_HEX = '#e74c3c';
+    const NO_COLOR_HEX = '#7f8c8d';
+    const MENTION_ALL = '所有人';
+    const MAX_CHAT_LOG = 500;
+
+    let rosterData = [];   // 在线名单 [{ name, role, color }]，由 roster:sync 维护
+    const chatLog = [];    // 本地消息流，名单变化时据此重渲染
+
+    // 消息是否由我发出
+    function isMyMessage(entry) {
+        return entry.name === userName && entry.role === userRole;
+    }
+
+    // 列表中显示的称呼：DM 统一显示为 "DM"
+    function displayName(entry) {
+        return entry.role === 'DM' ? 'DM' : entry.name;
+    }
+
+    function avatarColor(name, role) {
+        if (role === 'DM') return DM_AVATAR_HEX;
+        const found = rosterData.find(r => r.name === name);
+        return PLAYER_COLOR_HEX[found && found.color] || NO_COLOR_HEX;
+    }
+
+    function avatarHtml(name, role, cls) {
+        const bg = avatarColor(name, role);
+        // 浅色底用黑字保证可读性
+        const fg = (bg === '#f1c40f') ? '#000' : '#fff';
+        const initial = (name || '?').trim().charAt(0).toUpperCase();
+        return `<div class="${cls}" style="background: ${bg}; color: ${fg};">${escapeHtml(initial)}</div>`;
+    }
+
+    function escapeRegExp(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // 转义正文并高亮其中的 @提及
+    function renderMessageHtml(message) {
+        const names = [MENTION_ALL, ...rosterData.map(r => r.name)]
+            .filter(Boolean)
+            .sort((a, b) => b.length - a.length);
+        if (names.length === 0) return escapeHtml(message);
+        const pattern = new RegExp('@(' + names.map(escapeRegExp).join('|') + ')', 'g');
+        let out = '';
+        let last = 0;
+        let m;
+        while ((m = pattern.exec(message)) !== null) {
+            out += escapeHtml(message.slice(last, m.index));
+            out += `<span class="mention">@${escapeHtml(m[1])}</span>`;
+            last = m.index + m[0].length;
+        }
+        return out + escapeHtml(message.slice(last));
+    }
+
+    // 紧凑列表（侧边栏原聊天框）的一行
+    function buildCompactMessage(entry) {
         const div = document.createElement('div');
         div.className = 'chat-msg';
-        const roleClass = role === 'DM' ? 'dm' : 'player';
-        div.innerHTML = `<span class="name ${roleClass}">[${role === 'DM' ? 'DM' : name}]</span> ${message}`;
-        chatMessages.appendChild(div);
+        if (entry.kind === 'system') {
+            div.innerHTML = `<span class="system">${escapeHtml(entry.message)}</span>`;
+            return div;
+        }
+        const body = renderMessageHtml(entry.message);
+        const isMine = isMyMessage(entry);
+        if (entry.to) {
+            div.classList.add('private-msg');
+            const label = isMine ? `我 → ${entry.to}` : `${displayName(entry)} → 我`;
+            div.innerHTML = `<span class="name private-name">🔒[${escapeHtml(label)}]</span> ${body}`;
+            return div;
+        }
+        const roleClass = entry.role === 'DM' ? 'dm' : (isMine ? 'mine' : 'player');
+        div.innerHTML = `<span class="name ${roleClass}">[${escapeHtml(displayName(entry))}]</span> ${body}`;
+        return div;
+    }
+
+    // 展开面板的气泡（自己靠右，别人靠左，系统居中）
+    function buildBubbleMessage(entry) {
+        const div = document.createElement('div');
+        if (entry.kind === 'system') {
+            div.className = 'panel-msg system';
+            div.innerHTML = `<div class="panel-system-text">${escapeHtml(entry.message)}</div>`;
+            return div;
+        }
+        const isMine = isMyMessage(entry);
+        div.className = 'panel-msg' + (isMine ? ' mine' : (entry.role === 'DM' ? ' from-dm' : ''));
+        const tag = entry.to
+            ? `<div class="panel-private-tag">🔒 ${escapeHtml(isMine ? '私聊 → ' + entry.to : '私聊给我')}</div>`
+            : '';
+        div.innerHTML =
+            avatarHtml(entry.name, entry.role, 'panel-avatar') +
+            '<div class="panel-body">' +
+                `<div class="panel-sender">${escapeHtml(displayName(entry))}</div>` +
+                tag +
+                `<div class="panel-bubble${entry.to ? ' private' : ''}">${renderMessageHtml(entry.message)}</div>` +
+            '</div>';
+        return div;
+    }
+
+    // 同时写入紧凑列表和展开面板
+    function appendChatEntry(entry) {
+        chatLog.push(entry);
+        if (chatLog.length > MAX_CHAT_LOG) chatLog.shift();
+        chatMessages.appendChild(buildCompactMessage(entry));
         chatMessages.scrollTop = chatMessages.scrollHeight;
+        chatPanelMessages.appendChild(buildBubbleMessage(entry));
+        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+    }
+
+    // 名单变化后重渲染（头像颜色 / @高亮依赖名单）
+    function rerenderChat() {
+        chatMessages.innerHTML = '';
+        chatPanelMessages.innerHTML = '';
+        chatLog.forEach(entry => {
+            chatMessages.appendChild(buildCompactMessage(entry));
+            chatPanelMessages.appendChild(buildBubbleMessage(entry));
+        });
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+    }
+
+    function clearChatLog() {
+        chatLog.length = 0;
+        chatMessages.innerHTML = '';
+        chatPanelMessages.innerHTML = '';
+    }
+
+    function addChatMessage(data) {
+        appendChatEntry({
+            kind: 'chat',
+            name: data.name,
+            role: data.role,
+            message: data.message,
+            to: data.to || null
+        });
     }
 
     function addSystemMessage(message) {
-        const div = document.createElement('div');
-        div.className = 'chat-msg';
-        div.innerHTML = `<span class="system">${message}</span>`;
-        chatMessages.appendChild(div);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        appendChatEntry({ kind: 'system', message });
     }
 
-    function sendChat() {
-        const input = document.getElementById('chat-input');
+    // --- @ 提及建议框 ---
+    // 同一时刻只有一个输入框被聚焦，用单一上下文即可
+    let mentionCtx = null;   // { input, popup, start, items, index }
+
+    // 取出光标前正在输入的 @片段（@ 必须位于行首或空白之后）
+    function getMentionQuery(input) {
+        const caret = input.selectionStart;
+        const text = input.value.slice(0, caret);
+        const at = text.lastIndexOf('@');
+        if (at === -1) return null;
+        if (at > 0 && !/\s/.test(text[at - 1])) return null;
+        const query = text.slice(at + 1);
+        if (query.length > 20) return null;   // 超长视为普通文本
+        return { start: at, query };
+    }
+
+    // 候选项：在线的其他人 + @所有人（名字去重）
+    function buildMentionCandidates(query) {
+        const q = query.trim().toLowerCase();
+        const seen = new Set();
+        const list = [];
+        rosterData.forEach(r => {
+            if (!r.name || r.name === userName) return;
+            if (seen.has(r.name)) return;
+            if (q && !r.name.toLowerCase().includes(q)) return;
+            seen.add(r.name);
+            list.push({ name: r.name, role: r.role, color: r.color, isAll: false });
+        });
+        if (!q || MENTION_ALL.includes(q) || 'everyone'.startsWith(q)) {
+            list.push({ name: MENTION_ALL, role: null, color: null, isAll: true });
+        }
+        return list;
+    }
+
+    function renderMentionPopup() {
+        if (!mentionCtx) return;
+        const { popup, items, index } = mentionCtx;
+        let html = '<div class="mention-popup-title">建议</div>';
+        items.forEach((item, i) => {
+            const active = i === index ? ' active' : '';
+            const avatar = item.isAll
+                ? '<div class="mention-avatar" style="background: #5f6368;">@</div>'
+                : avatarHtml(item.name, item.role, 'mention-avatar');
+            const sub = item.isAll ? '通知聊天中的所有人' : (item.role === 'DM' ? 'DM（地下城主）' : '玩家 · 私聊');
+            html += `<div class="mention-item${active}" data-index="${i}">` +
+                    avatar +
+                    '<div class="mention-meta">' +
+                        `<div class="mention-name">${escapeHtml(item.name)}</div>` +
+                        `<div class="mention-sub">${sub}</div>` +
+                    '</div></div>';
+        });
+        popup.innerHTML = html;
+        // mousedown 上处理并阻止默认行为，避免输入框失焦
+        popup.onmousedown = (e) => {
+            const itemEl = e.target.closest('.mention-item');
+            if (!itemEl) return;
+            e.preventDefault();
+            mentionCtx.index = parseInt(itemEl.dataset.index, 10);
+            applyMention();
+        };
+    }
+
+    function openMentionPopup(input, popup, start, query) {
+        const items = buildMentionCandidates(query);
+        if (items.length === 0) { closeMentionPopup(); return; }
+        mentionCtx = { input, popup, start, items, index: 0 };
+        renderMentionPopup();
+        popup.classList.add('open');
+    }
+
+    function closeMentionPopup() {
+        if (mentionCtx) {
+            mentionCtx.popup.classList.remove('open');
+            mentionCtx.popup.onmousedown = null;
+        }
+        mentionCtx = null;
+    }
+
+    function moveMentionSelection(delta) {
+        if (!mentionCtx) return;
+        const n = mentionCtx.items.length;
+        mentionCtx.index = (mentionCtx.index + delta + n) % n;
+        renderMentionPopup();
+        const activeEl = mentionCtx.popup.querySelector('.mention-item.active');
+        if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+    }
+
+    // 用选中的名字替换掉正在输入的 @片段
+    function applyMention() {
+        if (!mentionCtx) return;
+        const { input, start, items, index } = mentionCtx;
+        const item = items[index];
+        if (!item) { closeMentionPopup(); return; }
+        const caret = input.selectionStart;
+        const before = input.value.slice(0, start);
+        const after = input.value.slice(caret);
+        const inserted = '@' + item.name + ' ';
+        input.value = before + inserted + after;
+        const pos = before.length + inserted.length;
+        closeMentionPopup();
+        input.focus();
+        input.setSelectionRange(pos, pos);
+    }
+
+    function onChatInput(e) {
+        const input = e.target;
+        const popup = document.getElementById(
+            input.id === 'chat-panel-input' ? 'mention-popup-panel' : 'mention-popup-main'
+        );
+        const hit = getMentionQuery(input);
+        if (!hit) { closeMentionPopup(); return; }
+        openMentionPopup(input, popup, hit.start, hit.query);
+    }
+
+    // 根据正文里的 @ 决定私聊目标；@所有人 视为公开消息
+    function resolvePrivateTarget(message) {
+        if (message.includes('@' + MENTION_ALL)) return null;
+        const names = rosterData
+            .map(r => r.name)
+            .filter(n => n && n !== userName)
+            .sort((a, b) => b.length - a.length);   // 长名字优先，避免前缀误匹配
+        for (const name of names) {
+            if (message.includes('@' + name)) return name;
+        }
+        return null;
+    }
+
+    function sendChat(inputEl) {
+        const input = inputEl || document.getElementById('chat-input');
         const message = input.value.trim();
         if (!message) return;
         input.value = '';
+        closeMentionPopup();
         const diceMatch = message.match(/^\/(\d+)?d(\d+)([+-]\d+)?$/i);
         if (diceMatch) {
             const count = parseInt(diceMatch[1] || '1');
@@ -1638,7 +2013,19 @@
             rollDiceFromChat(count, sides, modifier, message.slice(1));
             return;
         }
-        socket.emit('chat:message', message);
+        socket.emit('chat:message', { message, to: resolvePrivateTarget(message) });
+    }
+
+    // --- 展开式聊天面板 ---
+    function openChatPanel() {
+        document.getElementById('chat-panel').classList.add('open');
+        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+        document.getElementById('chat-panel-input').focus();
+    }
+
+    function closeChatPanel() {
+        closeMentionPopup();
+        document.getElementById('chat-panel').classList.remove('open');
     }
 
     function rollDiceFromChat(count, sides, modifier, expr) {
@@ -1671,7 +2058,14 @@
     }
 
     function handleChatKeypress(e) {
-        if (e.key === 'Enter') sendChat();
+        // 建议框打开时，方向键/回车/Tab/Esc 归建议框使用
+        if (mentionCtx && mentionCtx.input === e.target) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); moveMentionSelection(1); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); moveMentionSelection(-1); return; }
+            if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyMention(); return; }
+            if (e.key === 'Escape') { e.preventDefault(); closeMentionPopup(); return; }
+        }
+        if (e.key === 'Enter') sendChat(e.target);
     }
 
     // --- Socket 事件监听 ---
@@ -1730,10 +2124,10 @@
 
         // 回放聊天历史
         if (Array.isArray(gs.chatHistory) && gs.chatHistory.length > 0) {
-            chatMessages.innerHTML = '';
+            clearChatLog();
             gs.chatHistory.forEach(entry => {
                 if (entry.type === 'chat') {
-                    addChatMessage(entry.name, entry.role, entry.message);
+                    addChatMessage(entry);
                 } else if (entry.type === 'dice') {
                     addSystemMessage(formatDiceMessage({ ...entry, playerName: entry.name }));
                 }
@@ -1971,7 +2365,25 @@
     });
 
     socket.on('chat:message', (data) => {
-        addChatMessage(data.name, data.role, data.message);
+        addChatMessage(data);
+    });
+
+    // 在线名单同步：@建议框、头像颜色都依赖它
+    socket.on('roster:sync', (roster) => {
+        rosterData = Array.isArray(roster) ? roster : [];
+        if (mentionCtx) {
+            const hit = getMentionQuery(mentionCtx.input);
+            if (hit) {
+                openMentionPopup(mentionCtx.input, mentionCtx.popup, hit.start, hit.query);
+            } else {
+                closeMentionPopup();
+            }
+        }
+        rerenderChat();
+    });
+
+    socket.on('chat:error', (message) => {
+        addSystemMessage(message);
     });
 
     // ========== 角色卡系统 ==========

@@ -35,6 +35,12 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-24: `@` 私聊 + 展开式聊天室（非 plan-extend 范围，属 Phase 9 之后的独立功能）
+  - [server.js](server.js)：新增 `buildRoster` / `findSocketIdsByName` / `isChatEntryVisibleTo`；`chat:message` 改收 `{ message, to }`（兼容旧的纯字符串）；私聊只发给发送者与目标，目标离线/私聊自己回 `chat:error`；`joinSuccess` 的 `chatHistory` 按人过滤；join / selectColor / disconnect 时 `io.emit('roster:sync', ...)`
+  - 可见性决策：私聊 = 发送者 + 被 @ 的人，DM **不**旁观玩家之间的私聊（用户确认）
+  - [public/game.html](public/game.html)：`rosterData` + `chatLog` 两个新状态；`addChatMessage` 改为接收整个 payload；消息统一经 `appendChatEntry` 同时写入紧凑列表和气泡面板，`roster:sync` 到达时 `rerenderChat()` 修正头像色与 @ 高亮
+  - [public/game.html](public/game.html)：`@` 建议框（`mentionCtx` 单上下文，主输入框与面板输入框共用一套逻辑）；`handleChatKeypress` 由 `onkeypress` 改为 `onkeydown` 以拦截方向键/回车/Tab/Esc
+  - [public/game.html](public/game.html)：侧边栏下半部包进 `#sidebar-lower`（`position: relative`），`#chat-panel` 以 `inset: 0` 覆盖玩家列表 + 聊天框
 - 2026-05-27: 聊天 + 骰子历史持久化（最多 100 条 FIFO，落 `data/chat_history.json`）
 - 2026-05-27: CLAUDE.md 与 plan-extend.md 同步
 

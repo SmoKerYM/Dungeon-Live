@@ -67,7 +67,7 @@ coc_app/
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save` |
 | CharacterNotes | `characterNotes:update` |
-| Other | `chat:message`, `dice:roll`, `notes:update` |
+| Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
 ### Server -> Client
 | Event | Description |
@@ -80,6 +80,9 @@ coc_app/
 | `draw:freeStroke/rect/liveStroke/remove/clearAll` | Drawing broadcasts |
 | `world:sync` | Full world snapshot after undo/redo |
 | `characterNotes:sync` | Broadcasts updated character records |
+| `roster:sync` | Broadcasts online roster `[{ name, role, color }]` (join / color pick / disconnect) |
+| `chat:message` | Chat payload; carries `to` + `toRole` when private (sent only to sender + target) |
+| `chat:error` | Private-message failure sent back to sender only (offline target / self-whisper) |
 
 ## Data Models
 
@@ -128,6 +131,9 @@ npm start       # Production server
 - World state persisted to `data/world.json`; debounced 500ms on every mutation
 - Notes, character records, and chat history writes are debounced at 500ms
 - Chat history retains last 100 entries total (chat messages + dice rolls), older entries dropped FIFO; system messages (joins/leaves) are NOT persisted
+- Private messages (`@` mentions) are visible to **sender + target only** — the DM is NOT an implicit observer of player-to-player whispers; `joinSuccess` filters `chatHistory` per user via `isChatEntryVisibleTo()`
+- `@所有人` is a normal public broadcast (highlighted client-side), not a private message
+- Client keeps `rosterData` (from `roster:sync`) — it drives the `@` suggestion popup, avatar colors, and `@` highlighting; the chat is re-rendered from `chatLog` whenever the roster changes
 - Notes tab split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
 - DM-only UI elements use `.dm-only` CSS class

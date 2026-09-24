@@ -73,8 +73,12 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Result Broadcast** — All results broadcast to every player
 
 ### Chat System
-- **Real-time Chat** — Text messages with DM/player color differentiation
+- **Real-time Chat** — Text messages with four distinct styles: system / DM / others / self (system messages use a monospace face)
 - **Chat History** — Server retains last 100 chat/dice entries; replayed on reconnect
+- **@ Private Messages** — Typing `@` opens a Teams-style suggestion popup listing online players, the DM, and `@所有人` (everyone); navigate with arrow keys, confirm with Enter/Tab, dismiss with Esc
+- **Private Visibility** — A message containing `@someone` is visible to the **sender and that person only** (the DM does not observe player-to-player whispers); history replay is filtered per user, so others never see it after reconnecting either
+- **@Everyone** — Treated as a normal public message, merely highlighted inline
+- **Expanded Chat Room** — `Click Me` next to the chat heading opens a bubble interface covering the player list and chat box: circular avatars in each player's chosen color, own messages right-aligned, others left-aligned, system messages centered, ✕ to close
 
 ## Getting Started
 

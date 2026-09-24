@@ -263,6 +263,30 @@ function pushWorldUndo() {
   redoStack = [];
 }
 
+// 构建当前在线名单（供客户端 @ 私聊建议框和头像使用）
+function buildRoster() {
+  return Array.from(gameState.players.values()).map(p => ({
+    name: p.name,
+    role: p.role,
+    color: p.color
+  }));
+}
+
+// 按玩家名查找 socketId（同名多连接时全部返回）
+function findSocketIdsByName(name) {
+  const ids = [];
+  gameState.players.forEach((p, socketId) => {
+    if (p.name === name) ids.push(socketId);
+  });
+  return ids;
+}
+
+// 判断一条聊天历史对指定用户是否可见（私聊仅收发双方可见）
+function isChatEntryVisibleTo(entry, name) {
+  if (!entry.to) return true;
+  return entry.name === name || entry.to === name;
+}
+
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
@@ -334,7 +358,7 @@ io.on('connection', (socket) => {
         players: playersWithHP,
         notes: gameState.notes,
         characterNotes: gameState.characterNotes,
-        chatHistory: gameState.chatHistory,
+        chatHistory: gameState.chatHistory.filter(e => isChatEntryVisibleTo(e, name)),
         world: gameState.world
       }
     });
@@ -345,6 +369,9 @@ io.on('connection', (socket) => {
       role,
       dmName: gameState.dm?.name || null
     });
+
+    // 广播最新在线名单（供 @ 私聊建议框使用）
+    io.emit('roster:sync', buildRoster());
 
     console.log(`${role} "${name}" 加入游戏`);
   });
@@ -376,6 +403,8 @@ io.on('connection', (socket) => {
     io.emit('colorSelected', { socketId: socket.id, name: player.name, color, characterHP });
     // 广播更新已占用颜色
     io.emit('takenColors', getTakenColors());
+    // 头像颜色随之变化，同步名单
+    io.emit('roster:sync', buildRoster());
   });
 
   // 棋子生成 (DM 可生成所有，玩家只能生成自己的)
@@ -496,10 +525,16 @@ io.on('connection', (socket) => {
     io.emit('dice:result', broadcast);
   });
 
-  // 聊天消息 (所有人)
-  socket.on('chat:message', (message) => {
+  // 聊天消息 (所有人)。payload 为 { message, to }，to 为 null 时是公开消息，
+  // 否则是发给该玩家名的私聊（仅发送者与接收者可见）
+  socket.on('chat:message', (data) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
+
+    // 兼容旧客户端的纯字符串格式（视为公开消息）
+    const message = typeof data === 'string' ? data : data?.message;
+    const to = typeof data === 'string' ? null : (data?.to || null);
+    if (typeof message !== 'string' || !message.trim()) return;
 
     const payload = {
       name: player.name,
@@ -507,8 +542,34 @@ io.on('connection', (socket) => {
       message,
       timestamp: Date.now()
     };
-    appendChatHistory({ type: 'chat', ...payload });
-    io.emit('chat:message', payload);
+
+    // 公开消息：原样广播
+    if (!to) {
+      appendChatHistory({ type: 'chat', ...payload });
+      io.emit('chat:message', payload);
+      return;
+    }
+
+    // 私聊：不能私聊自己，且目标必须在线
+    if (to === player.name) {
+      socket.emit('chat:error', '不能私聊自己');
+      return;
+    }
+    const targetIds = findSocketIdsByName(to);
+    if (targetIds.length === 0) {
+      socket.emit('chat:error', `私聊失败：${to} 不在线`);
+      return;
+    }
+
+    const target = gameState.players.get(targetIds[0]);
+    const privatePayload = { ...payload, to, toRole: target.role };
+    appendChatHistory({ type: 'chat', ...privatePayload });
+
+    // 仅发送者与接收者可见
+    socket.emit('chat:message', privatePayload);
+    targetIds.forEach(socketId => {
+      if (socketId !== socket.id) io.to(socketId).emit('chat:message', privatePayload);
+    });
   });
 
   // 笔记更新 (所有人可编辑)
@@ -891,6 +952,9 @@ io.on('connection', (socket) => {
         if (p.color) takenColors.push(p.color);
       });
       io.emit('takenColors', takenColors);
+
+      // 广播最新在线名单
+      io.emit('roster:sync', buildRoster());
     }
   });
 });
