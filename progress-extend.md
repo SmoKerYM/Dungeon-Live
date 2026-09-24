@@ -35,6 +35,13 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 断线宽限期（修 Safari 后台标签页掉线导致玩家从名单/地图消失）
+  - 根因：浏览器挂起后台标签页的 JS → 回不了 Socket.IO 的 PONG → `pingTimeout`(60s) 到期判死；客户端的退避重连定时器同样被挂起，所以只有切回前台才重连
+  - [server.js](server.js)：`DISCONNECT_GRACE_MS`（默认 120s，env 可调）；`disconnect` 只标记 `online:false` 并起计时器，保留名单项/棋子/颜色；到期才走新抽出的 `finalizePlayerLeave()`
+  - [server.js](server.js)：`takeOverPreviousSession()` 让同名同角色重连接管旧会话（不刷 `playerJoined`）；`getTakenColors` 提升到顶层；`selectColor` 改为只跟「别人」的颜色比，允许重连补发自己的颜色
+  - [server.js](server.js)：DM 席位在宽限期内为其保留（只有同名可认领）；私聊给宽限期内的离线玩家照常落盘，回 `chat:notice` 提示发送方
+  - [public/game.html](public/game.html)：`visibilitychange` / `focus` 时若已断开立即 `socket.connect()`；@ 建议框与玩家列表把离线的人标灰（`离线 · 重连后送达`）
+  - `disconnect` 现在会打印 Socket.IO 给的 reason，便于排查
 - 2026-09-24: `@` 私聊 + 展开式聊天室（非 plan-extend 范围，属 Phase 9 之后的独立功能）
   - [server.js](server.js)：新增 `buildRoster` / `findSocketIdsByName` / `isChatEntryVisibleTo`；`chat:message` 改收 `{ message, to }`（兼容旧的纯字符串）；私聊只发给发送者与目标，目标离线/私聊自己回 `chat:error`；`joinSuccess` 的 `chatHistory` 按人过滤；join / selectColor / disconnect 时 `io.emit('roster:sync', ...)`
   - 可见性决策：私聊 = 发送者 + 被 @ 的人，DM **不**旁观玩家之间的私聊（用户确认）

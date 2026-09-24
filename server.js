@@ -18,6 +18,8 @@ const CHAT_HISTORY_FILE = process.env.NODE_ENV === 'production'
 const MAX_CHAT_HISTORY = 100;
 // 撤销/重做栈最大长度
 const MAX_UNDO_STACK = 20;
+// 掉线宽限期：浏览器挂起后台标签页会中断心跳，此期间不判定玩家离开
+const DISCONNECT_GRACE_MS = Number(process.env.DISCONNECT_GRACE_MS) || 120000;
 // 地图资产文件路径
 const MAP_ASSETS_FILE = process.env.NODE_ENV === 'production' ? '/data/map_assets.json' : './data/map_assets.json';
 // 世界状态文件路径
@@ -268,7 +270,8 @@ function buildRoster() {
   return Array.from(gameState.players.values()).map(p => ({
     name: p.name,
     role: p.role,
-    color: p.color
+    color: p.color,
+    online: p.online !== false
   }));
 }
 
@@ -285,6 +288,64 @@ function findSocketIdsByName(name) {
 function isChatEntryVisibleTo(entry, name) {
   if (!entry.to) return true;
   return entry.name === name || entry.to === name;
+}
+
+// socketId -> 宽限期计时器
+const leaveTimers = new Map();
+
+// 已被占用的颜色（含宽限期内掉线的玩家，避免颜色被顶掉）
+function getTakenColors() {
+  const taken = [];
+  gameState.players.forEach(p => {
+    if (p.color) taken.push(p.color);
+  });
+  return taken;
+}
+
+// 宽限期内同名同角色重连：接管旧会话（保留颜色和棋子），返回旧记录
+function takeOverPreviousSession(socketId, name, role) {
+  for (const [oldId, p] of gameState.players) {
+    if (oldId === socketId) continue;
+    if (p.online === false && p.name === name && p.role === role) {
+      clearTimeout(leaveTimers.get(oldId));
+      leaveTimers.delete(oldId);
+      gameState.players.delete(oldId);
+      return p;
+    }
+  }
+  return null;
+}
+
+// 真正把玩家移出房间：宽限期到期，或玩家主动退出
+function finalizePlayerLeave(socketId, reason) {
+  const player = gameState.players.get(socketId);
+  if (!player) return;
+
+  clearTimeout(leaveTimers.get(socketId));
+  leaveTimers.delete(socketId);
+  console.log(`${player.role} "${player.name}" ${reason}`);
+
+  if (gameState.dm?.socketId === socketId) {
+    gameState.dm = null;
+    io.emit('dmLeft');
+  }
+
+  // 删除该玩家的棋子并广播
+  const leftColor = player.color;
+  if (leftColor) {
+    const tokenIdx = gameState.world.tokens.findIndex(t => t.color === leftColor);
+    if (tokenIdx !== -1) {
+      gameState.world.tokens.splice(tokenIdx, 1);
+      scheduleWorldSave();
+      io.emit('token:remove', leftColor);
+    }
+  }
+
+  gameState.players.delete(socketId);
+
+  io.emit('playerLeft', { name: player.name, role: player.role, color: leftColor });
+  io.emit('takenColors', getTakenColors());
+  io.emit('roster:sync', buildRoster());
 }
 
 const app = express();
@@ -324,16 +385,26 @@ io.on('connection', (socket) => {
         socket.emit('joinError', '管理员密码错误');
         return;
       }
-      // 检查是否已有 DM
-      if (gameState.dm && gameState.dm.socketId !== socket.id) {
+      // 检查是否已有 DM（宽限期内掉线的 DM 允许自己重连回来）
+      const dmSocketId = gameState.dm?.socketId;
+      const existingDm = dmSocketId ? gameState.players.get(dmSocketId) : null;
+      if (existingDm && dmSocketId !== socket.id && existingDm.name !== name) {
         socket.emit('joinError', '已有 DM 在房间中');
         return;
       }
       gameState.dm = { socketId: socket.id, name };
     }
 
+    // 宽限期内重连则接管旧会话，保留颜色（棋子本就没被删）
+    const previous = takeOverPreviousSession(socket.id, name, role);
+
     // 保存玩家信息
-    gameState.players.set(socket.id, { name, role, color: null });
+    gameState.players.set(socket.id, {
+      name,
+      role,
+      color: previous ? previous.color : null,
+      online: true
+    });
 
     // 获取已被占用的颜色
     const takenColors = [];
@@ -363,12 +434,14 @@ io.on('connection', (socket) => {
       }
     });
 
-    // 广播给其他人
-    socket.broadcast.emit('playerJoined', {
-      name,
-      role,
-      dmName: gameState.dm?.name || null
-    });
+    // 广播给其他人（宽限期内的重连是静默的，不刷系统消息）
+    if (!previous) {
+      socket.broadcast.emit('playerJoined', {
+        name,
+        role,
+        dmName: gameState.dm?.name || null
+      });
+    }
 
     // 广播最新在线名单（供 @ 私聊建议框使用）
     io.emit('roster:sync', buildRoster());
@@ -376,23 +449,17 @@ io.on('connection', (socket) => {
     console.log(`${role} "${name}" 加入游戏`);
   });
 
-  // 获取已被占用的颜色列表
-  function getTakenColors() {
-    const taken = [];
-    gameState.players.forEach(p => {
-      if (p.color) taken.push(p.color);
-    });
-    return taken;
-  }
-
   // 玩家选择颜色
   socket.on('selectColor', (color) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;
 
-    // 检查颜色是否已被占用
-    const takenColors = getTakenColors();
-    if (takenColors.includes(color)) {
+    // 检查颜色是否被「别人」占用（自己重连补发同一颜色时应放行）
+    const takenByOthers = [];
+    gameState.players.forEach((p, socketId) => {
+      if (p.color && socketId !== socket.id) takenByOthers.push(p.color);
+    });
+    if (takenByOthers.includes(color)) {
       socket.emit('colorError', '该颜色已被其他玩家选择');
       return;
     }
@@ -567,9 +634,19 @@ io.on('connection', (socket) => {
 
     // 仅发送者与接收者可见
     socket.emit('chat:message', privatePayload);
+    let delivered = false;
     targetIds.forEach(socketId => {
-      if (socketId !== socket.id) io.to(socketId).emit('chat:message', privatePayload);
+      if (socketId === socket.id) return;
+      const t = gameState.players.get(socketId);
+      if (t && t.online !== false) {
+        io.to(socketId).emit('chat:message', privatePayload);
+        delivered = true;
+      }
     });
+    // 对方在宽限期内掉线：消息已落盘，重连时经历史回放送达
+    if (!delivered) {
+      socket.emit('chat:notice', `${to} 当前掉线，消息会在其重新连接后送达`);
+    }
   });
 
   // 笔记更新 (所有人可编辑)
@@ -917,45 +994,24 @@ io.on('connection', (socket) => {
     saveUiPrefs(gameState.uiPrefs);
   });
 
-  // 断开连接
-  socket.on('disconnect', () => {
+  // 断开连接：先进入宽限期，不立刻判定离开
+  // （Safari 等浏览器会挂起后台标签页的 JS，心跳中断并不代表人走了）
+  socket.on('disconnect', (reason) => {
     const player = gameState.players.get(socket.id);
-    if (player) {
-      console.log(`${player.role} "${player.name}" 离开游戏`);
+    if (!player) return;
 
-      // 如果是 DM 离开，清空 DM
-      if (gameState.dm?.socketId === socket.id) {
-        gameState.dm = null;
-        io.emit('dmLeft');
-      }
+    console.log(`${player.role} "${player.name}" 连接断开 (${reason})，` +
+                `进入 ${DISCONNECT_GRACE_MS / 1000}s 宽限期`);
 
-      const leftColor = player.color;
+    player.online = false;
+    player.disconnectedAt = Date.now();
 
-      // 删除该玩家的棋子并广播
-      if (leftColor) {
-        const tokenIdx = gameState.world.tokens.findIndex(t => t.color === leftColor);
-        if (tokenIdx !== -1) {
-          gameState.world.tokens.splice(tokenIdx, 1);
-          scheduleWorldSave();
-          io.emit('token:remove', leftColor);
-        }
-      }
+    // 名单标灰，但仍可被 @ ；棋子和颜色都保留
+    io.emit('roster:sync', buildRoster());
 
-      gameState.players.delete(socket.id);
-
-      // 广播玩家离开（包含颜色信息）
-      io.emit('playerLeft', { name: player.name, role: player.role, color: leftColor });
-
-      // 广播更新已占用颜色（释放该颜色）
-      const takenColors = [];
-      gameState.players.forEach(p => {
-        if (p.color) takenColors.push(p.color);
-      });
-      io.emit('takenColors', takenColors);
-
-      // 广播最新在线名单
-      io.emit('roster:sync', buildRoster());
-    }
+    leaveTimers.set(socket.id, setTimeout(() => {
+      finalizePlayerLeave(socket.id, '宽限期结束，离开游戏');
+    }, DISCONNECT_GRACE_MS));
   });
 });
 

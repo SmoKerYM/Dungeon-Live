@@ -80,9 +80,10 @@ coc_app/
 | `draw:freeStroke/rect/liveStroke/remove/clearAll` | Drawing broadcasts |
 | `world:sync` | Full world snapshot after undo/redo |
 | `characterNotes:sync` | Broadcasts updated character records |
-| `roster:sync` | Broadcasts online roster `[{ name, role, color }]` (join / color pick / disconnect) |
+| `roster:sync` | Broadcasts online roster `[{ name, role, color, online }]` (join / color pick / disconnect / grace expiry) |
 | `chat:message` | Chat payload; carries `to` + `toRole` when private (sent only to sender + target) |
 | `chat:error` | Private-message failure sent back to sender only (offline target / self-whisper) |
+| `chat:notice` | Sender-only hint that the whisper target is mid-grace and will receive it on reconnect |
 
 ## Data Models
 
@@ -141,3 +142,7 @@ npm start       # Production server
 - Grid rendered as Konva.Line in `gridLayer`; shared stage transform — never misaligns
 - Undo/redo stack: 20 entries each, server-side memory only, cleared on restart
 - `io.emit` used for all world mutations (no per-player filtering)
+- **Disconnect grace period** (`DISCONNECT_GRACE_MS`, default 120s, overridable via env): a dropped socket does NOT mean the player left. Browsers (Safari especially) suspend background tabs, which kills the Socket.IO heartbeat. On `disconnect` the player is only flagged `online: false` — roster entry, token, and color are all retained — and a timer runs `finalizePlayerLeave()` when it expires. Reconnecting with the same name+role inside the window silently takes over the old session (`takeOverPreviousSession()`), with no `playerJoined` system message
+- A DM's seat is held for the whole grace window; only the same name may reclaim it
+- `selectColor` compares against colors held by *other* sockets, so a reconnecting player can re-assert their own color
+- Whispers to a player mid-grace are accepted and persisted; the filtered history replay delivers them on reconnect

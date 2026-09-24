@@ -334,6 +334,8 @@
         .mention-popup-title { font-size: 11px; color: #9aa0a6; padding: 2px 12px 6px; }
         .mention-item { display: flex; align-items: center; gap: 10px; padding: 6px 12px; cursor: pointer; }
         .mention-item.active, .mention-item:hover { background: rgba(255,255,255,0.12); }
+        .mention-item.offline .mention-avatar, .mention-item.offline .mention-name { opacity: 0.5; }
+        .player-row.offline { opacity: 0.45; }
         .mention-avatar {
             width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
             display: flex; align-items: center; justify-content: center;
@@ -1260,6 +1262,15 @@
 
     let hasJoined = false; // 用于区分首次加入与重连
 
+    // 后台标签页被浏览器挂起时，socket.io 自己的退避重连定时器同样被挂起，
+    // 所以回到前台立刻主动重连一次，不干等下一次退避
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && socket.disconnected) socket.connect();
+    });
+    window.addEventListener('focus', () => {
+        if (socket.disconnected) socket.connect();
+    });
+
     // 每次连接（含重连）都发 join，确保服务端重新注册该客户端
     socket.on('connect', () => {
         socket.emit('join', {
@@ -1432,6 +1443,18 @@
             // 隐藏"暂无玩家"提示
             document.getElementById('no-players-hint').style.display = 'none';
         }
+    }
+
+    // 按名单把掉线（宽限期内）的玩家行标灰
+    function applyRosterPresence() {
+        const offlineColors = new Set(
+            rosterData.filter(r => r.online === false && r.color).map(r => r.color)
+        );
+        document.querySelectorAll('.player-row').forEach(row => {
+            const btn = row.querySelector('.player-btn');
+            if (!btn) return;
+            row.classList.toggle('offline', offlineColors.has(btn.dataset.color));
+        });
     }
 
     // 隐藏玩家卡片
@@ -1898,7 +1921,7 @@
             if (seen.has(r.name)) return;
             if (q && !r.name.toLowerCase().includes(q)) return;
             seen.add(r.name);
-            list.push({ name: r.name, role: r.role, color: r.color, isAll: false });
+            list.push({ name: r.name, role: r.role, color: r.color, online: r.online !== false, isAll: false });
         });
         if (!q || MENTION_ALL.includes(q) || 'everyone'.startsWith(q)) {
             list.push({ name: MENTION_ALL, role: null, color: null, isAll: true });
@@ -1915,8 +1938,12 @@
             const avatar = item.isAll
                 ? '<div class="mention-avatar" style="background: #5f6368;">@</div>'
                 : avatarHtml(item.name, item.role, 'mention-avatar');
-            const sub = item.isAll ? '通知聊天中的所有人' : (item.role === 'DM' ? 'DM（地下城主）' : '玩家 · 私聊');
-            html += `<div class="mention-item${active}" data-index="${i}">` +
+            let sub;
+            if (item.isAll) sub = '通知聊天中的所有人';
+            else if (item.online === false) sub = '离线 · 重连后送达';
+            else sub = (item.role === 'DM' ? 'DM（地下城主）' : '玩家 · 私聊');
+            const offline = (!item.isAll && item.online === false) ? ' offline' : '';
+            html += `<div class="mention-item${active}${offline}" data-index="${i}">` +
                     avatar +
                     '<div class="mention-meta">' +
                         `<div class="mention-name">${escapeHtml(item.name)}</div>` +
@@ -2371,6 +2398,7 @@
     // 在线名单同步：@建议框、头像颜色都依赖它
     socket.on('roster:sync', (roster) => {
         rosterData = Array.isArray(roster) ? roster : [];
+        applyRosterPresence();
         if (mentionCtx) {
             const hit = getMentionQuery(mentionCtx.input);
             if (hit) {
@@ -2383,6 +2411,10 @@
     });
 
     socket.on('chat:error', (message) => {
+        addSystemMessage(message);
+    });
+
+    socket.on('chat:notice', (message) => {
         addSystemMessage(message);
     });
 

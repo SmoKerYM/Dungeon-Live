@@ -23,6 +23,14 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Lock / Delete** — Lock to prevent accidental drags; controls appear on hover
 - **Independent Viewports** — Each client controls its own zoom/pan independently
 
+### Disconnect Grace Period
+- **Problem** — Browsers (Safari especially) suspend background tabs' JS; the Socket.IO heartbeat dies, the connection is declared dead, and the player vanishes from the roster with their token removed from the map
+- **Grace window** — A dropped player is retained for 120s by default (`DISCONNECT_GRACE_MS` env var): dimmed in the roster but still mentionable, token left in place, colour not released
+- **Silent reconnect** — Reconnecting with the same name+role inside the window takes over the old session with no "joined the game" message; only a timeout counts as actually leaving
+- **DM seat held** — The DM's seat is reserved for the whole window; nobody else can claim it
+- **Offline whispers** — Private messages to a dropped player are accepted and delivered via history replay when they return; the sender is told
+- **Reconnect on focus** — Returning to the foreground reconnects immediately rather than waiting for backoff
+
 ### Roles & Permissions
 - **DM/Player Dual Role** — DM has full control; players have restricted permissions
 - **Color Selection** — Players choose a unique color (orange/yellow/green/blue/purple)
