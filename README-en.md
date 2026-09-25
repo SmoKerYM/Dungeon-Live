@@ -95,7 +95,7 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Debounced Sync** — 500ms debounce to reduce network traffic
 
 ### Dice System
-- **Standard Dice** — D4, D6, D8, D10, D12, D20, D100 (right sidebar with roll animation)
+- **Standard Dice** — D4, D6, D8, D10, D20, D100 (2×3 tray in the dice panel, with roll animation)
 - **Chat Dice Commands** — Type `/d20`, `/2d6+3` etc. to auto-roll with full breakdown
 - **Result Broadcast** — All results broadcast to every player
 
@@ -105,7 +105,7 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **@ Private Messages** — Typing `@` opens a Teams-style suggestion popup listing online players, the DM, and `@所有人` (everyone); navigate with arrow keys, confirm with Enter/Tab, dismiss with Esc
 - **Private Visibility** — A message containing `@someone` is visible to the **sender and that person only** (the DM does not observe player-to-player whispers); history replay is filtered per user, so others never see it after reconnecting either
 - **@Everyone** — Treated as a normal public message, merely highlighted inline
-- **Expanded Chat Room** — `Click Me` next to the chat heading opens a bubble interface covering the player list and chat box: circular avatars in each player's chosen color, own messages right-aligned, others left-aligned, system messages centered, ✕ to close
+- **Bubble Chat Room** — The chat button at the bottom centre expands on hover and pins on click: circular avatars in each player's chosen colour, own messages right-aligned, others left-aligned, system messages centred, ✕ to close
 
 ## Getting Started
 
@@ -148,7 +148,7 @@ npm start
 ### Core Operations
 
 #### DM
-- **Upload map**: click **＋ 添加地图** in sidebar
+- **Upload map**: open the Maps panel on the left, then click **＋ 添加地图**
 - **Focus map**: click an asset thumbnail to focus the viewport on that instance (auto-places if none exists)
 - **Drag / resize**: move tool to drag a map instance; bottom-right handle to resize
 - **Lock / delete**: hover map to reveal lock and delete controls
@@ -163,7 +163,7 @@ npm start
 #### Player
 - **Viewport**: scroll to zoom, drag empty space to pan (independent from others)
 - **Move token**: drag your own colored token (auto-snaps to grid)
-- **Spawn token**: click your color button in the sidebar
+- **Spawn token**: open the Players panel on the left and click your own colour row
 - **Roll dice**: click the right dice panel, or type a command in chat
 - **Character sheet**: switch to the Character tab
 
@@ -197,7 +197,7 @@ coc_app/
 │   ├── chat_history.json      # Last 100 chat/dice entries
 │   ├── map_assets.json        # Map image assets (Base64)
 │   ├── world.json             # World state (maps, tokens, drawings, fog…)
-│   ├── ui_prefs.json          # DM drawing color preferences (penColor/rectColor)
+│   ├── ui_prefs.json          # DM drawing colours + per-user float panel layouts
 │   └── notes.txt              # Shared notes
 └── images/                # (legacy, unused)
 ```

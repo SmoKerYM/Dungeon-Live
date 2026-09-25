@@ -26,9 +26,10 @@ coc_app/
 ├── data/
 │   ├── characters.json        # Character card data (name-keyed object)
 │   ├── characters_notes.json  # Character records table [{name, info}]
-│   ├── chat_history.json      # Last 100 chat + dice entries (FIFO)
+│   ├── chat_history.json      # Last 100 chat + dice entries (FIFO); private ones carry `to`
 │   ├── map_assets.json        # Map image assets { assetId: { base64, originalWidth, originalHeight } }
-│   ├── world.json             # World state (placedMaps, tokens, npcs, freeDrawings, rects)
+│   ├── world.json             # World state (placedMaps, tokens, npcs, freeDrawings, rects, fogRects)
+│   ├── ui_prefs.json          # DM pen/rect colors + per-user float panel layouts
 │   └── notes.txt              # Shared notes (plain text)
 └── images/                # (legacy, no longer used)
 ```
@@ -96,7 +97,7 @@ coc_app/
   players: Map<socketId, { name, color, role }>,
   notes: "string",
   characterNotes: [{ name, info }],
-  chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100, FIFO
+  chatHistory: [{ type: 'chat'|'dice', name, role, ..., to?, toRole?, timestamp }],  // max 100, FIFO; `to` marks a private message
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
   uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { x, y, pinned } } } },
   world: {
@@ -138,7 +139,7 @@ npm start       # Production server
 - Private messages (`@` mentions) are visible to **sender + target only** — the DM is NOT an implicit observer of player-to-player whispers; `joinSuccess` filters `chatHistory` per user via `isChatEntryVisibleTo()`
 - `@所有人` is a normal public broadcast (highlighted client-side), not a private message
 - Client keeps `rosterData` (from `roster:sync`) — it drives the `@` suggestion popup, avatar colors, and `@` highlighting; the chat is re-rendered from `chatLog` whenever the roster changes
-- Notes tab split into left (shared textarea) and right (登场人物 table with name/info columns)
+- Notes panel split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
 - DM-only UI elements use `.dm-only` CSS class
 - Grid: 1 grid = 50px (`GRID_SIZE`) at zoom=1; all object coords in `gridX/gridY` (float)
