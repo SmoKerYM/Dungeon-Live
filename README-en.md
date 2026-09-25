@@ -30,7 +30,9 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Pinning** — There is no separate pin button: **clicking the wall button**, **interacting with the window's contents** (a click, focusing an input) or **dragging the window** pins it; the window's ✕ or a second click on that wall button unpins and closes it. Pinned windows get a yellow-tinted border
 - **Automatic avoidance** — A window opened by hover positions itself to avoid the windows already pinned on screen
 - **Drag freely, position remembered** — Drag the header to move a window; on release the position is saved server-side **per user name**, so next time it opens exactly where you left it, pinned state included
+- **Identity badge** — A translucent pill at top left shows DM/Player, your colour dot and your name
 - **DM in the player list** — The DM appears as the first row of the Players panel
+- **Dice** — The dice button sits low on the right edge and opens a tight 2×3 tray (D4/D6/D8/D10/D20/D100) anchored to the bottom-right corner; D12 was dropped as a button but `/d12` and the like still work in chat
 - **Horizontal bottom controls** — The DM toolbar runs along the bottom of the screen, with its colour picker opening upward
 - **Chat** — A rectangular "chat" button at bottom centre expands on hover and pins on click, draggable like the rest; a red dot appears on it when you are whispered or @-mentioned while it is closed
 

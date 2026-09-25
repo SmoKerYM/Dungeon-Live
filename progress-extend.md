@@ -35,6 +35,12 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 左上角身份标识 + 骰子面板调整
+  - `#identity-badge`（半透明磨砂胶囊）：DM/玩家角色片 + 自己的颜色圆点 + 名字；`updateIdentityBadge()` 在 `startApp`、`chooseColor`、`joinSuccess`（重连恢复颜色后）三处调用
+  - 骰子去掉 D12，余六颗按 2×3 排；`#panel-dice` 用 `width: max-content; min-width: 0` 覆盖 `.float-panel` 的 220px 最小宽，body padding 收到 8px
+  - `defaultPanelPos` 为 `panel-dice` 特判：默认贴屏幕右下角（距边 16px）
+  - `#right-rail` 从垂直居中改为 `bottom: 270px`——按钮要落在右下角骰子窗的上方，否则会被自己的窗口盖住而点不到（150px 时实测被遮）
+  - 注：`/d12` 等聊天掷骰指令不受影响，只是少了按钮
 - 2026-09-25: 浮动窗口交互打磨（悬浮延迟 / 固定语义 / 自动避让）
   - `OPEN_DELAY = 350ms`：`mouseenter` 只起计时器，`mouseleave` 立刻 `clearTimeout(openTimer)`，鼠标路过不再触发展开
   - 删除标题栏的 📌 按钮。固定 = 点呼出按钮 / 窗口内 `mousedown`（`.close-btn` 除外）/ `focusin` / 拖拽（拖拽经 header 冒泡到 panel 的 mousedown，自动覆盖）；取消固定 = ✕ 或再点一次呼出按钮。固定状态改用 `.float-panel.pinned` 边框泛黄表示

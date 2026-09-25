@@ -21,7 +21,8 @@
             z-index: 40; display: flex; flex-direction: column; gap: 10px;
         }
         #left-rail { left: 0; align-items: flex-start; }
-        #right-rail { right: 0; align-items: flex-end; }
+        /* 骰子按钮靠下，贴近它默认展开的右下角 */
+        #right-rail { right: 0; top: auto; bottom: 270px; transform: none; align-items: flex-end; }
 
         .rail-btn {
             display: flex; align-items: center; gap: 0;
@@ -92,6 +93,30 @@
         }
         #chat-badge.show { display: block; animation: badgePulse 1.6s ease-in-out infinite; }
         @keyframes badgePulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+
+        /* 左上角：身份标识 */
+        #identity-badge {
+            position: fixed; top: 14px; left: 14px; z-index: 40;
+            display: flex; align-items: center; gap: 9px;
+            padding: 7px 14px 7px 10px;
+            border: 1px solid var(--glass-border); border-radius: 12px;
+            background: rgba(22, 24, 32, 0.55);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.4);
+            font-size: 13px; pointer-events: none;
+        }
+        #identity-dot {
+            width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+            background: #7f8c8d; border: 1.5px solid rgba(255,255,255,0.35);
+            transition: background 0.25s;
+        }
+        #identity-role {
+            font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+            padding: 2px 7px; border-radius: 6px;
+            background: rgba(255,255,255,0.14); color: rgba(235,240,250,0.95);
+        }
+        #identity-badge.is-dm #identity-role { background: rgba(231, 76, 60, 0.85); color: #fff; }
+        #identity-name { font-weight: 600; color: rgba(235,240,250,0.95); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* 右上角：退出 */
         #top-right-controls { position: fixed; top: 14px; right: 14px; z-index: 40; display: flex; gap: 8px; }
@@ -439,7 +464,9 @@
         /* 浮动窗口内右栏收窄，给共享笔记留出宽度 */
         #panel-notes #notes-right { width: 320px; }
         #panel-character { width: 680px; max-height: 82vh; }
-        #panel-dice { width: 136px; }
+        /* 骰子窗贴着 2x3 网格收紧，不要 .float-panel 的 220px 最小宽 */
+        #panel-dice { width: max-content; min-width: 0; }
+        #panel-dice .float-panel-body { padding: 8px; }
         /* 面板内的区块标题不需要原侧边栏的上边距 */
         .float-panel-body > .section-title:first-child,
         .float-panel-body > div:first-child > .section-title:first-child { margin-top: 0; }
@@ -1081,6 +1108,13 @@
 </div>
 <div id="dm-toolbar-popout"></div>
 
+<!-- 左上角身份标识 -->
+<div id="identity-badge">
+    <span id="identity-dot"></span>
+    <span id="identity-role">玩家</span>
+    <span id="identity-name"></span>
+</div>
+
 <!-- 右上角 -->
 <div id="top-right-controls">
     <button id="exit-btn" onclick="exitGame()" title="退出到登录页">退出</button>
@@ -1296,7 +1330,6 @@
         <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
         <div class="dice" style="background: #16a085;" onclick="rollDice(8, this)"><div class="dice-label">D8</div><div class="dice-val">?</div></div>
         <div class="dice" style="background: #2980b9;" onclick="rollDice(10, this)"><div class="dice-label">D10</div><div class="dice-val">?</div></div>
-        <div class="dice" style="background: #8e44ad;" onclick="rollDice(12, this)"><div class="dice-label">D12</div><div class="dice-val">?</div></div>
         <div class="dice" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val">?</div></div>
         <div class="dice" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
     </div>
@@ -1533,6 +1566,7 @@
     function startApp() {
         applyPermissions();
         initFloatPanels();
+        updateIdentityBadge();
 
         // 如果是玩家且还没选颜色，显示弹窗
         if (!isDM && !userColor) {
@@ -1553,6 +1587,7 @@
         }
 
         userColor = color;
+        updateIdentityBadge();
         socket.emit('selectColor', color);
         document.getElementById('color-modal').style.display = 'none';
         addSystemMessage(`你选择了 ${color} 颜色`);
@@ -1814,6 +1849,16 @@
 
     let rosterData = [];   // 在线名单 [{ name, role, color }]，由 roster:sync 维护
     const chatLog = [];    // 本地消息流，名单变化时据此重渲染
+
+    // 左上角身份标识：DM/玩家 + 自己的颜色 + 名字
+    function updateIdentityBadge() {
+        const badge = document.getElementById('identity-badge');
+        badge.classList.toggle('is-dm', isDM);
+        document.getElementById('identity-role').textContent = isDM ? 'DM' : '玩家';
+        document.getElementById('identity-name').textContent = userName;
+        document.getElementById('identity-dot').style.background =
+            isDM ? DM_AVATAR_HEX : (PLAYER_COLOR_HEX[userColor] || NO_COLOR_HEX);
+    }
 
     // 消息是否由我发出
     function isMyMessage(entry) {
@@ -2092,6 +2137,10 @@
         const pw = panel.offsetWidth, ph = panel.offsetHeight;
         if (panelId === 'panel-chat') {
             return { x: tr.left + tr.width / 2 - pw / 2, y: tr.top - ph - 12 };
+        }
+        // 骰子固定从右下角长出来
+        if (panelId === 'panel-dice') {
+            return { x: window.innerWidth - pw - 16, y: window.innerHeight - ph - 16 };
         }
         if (trigger.closest('#right-rail')) {
             return { x: tr.left - pw - 12, y: tr.top + tr.height / 2 - ph / 2 };
@@ -2449,6 +2498,7 @@
         // 重连时颜色已由服务端保留，不该再弹选色框
         // （startApp 在 joinSuccess 到达前就同步跑完了，那时 userColor 还是 null）
         if (userColor) document.getElementById('color-modal').style.display = 'none';
+        updateIdentityBadge();
 
         // 恢复 Konva 世界状态（先清空防止重连时重复 push）
         if (gs.world) {
