@@ -35,6 +35,15 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 右上角血条 HUD + 浮动窗口再调整
+  - [server.js](server.js)：新增 `character:setHp`（只改 hp，不碰角色卡其它字段；cur 夹在 [0, max]；玩家只能改自己的、DM 可改任意）。**不能复用 `character:save`**——整卡保存读的是角色卡 DOM 输入框，血条在面板没打开时用它会把整张卡冲掉
+  - [public/game.html](public/game.html)：`#hp-hud` 放在退出按钮左侧。2D 血槽（深凹槽 + 渐变填充 + 顶部高光），>50% 绿 / 25~50% 黄 / <25% 红；点血条就地换成 cur/max 输入框（Enter 提交、Esc 取消、focusout 提交但在两框间切换不收）；`.player-only` 的 ± 按钮各增减 1 点当前血量
+  - 血条绑定 `currentCharacter`：玩家在 `joinSuccess` 里自动 `character:load` 自己的卡（加 `silentCharLoad` 标志，免得没卡的玩家一进场就弹「未找到角色数据」）；DM 跟着他在角色卡面板打开的那张
+  - `character:hpUpdated` 现在同时回写 `currentCharacter.hp`、血条、角色卡的两个输入框
+  - `HIDE_DELAY` 400 → 0：离开按钮即收起；`scheduleHide` 增加「指针是否已落在按钮或窗口上」的判断
+  - 固定标记只留在呼出按钮（`.rail-btn.pinned` 黄描边），窗口本身不再加黄边
+  - `.rail-btn.open:not(.pinned)` ——固定后按钮缩回图标态（窗口自带标题），hover 时仍展开成图标+文字
+  - 角色卡按钮从左栏移到右栏（骰子上方），窗口默认贴右栏左侧、垂直居中展开
 - 2026-09-25: 左上角身份标识 + 骰子面板调整
   - `#identity-badge`（半透明磨砂胶囊）：DM/玩家角色片 + 自己的颜色圆点 + 名字；`updateIdentityBadge()` 在 `startApp`、`chooseColor`、`joinSuccess`（重连恢复颜色后）三处调用
   - 骰子去掉 D12，余六颗按 2×3 排；`#panel-dice` 用 `width: max-content; min-width: 0` 覆盖 `.float-panel` 的 220px 最小宽，body padding 收到 8px

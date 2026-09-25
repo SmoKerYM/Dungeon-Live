@@ -701,6 +701,32 @@ io.on('connection', (socket) => {
   });
 
   // 保存角色卡 (所有人)
+  // 只改血量，不动角色卡其它字段
+  // （血条 UI 在角色卡没载入 DOM 时也能用，走整卡保存会把其它字段冲掉）
+  socket.on('character:setHp', ({ name, cur, max }) => {
+    const player = gameState.players.get(socket.id);
+    if (!player || typeof name !== 'string') return;
+    // 玩家只能改自己的角色卡，DM 可以改任何人的
+    if (player.role !== 'DM' && name !== player.name) return;
+
+    const characters = loadCharacters();
+    const character = characters[name];
+    if (!character) { socket.emit('character:error', { message: `没有找到角色卡：${name}` }); return; }
+
+    if (!character.hp) character.hp = { cur: 0, max: 0 };
+    if (Number.isFinite(max)) character.hp.max = Math.max(0, Math.round(max));
+    if (Number.isFinite(cur)) character.hp.cur = Math.round(cur);
+    // 当前血量夹在 0 与上限之间
+    character.hp.cur = Math.max(0, Math.min(character.hp.cur, character.hp.max));
+
+    const result = saveCharacter(character);
+    if (!result.success) {
+      socket.emit('character:error', { message: '保存失败: ' + result.error });
+      return;
+    }
+    io.emit('character:hpUpdated', { name, hp: character.hp });
+  });
+
   socket.on('character:save', (data) => {
     const player = gameState.players.get(socket.id);
     if (!player) return;

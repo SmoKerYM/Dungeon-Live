@@ -25,12 +25,14 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 
 ### Fullscreen Map + Floating UI
 - **Map fills the screen** — No sidebar, no top tab bar; the Konva grid world covers the whole viewport
-- **Liquid wall buttons** — Down the left edge: Maps / Players / NPCs (DM only) / Notes / Character Sheet; Dice sits on the right. Hovering stretches the button like a liquid drop (the button itself never disappears) and reveals a frosted, rounded floating window
-- **Hover delay** — A button must be hovered for 350ms before it opens; a cursor merely passing by triggers nothing
+- **Liquid wall buttons** — Down the left edge: Maps / Players / NPCs (DM only) / Notes; the right edge holds Character Sheet and Dice. Hovering stretches the button like a liquid drop (the button itself never disappears) and reveals a frosted, rounded floating window
+- **Hover delay** — A button must be hovered for 350ms before it opens; a cursor merely passing by triggers nothing, and leaving hides it at once, so hover is a preview — click the button to keep a window around
+- **Pinned buttons collapse** — Once a window is pinned its button shrinks back to icon-only (keeping the yellow ring), since the window carries its own title; hovering still expands it to icon + label
 - **Pinning** — There is no separate pin button: **clicking the wall button**, **interacting with the window's contents** (a click, focusing an input) or **dragging the window** pins it; the window's ✕ or a second click on that wall button unpins and closes it. Pinned windows get a yellow-tinted border
 - **Automatic avoidance** — A window opened by hover positions itself to avoid the windows already pinned on screen
 - **Drag freely, position remembered** — Drag the header to move a window; on release the position is saved server-side **per user name**, so next time it opens exactly where you left it, pinned state included
 - **Identity badge** — A translucent pill at top left shows DM/Player, your colour dot and your name
+- **HP bar** — A 2D-game style health bar sits left of the exit button, bound to the currently loaded character sheet (players auto-load their own on join; the DM's follows whichever sheet they open). Green above 50%, amber 25–50%, red below 25%. Click the bar to edit current/max HP inline; players also get ± buttons for 1 point of healing or damage (max HP still requires clicking the bar). Changes broadcast live to the player list and token tooltips
 - **DM in the player list** — The DM appears as the first row of the Players panel
 - **Dice** — The dice button sits low on the right edge and opens a tight 2×3 tray (D4/D6/D8/D10/D20/D100) anchored to the bottom-right corner; D12 was dropped as a button but `/d12` and the like still work in chat
 - **Horizontal bottom controls** — The DM toolbar runs along the bottom of the screen, with its colour picker opening upward

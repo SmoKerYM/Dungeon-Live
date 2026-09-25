@@ -48,12 +48,13 @@
             opacity: 0; padding-right: 18px; transition: opacity 0.2s 0.06s;
         }
         /* 液体被“拉长”：按钮本身不消失，只是撑开 */
-        .rail-btn:hover, .rail-btn.open {
+        /* 已固定时缩回图标态——窗口自己有标题了，不必再占着一条 */
+        .rail-btn:hover, .rail-btn.open:not(.pinned) {
             width: 124px; color: #fff;
             background: rgba(38, 42, 58, 0.82);
             border-radius: 0 26px 26px 0;
         }
-        .rail-btn:hover .rail-label, .rail-btn.open .rail-label { opacity: 1; }
+        .rail-btn:hover .rail-label, .rail-btn.open:not(.pinned) .rail-label { opacity: 1; }
         .rail-btn.pinned { border-color: rgba(241, 196, 15, 0.75); color: #f1c40f; }
 
         /* 右侧贴墙方向相反 */
@@ -62,7 +63,7 @@
             border-left: 1px solid var(--glass-border); border-right: none;
             border-radius: 24px 0 0 24px;
         }
-        #right-rail .rail-btn:hover, #right-rail .rail-btn.open { border-radius: 26px 0 0 26px; }
+        #right-rail .rail-btn:hover, #right-rail .rail-btn.open:not(.pinned) { border-radius: 26px 0 0 26px; }
         #right-rail .rail-btn .rail-label { padding-right: 0; padding-left: 18px; }
 
         /* 底部中央：聊天展开按钮 + DM 工具条 */
@@ -118,6 +119,68 @@
         #identity-badge.is-dm #identity-role { background: rgba(231, 76, 60, 0.85); color: #fff; }
         #identity-name { font-weight: 600; color: rgba(235,240,250,0.95); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+        /* 右上角：血条 HUD */
+        #hp-hud {
+            display: none; align-items: center; gap: 6px;
+            padding: 5px 8px;
+            border: 1px solid var(--glass-border); border-radius: 12px;
+            background: rgba(22, 24, 32, 0.55);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.4);
+        }
+        #hp-hud.show { display: flex; }
+        .hp-step-btn {
+            width: 26px; height: 26px; flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
+            background: rgba(255,255,255,0.08); color: #e8edf8;
+            font-size: 16px; font-weight: 700; line-height: 1;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .hp-step-btn:hover { background: rgba(255,255,255,0.2); }
+        .hp-step-btn:active { transform: scale(0.9); }
+        #hp-minus:hover { background: rgba(231, 76, 60, 0.75); }
+        #hp-plus:hover  { background: rgba(39, 174, 96, 0.75); }
+
+        /* 2D 游戏风格的血槽：深色凹槽 + 渐变填充 + 顶部高光 */
+        #hp-bar-wrap { position: relative; cursor: pointer; }
+        #hp-bar-track {
+            position: relative; width: 132px; height: 20px;
+            border: 1px solid rgba(0,0,0,0.6); border-radius: 5px;
+            background: #24262e;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.75);
+            overflow: hidden;
+        }
+        #hp-bar-fill {
+            height: 100%; width: 100%;
+            background: linear-gradient(180deg, #5ee08a 0%, #27ae60 55%, #1b8048 100%);
+            transition: width 0.28s ease, background 0.28s ease;
+        }
+        /* 顶部那道高光是 2D 血条的标志性细节 */
+        #hp-bar-fill::after {
+            content: ''; position: absolute; left: 0; right: 0; top: 0; height: 42%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0));
+            pointer-events: none;
+        }
+        #hp-bar-wrap.warn #hp-bar-fill { background: linear-gradient(180deg, #ffd95e 0%, #f1c40f 55%, #b8930a 100%); }
+        #hp-bar-wrap.danger #hp-bar-fill { background: linear-gradient(180deg, #ff7b6b 0%, #e74c3c 55%, #a32b1e 100%); }
+        #hp-bar-text {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700; color: #fff;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.95);
+            pointer-events: none;
+        }
+        /* 点击血条后就地变成两个输入框 */
+        #hp-bar-edit { display: none; align-items: center; gap: 3px; }
+        #hp-bar-edit.show { display: flex; }
+        #hp-bar-edit input {
+            width: 52px; padding: 3px 5px; font-size: 12px; text-align: center;
+            border: 1px solid rgba(255,255,255,0.3); border-radius: 5px;
+            background: rgba(0,0,0,0.5); color: #fff;
+        }
+        #hp-bar-edit span { font-size: 12px; color: #9aa4bb; }
+
         /* 右上角：退出 */
         #top-right-controls { position: fixed; top: 14px; right: 14px; z-index: 40; display: flex; gap: 8px; }
 
@@ -148,8 +211,7 @@
             padding: 4px 6px; border-radius: 6px;
         }
         .float-panel-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
-        /* 没有固定按钮了，用边框提示当前窗口是固定的 */
-        .float-panel.pinned { border-color: rgba(241, 196, 15, 0.55); }
+        /* 固定状态只由呼出按钮的黄色描边表示，窗口本身保持中性 */
         .float-panel-body { padding: 12px; overflow-y: auto; flex: 1; min-height: 0; }
 
         /* DM 信息显示 */
@@ -1067,11 +1129,11 @@
     <button class="rail-btn " data-panel="panel-players"><span class="rail-icon">👥</span><span class="rail-label">玩家</span></button>
     <button class="rail-btn dm-only" data-panel="panel-npcs"><span class="rail-icon">👹</span><span class="rail-label">NPC</span></button>
     <button class="rail-btn " data-panel="panel-notes"><span class="rail-icon">📝</span><span class="rail-label">笔记</span></button>
-    <button class="rail-btn " data-panel="panel-character"><span class="rail-icon">🎴</span><span class="rail-label">角色卡</span></button>
 </div>
 
-<!-- 右侧骰子 -->
+<!-- 右侧：角色卡 + 骰子 -->
 <div id="right-rail">
+    <button class="rail-btn " data-panel="panel-character"><span class="rail-icon">🎴</span><span class="rail-label">角色卡</span></button>
     <button class="rail-btn " data-panel="panel-dice"><span class="rail-icon">🎲</span><span class="rail-label">骰子</span></button>
 </div>
 
@@ -1117,6 +1179,19 @@
 
 <!-- 右上角 -->
 <div id="top-right-controls">
+    <div id="hp-hud">
+        <button id="hp-minus" class="hp-step-btn player-only" title="扣 1 点血">−</button>
+        <div id="hp-bar-wrap" title="点击修改当前血量 / 生命上限">
+            <div id="hp-bar-track"><div id="hp-bar-fill"></div></div>
+            <span id="hp-bar-text">— / —</span>
+        </div>
+        <div id="hp-bar-edit">
+            <input type="number" id="hp-edit-cur" min="0">
+            <span>/</span>
+            <input type="number" id="hp-edit-max" min="0">
+        </div>
+        <button id="hp-plus" class="hp-step-btn player-only" title="回 1 点血">+</button>
+    </div>
     <button id="exit-btn" onclick="exitGame()" title="退出到登录页">退出</button>
 </div>
 
@@ -1567,6 +1642,7 @@
         applyPermissions();
         initFloatPanels();
         updateIdentityBadge();
+        initHpHud();
 
         // 如果是玩家且还没选颜色，显示弹窗
         if (!isDM && !userColor) {
@@ -1860,6 +1936,100 @@
             isDM ? DM_AVATAR_HEX : (PLAYER_COLOR_HEX[userColor] || NO_COLOR_HEX);
     }
 
+    // ===== 右上角血条 HUD =====
+    // 绑定到「当前载入的角色卡」：玩家是自己（加入时自动载入），DM 是他在角色卡面板里打开的那张
+    let hpHudName = null;
+    // 进场自动拉角色卡只为填血条，没有卡也不该弹提示
+    let silentCharLoad = false;
+
+    function renderHpHud(name, hp) {
+        const hud = document.getElementById('hp-hud');
+        if (!name || !hp || !Number.isFinite(hp.max)) { hud.classList.remove('show'); hpHudName = null; return; }
+
+        hpHudName = name;
+        hud.classList.add('show');
+
+        const max = Math.max(0, hp.max);
+        const cur = Math.max(0, Math.min(hp.cur, max));
+        const ratio = max > 0 ? cur / max : 0;
+
+        document.getElementById('hp-bar-fill').style.width = (ratio * 100) + '%';
+        document.getElementById('hp-bar-text').textContent = `${cur} / ${max}`;
+
+        const wrap = document.getElementById('hp-bar-wrap');
+        wrap.classList.toggle('warn', ratio > 0.25 && ratio <= 0.5);
+        wrap.classList.toggle('danger', ratio <= 0.25);
+        wrap.title = `${name}　点击修改当前血量 / 生命上限`;
+    }
+
+    // 把当前角色卡的血量同步到血条
+    function syncHpHudFromCharacter() {
+        if (currentCharacter && currentCharacter.hp) {
+            renderHpHud(currentCharacter.name, currentCharacter.hp);
+        } else {
+            renderHpHud(null, null);
+        }
+    }
+
+    function emitHpChange(cur, max) {
+        if (!hpHudName) return;
+        socket.emit('character:setHp', { name: hpHudName, cur, max });
+    }
+
+    // 加号 / 减号：只动当前血量，上限要点血条改
+    function stepHp(delta) {
+        if (!currentCharacter || !currentCharacter.hp) return;
+        const max = currentCharacter.hp.max;
+        const next = Math.max(0, Math.min(currentCharacter.hp.cur + delta, max));
+        if (next === currentCharacter.hp.cur) return;
+        emitHpChange(next, undefined);
+    }
+
+    function openHpEditor() {
+        if (!currentCharacter || !currentCharacter.hp) return;
+        document.getElementById('hp-bar-wrap').style.display = 'none';
+        const box = document.getElementById('hp-bar-edit');
+        box.classList.add('show');
+        const curInput = document.getElementById('hp-edit-cur');
+        const maxInput = document.getElementById('hp-edit-max');
+        curInput.value = currentCharacter.hp.cur;
+        maxInput.value = currentCharacter.hp.max;
+        curInput.focus();
+        curInput.select();
+    }
+
+    function closeHpEditor(commit) {
+        const box = document.getElementById('hp-bar-edit');
+        if (!box.classList.contains('show')) return;
+        if (commit) {
+            const cur = parseInt(document.getElementById('hp-edit-cur').value, 10);
+            const max = parseInt(document.getElementById('hp-edit-max').value, 10);
+            emitHpChange(Number.isFinite(cur) ? cur : undefined,
+                         Number.isFinite(max) ? max : undefined);
+        }
+        box.classList.remove('show');
+        document.getElementById('hp-bar-wrap').style.display = '';
+    }
+
+    function initHpHud() {
+        document.getElementById('hp-bar-wrap').addEventListener('click', openHpEditor);
+        document.getElementById('hp-minus').addEventListener('click', () => stepHp(-1));
+        document.getElementById('hp-plus').addEventListener('click', () => stepHp(1));
+
+        ['hp-edit-cur', 'hp-edit-max'].forEach(id => {
+            const input = document.getElementById(id);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); closeHpEditor(true); }
+                else if (e.key === 'Escape') { e.preventDefault(); closeHpEditor(false); }
+            });
+        });
+        // 焦点离开整个编辑区才提交，免得在两个输入框之间切换时被收掉
+        document.getElementById('hp-bar-edit').addEventListener('focusout', (e) => {
+            if (e.relatedTarget && e.relatedTarget.closest('#hp-bar-edit')) return;
+            closeHpEditor(true);
+        });
+    }
+
     // 消息是否由我发出
     function isMyMessage(entry) {
         return entry.name === userName && entry.role === userRole;
@@ -2120,7 +2290,7 @@
 
     // ===== 浮动窗口管理（悬浮展开 / 点击固定 / 拖拽 / 按用户名记住位置）=====
     const OPEN_DELAY = 350;          // 悬浮多久才展开，避免鼠标只是路过就弹窗
-    const HIDE_DELAY = 400;          // 移出后的宽限；窗口可能被避让挪远，要留够移动时间
+    const HIDE_DELAY = 0;            // 鼠标离开即收起，不留宽限（要留住窗口就点按钮固定）
     const PANEL_GAP = 12;            // 窗口之间的最小间距
     let savedLayout = {};            // { panelId: { x, y, pinned } }，来自服务端
     let openTimer = null;
@@ -2137,6 +2307,10 @@
         const pw = panel.offsetWidth, ph = panel.offsetHeight;
         if (panelId === 'panel-chat') {
             return { x: tr.left + tr.width / 2 - pw / 2, y: tr.top - ph - 12 };
+        }
+        // 角色卡窗口高，贴右侧栏左边、垂直居中展开
+        if (panelId === 'panel-character') {
+            return { x: tr.left - pw - 12, y: Math.max(16, (window.innerHeight - ph) / 2) };
         }
         // 骰子固定从右下角长出来
         if (panelId === 'panel-dice') {
@@ -2228,14 +2402,16 @@
         if (isPinned(panelId) === pinned) return;
         savedLayout[panelId] = Object.assign({}, savedLayout[panelId], { pinned });
         triggerEl(panelId).classList.toggle('pinned', pinned);
-        panelEl(panelId).classList.toggle('pinned', pinned);
         socket.emit('layout:save', { panelId, pinned });
     }
 
     function scheduleHide(panelId) {
         clearTimeout(hideTimer);
         hideTimer = setTimeout(() => {
-            if (!isPinned(panelId) && !panelEl(panelId).matches(':hover')) hidePanel(panelId);
+            // 指针已经落在按钮或窗口上就别收（例如从按钮直接滑进紧贴的窗口）
+            if (isPinned(panelId)) return;
+            if (panelEl(panelId).matches(':hover') || triggerEl(panelId).matches(':hover')) return;
+            hidePanel(panelId);
         }, HIDE_DELAY);
     }
 
@@ -2336,7 +2512,6 @@
             if (!panel || !trigger) return;
             if (savedLayout[panelId].pinned) {
                 trigger.classList.add('pinned');
-                panel.classList.add('pinned');
                 showPanel(panelId);
             }
         });
@@ -2493,6 +2668,13 @@
                     showPlayerCard(p.color, p.name, isMe, p.characterHP);
                 }
             });
+        }
+
+        // 玩家进场就拉一次自己的角色卡，让右上角血条立刻有数据
+        // （DM 没有同名角色卡，血条跟着他在角色卡面板里打开的那张走）
+        if (!isDM) {
+            silentCharLoad = true;
+            socket.emit('character:load', { name: userName });
         }
 
         // 重连时颜色已由服务端保留，不该再弹选色框
@@ -3193,7 +3375,9 @@
     });
 
     socket.on('character:loaded', (data) => {
+        silentCharLoad = false;
         currentCharacter = data;
+        syncHpHudFromCharacter();
         loadCharacterToUI();
         document.getElementById('char-sheet').classList.add('visible');
         isCharEditMode = false;
@@ -3214,8 +3398,11 @@
 
     // Player 自动加载时，未找到同名角色卡
     socket.on('character:notFound', (data) => {
-        // 仅对 Player 显示提示（DM 手动选择时不显示）
-        if (!isDM && data.name === userName) {
+        if (data && data.name === userName) renderHpHud(null, null);
+        const wasSilent = silentCharLoad;
+        silentCharLoad = false;
+        // 仅对 Player 显示提示（DM 手动选择、以及进场自动加载时不显示）
+        if (!isDM && !wasSilent && data.name === userName) {
             showCharToast('未找到角色数据，请点击新建角色卡', true);
             document.getElementById('char-sheet').classList.remove('visible');
         }
@@ -3223,6 +3410,16 @@
 
     // 角色卡 HP 更新（同步侧边栏 HP 显示）
     socket.on('character:hpUpdated', (data) => {
+        // 改的正是血条绑定的那张卡 -> 同步本地副本和血条
+        if (currentCharacter && currentCharacter.name === data.name) {
+            currentCharacter.hp = data.hp;
+            syncHpHudFromCharacter();
+            const curInput = document.getElementById('char-hp-cur');
+            const maxInput = document.getElementById('char-hp-max');
+            if (curInput) curInput.value = data.hp.cur;
+            if (maxInput) maxInput.value = data.hp.max;
+        }
+
         // 遍历所有玩家颜色，找到名字匹配的玩家并更新其 HP 显示
         const colors = ['orange', 'yellow', 'green', 'blue', 'purple', 'black'];
         colors.forEach(color => {

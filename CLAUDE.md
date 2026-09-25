@@ -40,7 +40,7 @@ coc_app/
 - **Konva VTT model**: map canvas is a shared Konva.Stage world; all objects (maps, tokens, NPCs, drawings) use grid coordinates (`gridX/gridY`, 1 grid = 50px at zoom=1)
 - Game state lives in memory (`gameState` object in server.js), persisted to files for characters, character notes, shared notes, chat history, map assets, and world state
 - All CSS and JS are inline in HTML files (no separate css/js files)
-- **Fullscreen-map shell**: there is no sidebar or tab bar. The Konva map fills the viewport (`#viewport` is `position: fixed; inset: 0`) and every other surface is a frosted `.float-panel` summoned from a liquid wall button (`.rail-btn` in `#left-rail` / `#right-rail`, plus `#chat-rail-btn` in `#bottom-bar`). Hovering a wall button for `OPEN_DELAY` (350ms) opens its panel transiently — a passing cursor triggers nothing. There is no pin button: a panel becomes **pinned** when the user clicks its wall button, interacts with anything inside it (`mousedown` / `focusin`), or drags it; it is **unpinned** by the panel's ✕ or by clicking the same wall button again. A transiently-opened panel is placed by `findFreeSpot()` so it avoids already-pinned panels; a pinned panel always returns to its exact saved coordinates
+- **Fullscreen-map shell**: there is no sidebar or tab bar. The Konva map fills the viewport (`#viewport` is `position: fixed; inset: 0`) and every other surface is a frosted `.float-panel` summoned from a liquid wall button (`.rail-btn` in `#left-rail` / `#right-rail`, plus `#chat-rail-btn` in `#bottom-bar`). Hovering a wall button for `OPEN_DELAY` (350ms) opens its panel transiently — a passing cursor triggers nothing. Leaving hides it immediately (`HIDE_DELAY = 0`), so hover is a preview — clicking the button is how you keep a panel around. There is no pin button: a panel becomes **pinned** when the user clicks its wall button, interacts with anything inside it (`mousedown` / `focusin`), or drags it; it is **unpinned** by the panel's ✕ or by clicking the same wall button again. A transiently-opened panel is placed by `findFreeSpot()` so it avoids already-pinned panels; a pinned panel always returns to its exact saved coordinates
 - **Independent viewport**: every client controls their own zoom/pan on the Konva stage; transforms are not broadcast
 - **World authority**: server holds canonical `world` object; all mutations go through socket events with DM guard; undo/redo stack maintained server-side (20 entries, memory only)
 
@@ -67,7 +67,7 @@ coc_app/
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
 | History | `history:undo`, `history:redo` |
-| Character | `character:list`, `character:load`, `character:save` |
+| Character | `character:list`, `character:load`, `character:save`, `character:setHp` |
 | CharacterNotes | `characterNotes:update` |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
@@ -148,6 +148,7 @@ npm start       # Production server
 - **Disconnect grace period** (`DISCONNECT_GRACE_MS`, default 120s, overridable via env): a dropped socket does NOT mean the player left. Browsers (Safari especially) suspend background tabs, which kills the Socket.IO heartbeat. On `disconnect` the player is only flagged `online: false` — roster entry, token, and color are all retained — and a timer runs `finalizePlayerLeave()` when it expires. Reconnecting with the same name+role inside the window silently takes over the old session (`takeOverPreviousSession()`), with no `playerJoined` system message
 - A DM's seat is held for the whole grace window; only the same name may reclaim it
 - Float panel positions persist **per user name** in `data/ui_prefs.json` under `layouts[name][panelId] = { x, y, pinned }` (there are no accounts, so the name is the identity). `joinSuccess` returns the caller's bucket as `layout`; the client replays pinned panels on load
+- `character:setHp` ({name, cur, max}) touches only the `hp` field and rebroadcasts `character:hpUpdated`. The HP HUD uses it rather than `character:save` because the full-card save reads the character sheet's DOM inputs, which are empty unless the sheet has been populated — saving from the HUD that way would wipe the card. Players may only set their own (`name === player.name`); the DM may set anyone's
 - `player:leave` (the 退出 button) bypasses the grace period entirely — `finalizePlayerLeave()` runs immediately, so a deliberate exit is instant while a suspended tab is not
 - `selectColor` compares against colors held by *other* sockets, so a reconnecting player can re-assert their own color
 - Whispers to a player mid-grace are accepted and persisted; the filtered history replay delivers them on reconnect
