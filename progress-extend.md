@@ -35,6 +35,10 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 浮动窗口默认位置对齐留白
+  - 新增 `EDGE_MARGIN = 14`（与 `#identity-badge` 的 top/left 一致），统一贴边留白
+  - `panel-maps`：左边缘与左上角身份标识对齐（x = 14），底边离地图按钮顶部同样 14px
+  - `panel-dice`：贴右下角，距右、距底均 14px（原来是 16px）
 - 2026-09-25: 右上角血条 HUD + 浮动窗口再调整
   - [server.js](server.js)：新增 `character:setHp`（只改 hp，不碰角色卡其它字段；cur 夹在 [0, max]；玩家只能改自己的、DM 可改任意）。**不能复用 `character:save`**——整卡保存读的是角色卡 DOM 输入框，血条在面板没打开时用它会把整张卡冲掉
   - [public/game.html](public/game.html)：`#hp-hud` 放在退出按钮左侧。2D 血槽（深凹槽 + 渐变填充 + 顶部高光），>50% 绿 / 25~50% 黄 / <25% 红；点血条就地换成 cur/max 输入框（Enter 提交、Esc 取消、focusout 提交但在两框间切换不收）；`.player-only` 的 ± 按钮各增减 1 点当前血量
@@ -47,7 +51,7 @@
 - 2026-09-25: 左上角身份标识 + 骰子面板调整
   - `#identity-badge`（半透明磨砂胶囊）：DM/玩家角色片 + 自己的颜色圆点 + 名字；`updateIdentityBadge()` 在 `startApp`、`chooseColor`、`joinSuccess`（重连恢复颜色后）三处调用
   - 骰子去掉 D12，余六颗按 2×3 排；`#panel-dice` 用 `width: max-content; min-width: 0` 覆盖 `.float-panel` 的 220px 最小宽，body padding 收到 8px
-  - `defaultPanelPos` 为 `panel-dice` 特判：默认贴屏幕右下角（距边 16px）
+  - `defaultPanelPos` 为 `panel-dice` 特判：默认贴屏幕右下角
   - `#right-rail` 从垂直居中改为 `bottom: 270px`——按钮要落在右下角骰子窗的上方，否则会被自己的窗口盖住而点不到（150px 时实测被遮）
   - 注：`/d12` 等聊天掷骰指令不受影响，只是少了按钮
 - 2026-09-25: 浮动窗口交互打磨（悬浮延迟 / 固定语义 / 自动避让）

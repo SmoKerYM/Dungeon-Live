@@ -2292,6 +2292,7 @@
     const OPEN_DELAY = 350;          // 悬浮多久才展开，避免鼠标只是路过就弹窗
     const HIDE_DELAY = 300;          // 离开后的宽限，留够鼠标从按钮挪进窗口的时间
     const PANEL_GAP = 12;            // 窗口之间的最小间距
+    const EDGE_MARGIN = 14;          // 贴边留白，与左上角身份标识的 top/left 保持一致
     let savedLayout = {};            // { panelId: { x, y, pinned } }，来自服务端
     let openTimer = null;
     let hideTimer = null;
@@ -2312,16 +2313,16 @@
         if (panelId === 'panel-character') {
             return { x: tr.left - pw - 12, y: Math.max(16, (window.innerHeight - ph) / 2) };
         }
-        // 骰子固定从右下角长出来
+        // 骰子：贴右下角，留白同上
         if (panelId === 'panel-dice') {
-            return { x: window.innerWidth - pw - 16, y: window.innerHeight - ph - 16 };
+            return { x: window.innerWidth - pw - EDGE_MARGIN, y: window.innerHeight - ph - EDGE_MARGIN };
         }
         if (trigger.closest('#right-rail')) {
             return { x: tr.left - pw - 12, y: tr.top + tr.height / 2 - ph / 2 };
         }
-        // 地图列表默认往按钮上方长，不挡住下面几个按钮对应的窗口
+        // 地图列表：左边缘与身份标识对齐，底部离按钮同样的留白
         if (panelId === 'panel-maps') {
-            return { x: tr.right + 12, y: tr.top - ph - 12 };
+            return { x: EDGE_MARGIN, y: tr.top - ph - EDGE_MARGIN };
         }
         return { x: tr.right + 12, y: tr.top + tr.height / 2 - ph / 2 };
     }
