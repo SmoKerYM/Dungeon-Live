@@ -35,6 +35,10 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 修 bug —— 先后悬浮两个按钮时第一个窗口不收起
+  - 根因：`openTimer` / `hideTimer` 是全局单例。悬浮 B 的 `mouseenter` 里 `clearTimeout(hideTimer)` 把 A 待执行的收起一并取消了，A 的窗口和按钮就永久留着
+  - 同一根因还有第二种表现：A 的 `hidePanel` 里 `clearTimeout(openTimer)` 会取消掉 B 待展开的计时器
+  - 改为 `openTimers` / `hideTimers` 两个 Map 按 panelId 各自持有，新增 `cancelOpen(id)` / `cancelHide(id)`，所有事件绑定只操作自己那一份
 - 2026-09-25: 浮动窗口默认位置对齐留白
   - 新增 `EDGE_MARGIN = 14`（与 `#identity-badge` 的 top/left 一致），统一贴边留白
   - `panel-maps`：左边缘与左上角身份标识对齐（x = 14），底边离地图按钮顶部同样 14px
