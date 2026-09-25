@@ -35,6 +35,11 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 血条挪回左上角，与身份标识并排等高
+  - 新增 `#top-left-controls`（`position: fixed; top/left: 14px; display: flex; gap: 8px`）把身份标识和血条装在一起，两者自身不再定位
+  - 新增 CSS 变量 `--hud-h: 40px`，两个 HUD 共用；原身份标识靠 padding 撑出的 32px 与血条的 50px 不再各行其是
+  - 血槽 170→140×10，数字 15→13px，± 按钮 30→26px，以适配 40px 行高
+  - 编辑态（两个输入框）同样锁在 40px，展开时不会把身份标识顶歪
 - 2026-09-25: 血条改版（顶部居中 + 扁平现代化）
   - `#hp-hud` 从 `#top-right-controls` 里拆出，独立 `position: fixed; top: 14px; left: 50%`
   - 去掉旧的拟物化做法：竖向渐变、`::after` 顶部高光、内阴影凹槽全部删除
