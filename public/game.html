@@ -119,67 +119,71 @@
         #identity-badge.is-dm #identity-role { background: rgba(231, 76, 60, 0.85); color: #fff; }
         #identity-name { font-weight: 600; color: rgba(235,240,250,0.95); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        /* 右上角：血条 HUD */
+        /* 顶部居中：血条 HUD */
         #hp-hud {
-            display: none; align-items: center; gap: 6px;
-            padding: 5px 8px;
-            border: 1px solid var(--glass-border); border-radius: 12px;
-            background: rgba(22, 24, 32, 0.55);
+            position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+            z-index: 40;
+            display: none; align-items: center; gap: 12px;
+            padding: 10px 16px;
+            border: 1px solid var(--glass-border); border-radius: 16px;
+            background: rgba(22, 24, 32, 0.6);
             -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-            box-shadow: 0 6px 22px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 28px rgba(0,0,0,0.45);
         }
         #hp-hud.show { display: flex; }
         .hp-step-btn {
-            width: 26px; height: 26px; flex-shrink: 0;
-            border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
-            background: rgba(255,255,255,0.08); color: #e8edf8;
-            font-size: 16px; font-weight: 700; line-height: 1;
+            width: 30px; height: 30px; flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.16); border-radius: 10px;
+            background: rgba(255,255,255,0.07); color: #d8e0f0;
+            font-size: 17px; font-weight: 500; line-height: 1;
             cursor: pointer; display: flex; align-items: center; justify-content: center;
-            transition: background 0.15s, transform 0.1s;
+            transition: background 0.15s, color 0.15s, transform 0.1s;
         }
-        .hp-step-btn:hover { background: rgba(255,255,255,0.2); }
+        .hp-step-btn:hover { background: rgba(255,255,255,0.16); color: #fff; }
         .hp-step-btn:active { transform: scale(0.9); }
-        #hp-minus:hover { background: rgba(231, 76, 60, 0.75); }
-        #hp-plus:hover  { background: rgba(39, 174, 96, 0.75); }
+        #hp-minus:hover { background: rgba(248, 113, 113, 0.9); border-color: transparent; color: #fff; }
+        #hp-plus:hover  { background: rgba(74, 222, 128, 0.9); border-color: transparent; color: #0f1b13; }
 
-        /* 2D 游戏风格的血槽：深色凹槽 + 渐变填充 + 顶部高光 */
-        #hp-bar-wrap { position: relative; cursor: pointer; }
+        /* 扁平细长的胶囊血槽，不用高光和渐变 */
+        #hp-bar-wrap { display: flex; align-items: center; gap: 12px; cursor: pointer; }
         #hp-bar-track {
-            position: relative; width: 132px; height: 20px;
-            border: 1px solid rgba(0,0,0,0.6); border-radius: 5px;
-            background: #24262e;
-            box-shadow: inset 0 2px 5px rgba(0,0,0,0.75);
+            width: 260px; height: 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.10);
             overflow: hidden;
         }
         #hp-bar-fill {
             height: 100%; width: 100%;
-            background: linear-gradient(180deg, #5ee08a 0%, #27ae60 55%, #1b8048 100%);
-            transition: width 0.28s ease, background 0.28s ease;
+            border-radius: 999px;
+            background: #4ade80;
+            box-shadow: 0 0 14px rgba(74, 222, 128, 0.45);
+            transition: width 0.35s cubic-bezier(.4,0,.2,1), background 0.35s, box-shadow 0.35s;
         }
-        /* 顶部那道高光是 2D 血条的标志性细节 */
-        #hp-bar-fill::after {
-            content: ''; position: absolute; left: 0; right: 0; top: 0; height: 42%;
-            background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0));
-            pointer-events: none;
+        #hp-bar-wrap.warn #hp-bar-fill {
+            background: #fbbf24; box-shadow: 0 0 14px rgba(251, 191, 36, 0.45);
         }
-        #hp-bar-wrap.warn #hp-bar-fill { background: linear-gradient(180deg, #ffd95e 0%, #f1c40f 55%, #b8930a 100%); }
-        #hp-bar-wrap.danger #hp-bar-fill { background: linear-gradient(180deg, #ff7b6b 0%, #e74c3c 55%, #a32b1e 100%); }
+        #hp-bar-wrap.danger #hp-bar-fill {
+            background: #f87171; box-shadow: 0 0 14px rgba(248, 113, 113, 0.5);
+        }
         #hp-bar-text {
-            position: absolute; inset: 0;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 11px; font-weight: 700; color: #fff;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.95);
-            pointer-events: none;
+            font-size: 15px; font-weight: 600; color: #eef2fa;
+            font-variant-numeric: tabular-nums; letter-spacing: 0.3px;
+            min-width: 62px; text-align: right;
         }
+        #hp-bar-wrap.warn #hp-bar-text { color: #fbbf24; }
+        #hp-bar-wrap.danger #hp-bar-text { color: #f87171; }
+
         /* 点击血条后就地变成两个输入框 */
-        #hp-bar-edit { display: none; align-items: center; gap: 3px; }
+        #hp-bar-edit { display: none; align-items: center; gap: 6px; }
         #hp-bar-edit.show { display: flex; }
         #hp-bar-edit input {
-            width: 52px; padding: 3px 5px; font-size: 12px; text-align: center;
-            border: 1px solid rgba(255,255,255,0.3); border-radius: 5px;
-            background: rgba(0,0,0,0.5); color: #fff;
+            width: 70px; padding: 5px 8px; font-size: 14px; text-align: center;
+            font-variant-numeric: tabular-nums;
+            border: 1px solid rgba(255,255,255,0.22); border-radius: 8px;
+            background: rgba(0,0,0,0.45); color: #fff;
         }
-        #hp-bar-edit span { font-size: 12px; color: #9aa4bb; }
+        #hp-bar-edit input:focus { outline: none; border-color: rgba(120,180,255,0.75); }
+        #hp-bar-edit span { font-size: 14px; color: #8b95ab; }
 
         /* 右上角：退出 */
         #top-right-controls { position: fixed; top: 14px; right: 14px; z-index: 40; display: flex; gap: 8px; }
@@ -1178,8 +1182,7 @@
 </div>
 
 <!-- 右上角 -->
-<div id="top-right-controls">
-    <div id="hp-hud">
+<div id="hp-hud">
         <button id="hp-minus" class="hp-step-btn player-only" title="扣 1 点血">−</button>
         <div id="hp-bar-wrap" title="点击修改当前血量 / 生命上限">
             <div id="hp-bar-track"><div id="hp-bar-fill"></div></div>
@@ -1190,8 +1193,10 @@
             <span>/</span>
             <input type="number" id="hp-edit-max" min="0">
         </div>
-        <button id="hp-plus" class="hp-step-btn player-only" title="回 1 点血">+</button>
-    </div>
+    <button id="hp-plus" class="hp-step-btn player-only" title="回 1 点血">+</button>
+</div>
+
+<div id="top-right-controls">
     <button id="exit-btn" onclick="exitGame()" title="退出到登录页">退出</button>
 </div>
 

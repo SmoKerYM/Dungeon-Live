@@ -35,6 +35,11 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 血条改版（顶部居中 + 扁平现代化）
+  - `#hp-hud` 从 `#top-right-controls` 里拆出，独立 `position: fixed; top: 14px; left: 50%`
+  - 去掉旧的拟物化做法：竖向渐变、`::after` 顶部高光、内阴影凹槽全部删除
+  - 改为细长胶囊（260×12，`border-radius: 999px`）+ 纯色填充 + 柔和外发光；配色换成 `#4ade80` / `#fbbf24` / `#f87171`
+  - 数字从压在槽上移到血条右侧，`font-variant-numeric: tabular-nums` 防跳动，并随血量档位变色
 - 2026-09-25: 修 bug —— 先后悬浮两个按钮时第一个窗口不收起
   - 根因：`openTimer` / `hideTimer` 是全局单例。悬浮 B 的 `mouseenter` 里 `clearTimeout(hideTimer)` 把 A 待执行的收起一并取消了，A 的窗口和按钮就永久留着
   - 同一根因还有第二种表现：A 的 `hidePanel` 里 `clearTimeout(openTimer)` 会取消掉 B 待展开的计时器
