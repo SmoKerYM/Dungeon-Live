@@ -26,7 +26,7 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 ### Fullscreen Map + Floating UI
 - **Map fills the screen** — No sidebar, no top tab bar; the Konva grid world covers the whole viewport
 - **Liquid wall buttons** — Down the left edge: Maps / Players / NPCs (DM only) / Notes; the right edge holds Character Sheet and Dice. Hovering stretches the button like a liquid drop (the button itself never disappears) and reveals a frosted, rounded floating window
-- **Hover delay** — A button must be hovered for 350ms before it opens; a cursor merely passing by triggers nothing, and leaving hides it at once, so hover is a preview — click the button to keep a window around
+- **Hover delay** — A button must be hovered for 350ms before it opens; a cursor merely passing by triggers nothing; leaving closes it after 300ms, which is enough to move from the button into the window (arriving there keeps it open)
 - **Pinned buttons collapse** — Once a window is pinned its button shrinks back to icon-only (keeping the yellow ring), since the window carries its own title; hovering still expands it to icon + label
 - **Pinning** — There is no separate pin button: **clicking the wall button**, **interacting with the window's contents** (a click, focusing an input) or **dragging the window** pins it; the window's ✕ or a second click on that wall button unpins and closes it. Pinned windows get a yellow-tinted border
 - **Automatic avoidance** — A window opened by hover positions itself to avoid the windows already pinned on screen

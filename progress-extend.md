@@ -40,7 +40,7 @@
   - [public/game.html](public/game.html)：`#hp-hud` 放在退出按钮左侧。2D 血槽（深凹槽 + 渐变填充 + 顶部高光），>50% 绿 / 25~50% 黄 / <25% 红；点血条就地换成 cur/max 输入框（Enter 提交、Esc 取消、focusout 提交但在两框间切换不收）；`.player-only` 的 ± 按钮各增减 1 点当前血量
   - 血条绑定 `currentCharacter`：玩家在 `joinSuccess` 里自动 `character:load` 自己的卡（加 `silentCharLoad` 标志，免得没卡的玩家一进场就弹「未找到角色数据」）；DM 跟着他在角色卡面板打开的那张
   - `character:hpUpdated` 现在同时回写 `currentCharacter.hp`、血条、角色卡的两个输入框
-  - `HIDE_DELAY` 400 → 0：离开按钮即收起；`scheduleHide` 增加「指针是否已落在按钮或窗口上」的判断
+  - `HIDE_DELAY` 400 → 0 → **300**：先按要求改成 0，实测鼠标来不及从按钮挪到窗口就被收掉，用户确认后回退到 300ms；`scheduleHide` 同时增加「指针是否已落在按钮或窗口上」的判断
   - 固定标记只留在呼出按钮（`.rail-btn.pinned` 黄描边），窗口本身不再加黄边
   - `.rail-btn.open:not(.pinned)` ——固定后按钮缩回图标态（窗口自带标题），hover 时仍展开成图标+文字
   - 角色卡按钮从左栏移到右栏（骰子上方），窗口默认贴右栏左侧、垂直居中展开
