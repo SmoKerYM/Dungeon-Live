@@ -123,7 +123,8 @@
             padding: 4px 6px; border-radius: 6px;
         }
         .float-panel-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
-        .float-panel-btn.active { color: #f1c40f; }
+        /* 没有固定按钮了，用边框提示当前窗口是固定的 */
+        .float-panel.pinned { border-color: rgba(241, 196, 15, 0.55); }
         .float-panel-body { padding: 12px; overflow-y: auto; flex: 1; min-height: 0; }
 
         /* DM 信息显示 */
@@ -1089,7 +1090,6 @@
 <div class="float-panel " id="panel-maps">
     <div class="float-panel-header">
         <span class="float-panel-title">地图</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
     <div class="float-panel-body">
@@ -1107,7 +1107,6 @@
 <div class="float-panel " id="panel-players">
     <div class="float-panel-header">
         <span class="float-panel-title">玩家</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
     <div class="float-panel-body">
@@ -1154,7 +1153,6 @@
 <div class="float-panel dm-only" id="panel-npcs">
     <div class="float-panel-header">
         <span class="float-panel-title">生成 NPC</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
     <div class="float-panel-body">
@@ -1177,7 +1175,6 @@
 <div class="float-panel " id="panel-notes">
     <div class="float-panel-header">
         <span class="float-panel-title">笔记</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
     <div class="float-panel-body">
@@ -1200,7 +1197,6 @@
 <div class="float-panel " id="panel-character">
     <div class="float-panel-header">
         <span class="float-panel-title">角色卡</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
     <div class="float-panel-body">
@@ -1292,7 +1288,6 @@
 <div class="float-panel " id="panel-dice">
     <div class="float-panel-header">
         <span class="float-panel-title">骰子</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
     <div class="float-panel-body">
@@ -1311,7 +1306,6 @@
 <div class="float-panel" id="panel-chat">
     <div class="float-panel-header">
         <span class="float-panel-title">聊天室</span>
-        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
 <div id="chat-panel-messages"></div>
@@ -2080,8 +2074,11 @@
     }
 
     // ===== 浮动窗口管理（悬浮展开 / 点击固定 / 拖拽 / 按用户名记住位置）=====
-    const HIDE_DELAY = 180;          // 移出后的宽限，便于鼠标从按钮滑进窗口
+    const OPEN_DELAY = 350;          // 悬浮多久才展开，避免鼠标只是路过就弹窗
+    const HIDE_DELAY = 400;          // 移出后的宽限；窗口可能被避让挪远，要留够移动时间
+    const PANEL_GAP = 12;            // 窗口之间的最小间距
     let savedLayout = {};            // { panelId: { x, y, pinned } }，来自服务端
+    let openTimer = null;
     let hideTimer = null;
     let topZ = 50;
 
@@ -2099,6 +2096,10 @@
         if (trigger.closest('#right-rail')) {
             return { x: tr.left - pw - 12, y: tr.top + tr.height / 2 - ph / 2 };
         }
+        // 地图列表默认往按钮上方长，不挡住下面几个按钮对应的窗口
+        if (panelId === 'panel-maps') {
+            return { x: tr.right + 12, y: tr.top - ph - 12 };
+        }
         return { x: tr.right + 12, y: tr.top + tr.height / 2 - ph / 2 };
     }
 
@@ -2108,6 +2109,32 @@
         const maxX = window.innerWidth - panel.offsetWidth - m;
         const maxY = window.innerHeight - panel.offsetHeight - m;
         return { x: Math.max(m, Math.min(x, maxX)), y: Math.max(m, Math.min(y, maxY)) };
+    }
+
+    // 悬浮展开时尽量不压在已经固定显示的窗口上
+    function findFreeSpot(panel, preferred) {
+        const blockers = [...document.querySelectorAll('.float-panel.show')]
+            .filter(other => other.id !== panel.id && isPinned(other.id))
+            .map(other => other.getBoundingClientRect());
+        if (blockers.length === 0) return preferred;
+
+        const w = panel.offsetWidth, h = panel.offsetHeight;
+        const overlaps = (x, y) => blockers.some(b =>
+            x < b.right + PANEL_GAP && x + w + PANEL_GAP > b.left &&
+            y < b.bottom + PANEL_GAP && y + h + PANEL_GAP > b.top);
+
+        if (!overlaps(preferred.x, preferred.y)) return preferred;
+
+        // 以首选位置为中心逐圈外扩，优先往右/往下让
+        const dirs = [[1,0],[0,1],[1,1],[0,-1],[1,-1],[-1,0],[-1,1],[-1,-1]];
+        for (let ring = 1; ring <= 24; ring++) {
+            for (const [dx, dy] of dirs) {
+                const cand = clampToViewport(preferred.x + dx * ring * 40,
+                                             preferred.y + dy * ring * 40, panel);
+                if (!overlaps(cand.x, cand.y)) return cand;
+            }
+        }
+        return preferred;   // 实在排不开就按原位
     }
 
     function placePanel(panelId, x, y) {
@@ -2127,8 +2154,10 @@
 
         // 先显示再量尺寸，否则 offsetWidth 为 0
         const saved = savedLayout[panelId];
-        const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y))
-            ? saved : defaultPanelPos(panelId, panel);
+        const hasSaved = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y);
+        let pos = hasSaved ? { x: saved.x, y: saved.y } : defaultPanelPos(panelId, panel);
+        // 固定的窗口回到用户放的位置；临时展开的则避开已固定的窗口
+        if (!isPinned(panelId)) pos = findFreeSpot(panel, clampToViewport(pos.x, pos.y, panel));
         placePanel(panelId, pos.x, pos.y);
 
         triggerEl(panelId).classList.add('open');
@@ -2137,6 +2166,7 @@
     }
 
     function hidePanel(panelId) {
+        clearTimeout(openTimer);
         panelEl(panelId).classList.remove('show');
         triggerEl(panelId).classList.remove('open');
     }
@@ -2146,10 +2176,10 @@
     }
 
     function setPinned(panelId, pinned) {
+        if (isPinned(panelId) === pinned) return;
         savedLayout[panelId] = Object.assign({}, savedLayout[panelId], { pinned });
         triggerEl(panelId).classList.toggle('pinned', pinned);
-        const pinBtn = panelEl(panelId).querySelector('.pin-btn');
-        if (pinBtn) pinBtn.classList.toggle('active', pinned);
+        panelEl(panelId).classList.toggle('pinned', pinned);
         socket.emit('layout:save', { panelId, pinned });
     }
 
@@ -2204,18 +2234,36 @@
             const panel = panelEl(panelId);
             if (!panel) return;
 
-            // 悬浮即展开（按钮本身不消失，只是被“拉长”）
-            trigger.addEventListener('mouseenter', () => { clearTimeout(hideTimer); showPanel(panelId); });
-            trigger.addEventListener('mouseleave', () => scheduleHide(panelId));
-            // 点击固定 / 取消固定
-            trigger.addEventListener('click', () => togglePin(panelId));
+            // 悬浮展开，但要停留够久——鼠标只是路过不该弹窗
+            trigger.addEventListener('mouseenter', () => {
+                clearTimeout(hideTimer);
+                clearTimeout(openTimer);
+                if (panel.classList.contains('show')) return;
+                openTimer = setTimeout(() => showPanel(panelId), OPEN_DELAY);
+            });
+            trigger.addEventListener('mouseleave', () => {
+                clearTimeout(openTimer);
+                scheduleHide(panelId);
+            });
+
+            // 点呼出按钮：固定；已固定时再点一次则取消固定并收起
+            trigger.addEventListener('click', () => {
+                clearTimeout(openTimer);
+                togglePin(panelId);
+            });
 
             panel.addEventListener('mouseenter', () => clearTimeout(hideTimer));
             panel.addEventListener('mouseleave', () => scheduleHide(panelId));
 
-            panel.querySelector('.pin-btn').addEventListener('click', () => setPinned(panelId, !isPinned(panelId)));
+            // 跟窗口里的内容产生交互（点击、拖拽、聚焦输入框）即视为想留住它
+            panel.addEventListener('mousedown', (e) => {
+                if (e.target.closest('.close-btn')) return;
+                setPinned(panelId, true);
+            });
+            panel.addEventListener('focusin', () => setPinned(panelId, true));
+
             panel.querySelector('.close-btn').addEventListener('click', () => {
-                if (isPinned(panelId)) setPinned(panelId, false);
+                setPinned(panelId, false);
                 hidePanel(panelId);
             });
 
@@ -2238,10 +2286,9 @@
             const trigger = triggerEl(panelId);
             if (!panel || !trigger) return;
             if (savedLayout[panelId].pinned) {
-                showPanel(panelId);
                 trigger.classList.add('pinned');
-                const pinBtn = panel.querySelector('.pin-btn');
-                if (pinBtn) pinBtn.classList.add('active');
+                panel.classList.add('pinned');
+                showPanel(panelId);
             }
         });
     }

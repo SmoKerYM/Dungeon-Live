@@ -35,6 +35,12 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 浮动窗口交互打磨（悬浮延迟 / 固定语义 / 自动避让）
+  - `OPEN_DELAY = 350ms`：`mouseenter` 只起计时器，`mouseleave` 立刻 `clearTimeout(openTimer)`，鼠标路过不再触发展开
+  - 删除标题栏的 📌 按钮。固定 = 点呼出按钮 / 窗口内 `mousedown`（`.close-btn` 除外）/ `focusin` / 拖拽（拖拽经 header 冒泡到 panel 的 mousedown，自动覆盖）；取消固定 = ✕ 或再点一次呼出按钮。固定状态改用 `.float-panel.pinned` 边框泛黄表示
+  - `findFreeSpot()`：临时展开的窗口以首选位置为中心逐圈外扩（40px 步长，优先右/下），避开所有 `isPinned` 且可见的窗口；已固定的窗口仍回到精确的保存坐标
+  - `HIDE_DELAY` 180 → 400ms：避让可能把窗口挪得离按钮较远，收起宽限要留够鼠标移动时间
+  - `defaultPanelPos`：`panel-maps` 改为默认在按钮上方展开
 - 2026-09-25: 前端布局重构（全屏地图 + 悬浮界面）
   - 整体外壳重写：删掉 `#sidebar` / `#main-content` / `#tab-bar` / `#right-sidebar`；`#viewport` 改 `position: fixed; inset: 0`，Konva 世界铺满视口
   - 左侧 `#left-rail`（地图/玩家/NPC/笔记/角色卡）、右侧 `#right-rail`（骰子）、底部 `#bottom-bar`（聊天按钮 + DM 工具条），右上角只剩「退出」
