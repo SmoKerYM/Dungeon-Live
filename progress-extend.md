@@ -35,6 +35,17 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 前端布局重构（全屏地图 + 悬浮界面）
+  - 整体外壳重写：删掉 `#sidebar` / `#main-content` / `#tab-bar` / `#right-sidebar`；`#viewport` 改 `position: fixed; inset: 0`，Konva 世界铺满视口
+  - 左侧 `#left-rail`（地图/玩家/NPC/笔记/角色卡）、右侧 `#right-rail`（骰子）、底部 `#bottom-bar`（聊天按钮 + DM 工具条），右上角只剩「退出」
+  - 液态效果：`.rail-btn` 贴墙（外侧直角、内侧大圆角），hover/open 时宽度 52→124px 并淡入文字标签，按钮本身不消失
+  - 七个 `.float-panel`（磨砂 `backdrop-filter` + 圆角）：hover 展开、click 固定、标题栏拖拽、`ResizeObserver` 在内容撑大后重新夹回视口
+  - 位置持久化：`layout:save` 事件 → `uiPrefs.layouts[用户名][panelId] = {x,y,pinned}` 落 `data/ui_prefs.json`；`joinSuccess` 回传该用户的 `layout`，客户端重放固定的窗口
+  - `switchTab` 删除，改为 `onCharacterPanelOpen()` 在打开角色卡面板时拉列表；笔记/角色卡从整页视图变成浮动窗口
+  - 舍弃旧版紧凑聊天列表（`#chat-container` / `buildCompactMessage`），只保留气泡面板；被 @ 或被私聊且窗口没开时 `#chat-badge` 红点
+  - DM 工具条竖排改横排，`positionPopout` 改为向上弹并水平居中
+  - 玩家列表第一行固定显示 DM（`#row-dm`，沿用 `#dm-name`，原 `#dm-info` 横幅删除）
+  - 顺带修：`game.html` 缺 `joinError` 监听，被拒后会停在空白死页面（现在提示并跳回登录页）；重连时服务端已保留颜色，不再重复弹选色框
 - 2026-09-25: 退出按钮
   - [public/game.html](public/game.html)：顶栏右上角 `#exit-btn`，`exitGame()` 二次确认后 emit `player:leave` → 清 sessionStorage → 回 `/`
   - [server.js](server.js)：`player:leave` 直接调 `finalizePlayerLeave(socket.id, '主动退出游戏')`，跳过宽限期

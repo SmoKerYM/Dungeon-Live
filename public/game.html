@@ -5,10 +5,126 @@
     <title>DND 线上跑团地图工具 - 多人协作版</title>
     <style>
         * { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; box-sizing: border-box; }
-        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #2c3e50; color: white; }
+        body { margin: 0; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #1a1a1a; color: white; }
 
-        /* 侧边栏 */
-        #sidebar { width: 280px; background: #34495e; padding: 15px; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 10; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; }
+        /* ===== 全屏地图 + 悬浮 UI 外壳 ===== */
+        :root {
+            --rail-w: 52px;
+            --glass-bg: rgba(22, 24, 32, 0.72);
+            --glass-border: rgba(255, 255, 255, 0.14);
+            --glass-blur: blur(18px) saturate(140%);
+        }
+
+        /* 液态贴墙按钮栏 */
+        #left-rail, #right-rail {
+            position: fixed; top: 50%; transform: translateY(-50%);
+            z-index: 40; display: flex; flex-direction: column; gap: 10px;
+        }
+        #left-rail { left: 0; align-items: flex-start; }
+        #right-rail { right: 0; align-items: flex-end; }
+
+        .rail-btn {
+            display: flex; align-items: center; gap: 0;
+            height: 48px; width: var(--rail-w);
+            padding: 0; border: 1px solid var(--glass-border); border-left: none;
+            background: var(--glass-bg);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            color: rgba(215, 222, 238, 0.92);
+            cursor: pointer; overflow: hidden; white-space: nowrap;
+            /* 贴墙的液滴：外侧直角，内侧大圆角 */
+            border-radius: 0 24px 24px 0;
+            box-shadow: 0 6px 22px rgba(0,0,0,0.45);
+            transition: width 0.28s cubic-bezier(.34,1.3,.5,1),
+                        border-radius 0.28s cubic-bezier(.34,1.3,.5,1),
+                        background 0.2s, color 0.2s;
+        }
+        .rail-btn .rail-icon {
+            width: var(--rail-w); flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center; font-size: 19px;
+        }
+        .rail-btn .rail-label {
+            font-size: 13px; font-weight: 600; letter-spacing: 0.5px;
+            opacity: 0; padding-right: 18px; transition: opacity 0.2s 0.06s;
+        }
+        /* 液体被“拉长”：按钮本身不消失，只是撑开 */
+        .rail-btn:hover, .rail-btn.open {
+            width: 124px; color: #fff;
+            background: rgba(38, 42, 58, 0.82);
+            border-radius: 0 26px 26px 0;
+        }
+        .rail-btn:hover .rail-label, .rail-btn.open .rail-label { opacity: 1; }
+        .rail-btn.pinned { border-color: rgba(241, 196, 15, 0.75); color: #f1c40f; }
+
+        /* 右侧贴墙方向相反 */
+        #right-rail .rail-btn {
+            flex-direction: row-reverse;
+            border-left: 1px solid var(--glass-border); border-right: none;
+            border-radius: 24px 0 0 24px;
+        }
+        #right-rail .rail-btn:hover, #right-rail .rail-btn.open { border-radius: 26px 0 0 26px; }
+        #right-rail .rail-btn .rail-label { padding-right: 0; padding-left: 18px; }
+
+        /* 底部中央：聊天展开按钮 + DM 工具条 */
+        #bottom-bar {
+            position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+            z-index: 40; display: flex; align-items: center; gap: 10px;
+        }
+        #chat-rail-btn {
+            position: relative;
+            display: flex; align-items: center; gap: 8px;
+            height: 44px; padding: 0 20px;
+            border: 1px solid var(--glass-border); border-radius: 14px;
+            background: var(--glass-bg);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            color: rgba(215, 222, 238, 0.92);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 6px 22px rgba(0,0,0,0.45);
+            transition: background 0.2s, color 0.2s, transform 0.2s;
+        }
+        #chat-rail-btn:hover, #chat-rail-btn.open { background: rgba(38,42,58,0.86); color: #fff; transform: translateY(-2px); }
+        #chat-rail-btn.pinned { border-color: rgba(241,196,15,0.75); color: #f1c40f; }
+        /* 被 @ 时的红点提示 */
+        #chat-badge {
+            display: none; position: absolute; top: -5px; right: -5px;
+            width: 12px; height: 12px; border-radius: 50%;
+            background: #e74c3c; border: 2px solid #1a1a1a;
+            box-shadow: 0 0 10px rgba(231,76,60,0.9);
+        }
+        #chat-badge.show { display: block; animation: badgePulse 1.6s ease-in-out infinite; }
+        @keyframes badgePulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+
+        /* 右上角：退出 */
+        #top-right-controls { position: fixed; top: 14px; right: 14px; z-index: 40; display: flex; gap: 8px; }
+
+        /* ===== 浮动窗口 ===== */
+        .float-panel {
+            position: fixed; z-index: 50; display: none;
+            flex-direction: column;
+            min-width: 220px; max-width: 92vw; max-height: 82vh;
+            background: var(--glass-bg);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border); border-radius: 16px;
+            box-shadow: 0 18px 50px rgba(0,0,0,0.6);
+            overflow: hidden;
+        }
+        .float-panel.show { display: flex; }
+        .float-panel-header {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 12px; cursor: grab;
+            border-bottom: 1px solid rgba(255,255,255,0.09);
+            background: rgba(255,255,255,0.04);
+            flex-shrink: 0;
+        }
+        .float-panel-header:active { cursor: grabbing; }
+        .float-panel-title { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; flex: 1; }
+        .float-panel-btn {
+            background: transparent; border: none; color: #9aa4bb;
+            font-size: 14px; line-height: 1; cursor: pointer;
+            padding: 4px 6px; border-radius: 6px;
+        }
+        .float-panel-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+        .float-panel-btn.active { color: #f1c40f; }
+        .float-panel-body { padding: 12px; overflow-y: auto; flex: 1; min-height: 0; }
 
         /* DM 信息显示 */
         #dm-info {
@@ -53,7 +169,7 @@
         .action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* 画布与地图 */
-        #viewport { flex-grow: 1; display: flex; background: #1a1a1a; position: relative; overflow: hidden; padding: 15px; }
+        #viewport { position: fixed; inset: 0; display: flex; background: #1a1a1a; overflow: hidden; z-index: 1; }
 
         /* Konva 网格世界容器 */
         #world-container {
@@ -62,7 +178,6 @@
             width: 100%;
             height: 100%;
             background: #1a1a1a;
-            border-radius: 12px;
             overflow: hidden;
         }
         #konva-stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -183,20 +298,8 @@
         input.npc-color::-webkit-color-swatch-wrapper { padding: 0; }
         input.npc-color::-webkit-color-swatch { border: none; border-radius: 2px; }
 
-        /* 右侧边栏（骰子） */
-        #right-sidebar {
-            width: 70px;
-            background: #34495e;
-            padding: 15px 10px;
-            box-shadow: -2px 0 5px rgba(0,0,0,0.3);
-            z-index: 10;
-            flex-shrink: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        #dice-column { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+        /* 骰子改为浮动窗口内的两列网格 */
+        #dice-column { display: grid; grid-template-columns: repeat(2, 50px); gap: 6px; justify-content: center; }
         .dice { width: 50px; height: 50px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: transform 0.1s; }
         .dice:hover { transform: scale(1.05); }
         .dice:active { transform: scale(0.95); }
@@ -204,14 +307,18 @@
         .dice-val { font-size: 16px; font-weight: bold; }
         .dice-big { width: 50px; height: 50px; border: 1px solid rgba(255,255,255,0.3); }
         /* DM 悬浮工具条（Phase 8-D） */
+        /* DM 工具条（Phase 8-D 起在 canvas 内；前端重构后改为底部横排） */
         #dm-toolbar {
-            position: absolute;
-            top: 8px;
-            left: 8px;
-            z-index: 30;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
+            align-items: center;
             gap: 4px;
+            padding: 4px;
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            background: var(--glass-bg);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.45);
             pointer-events: auto;
         }
         #dm-toolbar sl-icon-button::part(base) {
@@ -237,11 +344,12 @@
         #dm-toolbar sl-divider {
             --color: rgba(255, 255, 255, 0.18);
             --spacing: 3px;
-            width: 40px;
+            height: 28px;
         }
         /* 工具条弹出面板（颜色选择器 / 批量清除按钮） */
         #dm-toolbar-popout {
-            position: absolute;
+            position: fixed;
+            z-index: 45;
             display: none;
             flex-direction: row;
             align-items: center;
@@ -286,35 +394,11 @@
             font-weight: bold;
         }
 
-        /* 聊天框 */
-        #chat-container {
-            margin-top: auto;
-            background: rgba(0,0,0,0.3);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            flex: 1; 
-            min-height: 200px;
-        }
-        #chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-            font-size: 12px;
-        }
-        .chat-msg { margin-bottom: 5px; line-height: 1.4; }
-        .chat-msg .name { font-weight: bold; }
-        .chat-msg .dm { color: #e74c3c; }
-        .chat-msg .player { color: #3498db; }
-        .chat-msg .system { color: #f1c40f; font-style: italic; font-family: 'Courier New', Consolas, monospace; }
-        .chat-msg .mine { color: #2ecc71; }
-        .chat-msg .private-name { color: #e91e63; }
-        .chat-msg.private-msg { background: rgba(233,30,99,0.12); border-left: 2px solid #e91e63; padding: 3px 6px; border-radius: 4px; }
+        /* 聊天消息样式分层（沿用于气泡面板） */
         .chat-msg .mention { color: #f39c12; font-weight: bold; }
-        #chat-input-container { display: flex; padding: 8px; border-top: 1px solid #555; position: relative; }
-        #chat-input { flex: 1; padding: 8px; border: none; border-radius: 4px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; }
-        #chat-send { padding: 8px 15px; background: #3498db; border: none; border-radius: 4px; color: white; cursor: pointer; margin-left: 5px; }
-
+        #chat-input-container { display: flex; padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); position: relative; flex-shrink: 0; }
+        #chat-input, #chat-panel-input { flex: 1; padding: 8px; border: none; border-radius: 6px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; }
+        #chat-send, #chat-panel-send { padding: 8px 14px; background: #3498db; border: none; border-radius: 6px; color: white; cursor: pointer; margin-left: 5px; }
         /* @ 提及建议框 */
         .mention-popup {
             display: none;
@@ -345,40 +429,24 @@
         .mention-name { font-size: 13px; color: #e8eaed; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .mention-sub { font-size: 11px; color: #9aa0a6; }
 
-        /* 展开式聊天面板（覆盖玩家列表 + 聊天框） */
-        #sidebar-lower { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-        #chat-section-title { display: flex; align-items: center; justify-content: space-between; }
-        #open-chat-panel-btn {
-            font-size: 11px; padding: 2px 8px; border: 1px solid #3498db;
-            background: rgba(52,152,219,0.2); color: #5dade2;
-            border-radius: 10px; cursor: pointer;
-        }
-        #open-chat-panel-btn:hover { background: #3498db; color: white; }
-        #chat-panel {
-            position: absolute; inset: 0; z-index: 60;
-            display: none; flex-direction: column;
-            background: #2b3b4d; border: 1px solid #46617d; border-radius: 8px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.5); overflow: hidden;
-        }
-        #chat-panel.open { display: flex; }
-        #chat-panel-header {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 8px 10px; background: rgba(0,0,0,0.25); border-bottom: 1px solid #46617d;
-        }
-        #chat-panel-title { font-size: 13px; font-weight: bold; color: #ecf0f1; }
-        #chat-panel-close {
-            background: transparent; border: none; color: #bdc3c7;
-            font-size: 18px; line-height: 1; cursor: pointer; padding: 0 5px; border-radius: 4px;
-        }
-        #chat-panel-close:hover { background: rgba(255,255,255,0.15); color: white; }
+        /* 各浮动窗口尺寸 */
+        #panel-chat { width: 380px; height: 460px; }
+        #panel-maps { width: 300px; }
+        #panel-players { width: 280px; }
+        #panel-npcs { width: 260px; }
+        #panel-notes { width: 780px; height: 70vh; }
+        /* 浮动窗口内右栏收窄，给共享笔记留出宽度 */
+        #panel-notes #notes-right { width: 320px; }
+        #panel-character { width: 680px; max-height: 82vh; }
+        #panel-dice { width: 136px; }
+        /* 面板内的区块标题不需要原侧边栏的上边距 */
+        .float-panel-body > .section-title:first-child,
+        .float-panel-body > div:first-child > .section-title:first-child { margin-top: 0; }
         #chat-panel-messages {
-            flex: 1; overflow-y: auto; padding: 10px 8px;
+            flex: 1; overflow-y: auto; padding: 12px 10px;
             display: flex; flex-direction: column; gap: 10px;
         }
-        #chat-panel-input-container { display: flex; padding: 8px; border-top: 1px solid #46617d; position: relative; }
-        #chat-panel-input { flex: 1; padding: 8px; border: none; border-radius: 4px; background: rgba(255,255,255,0.1); color: white; font-size: 12px; }
-        #chat-panel-send { padding: 8px 14px; background: #3498db; border: none; border-radius: 4px; color: white; cursor: pointer; margin-left: 5px; }
-
+        #chat-panel-input-container { display: flex; padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); position: relative; flex-shrink: 0; }
         /* 气泡消息（Teams 风格） */
         .panel-msg { display: flex; gap: 8px; align-items: flex-start; }
         .panel-msg.mine { flex-direction: row-reverse; }
@@ -445,45 +513,17 @@
         .color-option.taken { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
         /* Tab 栏 */
-        #tab-bar {
-            display: flex;
-            background: #1a1a2e;
-            border-bottom: 2px solid #3498db;
-            flex-shrink: 0;
-        }
-        .tab {
-            padding: 12px 50px;
-            cursor: pointer;
-            color: #aaa;
-            font-weight: bold;
-            font-size: 14px;
-            transition: all 0.3s;
-            border-bottom: 3px solid transparent;
-            margin-bottom: -2px;
-        }
-        .tab:hover { color: white; background: rgba(52, 152, 219, 0.1); }
         #exit-btn {
-            margin-left: auto; align-self: center; margin-right: 14px;
-            padding: 6px 16px; font-size: 13px; font-weight: bold;
-            color: #e8a0a0; background: rgba(231, 76, 60, 0.15);
-            border: 1px solid rgba(231, 76, 60, 0.5); border-radius: 5px;
+            padding: 7px 16px; font-size: 13px; font-weight: 600;
+            color: #e8a0a0; background: rgba(231, 76, 60, 0.18);
+            border: 1px solid rgba(231, 76, 60, 0.5); border-radius: 10px;
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
             cursor: pointer; transition: all 0.2s;
         }
         #exit-btn:hover { background: #e74c3c; color: white; border-color: #e74c3c; }
-        .tab.active {
-            color: white;
-            background: rgba(52, 152, 219, 0.2);
-            border-bottom-color: #3498db;
-        }
 
         /* 笔记视图 */
-        #notes-view {
-            display: none;
-            flex-grow: 1;
-            padding: 20px;
-            background: #1a1a1a;
-            gap: 20px;
-        }
+        #notes-view { display: flex; gap: 16px; height: 100%; }
         #notes-left {
             flex: 1;
             display: flex;
@@ -617,14 +657,7 @@
         }
 
         /* 角色卡视图 */
-        #character-view {
-            display: none;
-            flex-grow: 1;
-            padding: 20px;
-            background: #1a1a1a;
-            overflow-y: auto;
-            position: relative;
-        }
+        #character-view { display: block; position: relative; }
         .char-toolbar {
             display: flex;
             gap: 10px;
@@ -992,29 +1025,99 @@
 <!-- DM Toast 通知（仅 DM 可见） -->
 <div id="dm-toast" class="dm-only"></div>
 
-<div id="sidebar">
-    <!-- DM 信息 -->
-    <div id="dm-info">
-        <div class="label">当前 DM</div>
-        <div class="name" id="dm-name">等待中...</div>
+<!-- 全屏地图 -->
+<div id="viewport">
+    <div id="world-container">
+        <div id="konva-stage"></div>
+        <div id="placed-map-overlays"></div>
     </div>
+</div>
 
+<!-- 左侧液态贴墙按钮 -->
+<div id="left-rail">
+    <button class="rail-btn " data-panel="panel-maps"><span class="rail-icon">🗺</span><span class="rail-label">地图</span></button>
+    <button class="rail-btn " data-panel="panel-players"><span class="rail-icon">👥</span><span class="rail-label">玩家</span></button>
+    <button class="rail-btn dm-only" data-panel="panel-npcs"><span class="rail-icon">👹</span><span class="rail-label">NPC</span></button>
+    <button class="rail-btn " data-panel="panel-notes"><span class="rail-icon">📝</span><span class="rail-label">笔记</span></button>
+    <button class="rail-btn " data-panel="panel-character"><span class="rail-icon">🎴</span><span class="rail-label">角色卡</span></button>
+</div>
+
+<!-- 右侧骰子 -->
+<div id="right-rail">
+    <button class="rail-btn " data-panel="panel-dice"><span class="rail-icon">🎲</span><span class="rail-label">骰子</span></button>
+</div>
+
+<!-- 底部中央：聊天 + DM 工具条 -->
+<div id="bottom-bar">
+    <button id="chat-rail-btn" data-panel="panel-chat">
+        <span>💬</span><span>聊天</span><span id="chat-badge"></span>
+    </button>
+<div id="dm-toolbar" class="dm-only">
+            <sl-tooltip content="移动" placement="top">
+                <sl-icon-button id="btn-move" class="dm-tool-btn active" name="arrows-move" label="移动" onclick="setTool('move')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-divider></sl-divider>
+            <sl-tooltip content="画笔" placement="top">
+                <sl-icon-button id="btn-pen" class="dm-tool-btn" name="pencil-fill" label="画笔" onclick="setTool('draw')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="矩形" placement="top">
+                <sl-icon-button id="btn-rect" class="dm-tool-btn" name="bounding-box" label="矩形" onclick="setTool('rect')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="橡皮" placement="top">
+                <sl-icon-button id="btn-eraser" class="dm-tool-btn" name="eraser-fill" label="橡皮" onclick="setTool('erase')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="迷雾遮罩（拖拽绘制，双击删除）" placement="top">
+                <sl-icon-button id="btn-fog" class="dm-tool-btn" name="clouds-fill" label="迷雾" onclick="setTool('fog')"></sl-icon-button>
+            </sl-tooltip>
+            <sl-divider></sl-divider>
+            <sl-tooltip content="撤销 (Ctrl+Z)" placement="top">
+                <sl-icon-button id="btn-undo" class="dm-tool-btn" name="arrow-counterclockwise" label="撤销" onclick="emitWorldUndo()"></sl-icon-button>
+            </sl-tooltip>
+            <sl-tooltip content="重做 (Ctrl+Shift+Z)" placement="top">
+                <sl-icon-button id="btn-redo" class="dm-tool-btn" name="arrow-clockwise" label="重做" onclick="emitWorldRedo()"></sl-icon-button>
+            </sl-tooltip>
+        </div>
+</div>
+<div id="dm-toolbar-popout"></div>
+
+<!-- 右上角 -->
+<div id="top-right-controls">
+    <button id="exit-btn" onclick="exitGame()" title="退出到登录页">退出</button>
+</div>
+
+<!-- ===== 浮动窗口 ===== -->
+<div class="float-panel " id="panel-maps">
+    <div class="float-panel-header">
+        <span class="float-panel-title">地图</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+    <div class="float-panel-body">
     <div id="section-world-map" class="dm-only">
-        <div class="section-title">地图</div>
         <div id="world-asset-library"></div>
         <input type="file" id="world-file-input" accept="image/*" style="display: none;">
         <button id="add-world-map-btn" class="action-btn" onclick="onAddWorldMapClick()">＋ 添加地图</button>
     </div>
-
     <div id="section-player-maps" class="player-only">
-        <div class="section-title">地图</div>
         <div id="player-asset-library"></div>
     </div>
+    </div>
+</div>
 
-    <div id="sidebar-lower">
-    <div class="section-title">玩家列表</div>
-    <div id="player-list">
-        <div class="player-row" id="row-orange" style="display: none;">
+<div class="float-panel " id="panel-players">
+    <div class="float-panel-header">
+        <span class="float-panel-title">玩家</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+    <div class="float-panel-body">
+        <div class="player-row" id="row-dm">
+            <div class="player-btn dm-row-btn" style="background: linear-gradient(135deg, #e74c3c, #c0392b);">
+                <span class="player-name" id="dm-name">等待中...</span>
+                <span class="hp-display">DM</span>
+            </div>
+        </div>
+<div class="player-row" id="row-orange" style="display: none;">
             <button class="player-btn" style="background: #e67e22;" data-color="orange" onclick="spawnToken('orange')">
                 <span class="player-name" id="name-orange">玩家 (橙)</span>
                 <span class="hp-display"><span id="hp-cur-orange">_</span>/<span id="hp-max-orange">_</span></span>
@@ -1044,10 +1147,18 @@
                 <span class="hp-display"><span id="hp-cur-purple">_</span>/<span id="hp-max-purple">_</span></span>
             </button>
         </div>
-        <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无玩家加入</p>
-        <!-- NPC 角色卡 (仅 DM) -->
-        <div class="player-row dm-only" id="row-npc">
-            <div class="section-title">生成NPC</div>
+        <p id="no-players-hint" style="color: #888; font-size: 12px; text-align: center;">暂无其他玩家</p>
+    </div>
+</div>
+
+<div class="float-panel dm-only" id="panel-npcs">
+    <div class="float-panel-header">
+        <span class="float-panel-title">生成 NPC</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+    <div class="float-panel-body">
+    <div class="player-row dm-only" id="row-npc">
             <div class="npc-card">
                 <div class="npc-color-selector">
                     <div class="npc-color" style="background: #e74c3c;" onclick="spawnNPCWithColor('#e74c3c')" title="红色"></div>
@@ -1061,82 +1172,15 @@
             </div>
         </div>
     </div>
-
-    <!-- 聊天框 -->
-    <div class="section-title" id="chat-section-title">
-        <span>聊天</span>
-        <button id="open-chat-panel-btn" onclick="openChatPanel()">Click Me</button>
-    </div>
-    <div id="chat-container">
-        <div id="chat-messages"></div>
-        <div id="chat-input-container">
-            <div class="mention-popup" id="mention-popup-main"></div>
-            <input type="text" id="chat-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
-                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
-            <button id="chat-send" onclick="sendChat()">发送</button>
-        </div>
-    </div>
-
-    <!-- 展开式聊天面板（覆盖玩家列表 + 聊天框） -->
-    <div id="chat-panel">
-        <div id="chat-panel-header">
-            <span id="chat-panel-title">聊天室</span>
-            <button id="chat-panel-close" onclick="closeChatPanel()" title="关闭">✕</button>
-        </div>
-        <div id="chat-panel-messages"></div>
-        <div id="chat-panel-input-container">
-            <div class="mention-popup" id="mention-popup-panel"></div>
-            <input type="text" id="chat-panel-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
-                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
-            <button id="chat-panel-send" onclick="sendChat(document.getElementById('chat-panel-input'))">发送</button>
-        </div>
-    </div>
-    </div><!-- end sidebar-lower -->
 </div>
 
-<div id="main-content">
-    <!-- Tab 栏 -->
-    <div id="tab-bar">
-        <div class="tab active" data-tab="map" onclick="switchTab('map')">地图</div>
-        <div class="tab" data-tab="notes" onclick="switchTab('notes')">笔记</div>
-        <div class="tab" data-tab="character" onclick="switchTab('character')">角色卡</div>
-        <button id="exit-btn" onclick="exitGame()" title="退出到登录页">退出</button>
+<div class="float-panel " id="panel-notes">
+    <div class="float-panel-header">
+        <span class="float-panel-title">笔记</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
-
-    <div id="viewport">
-    <div id="world-container">
-        <div id="konva-stage"></div>
-        <div id="placed-map-overlays"></div>
-        <div id="dm-toolbar" class="dm-only">
-            <sl-tooltip content="移动" placement="right">
-                <sl-icon-button id="btn-move" class="dm-tool-btn active" name="arrows-move" label="移动" onclick="setTool('move')"></sl-icon-button>
-            </sl-tooltip>
-            <sl-divider></sl-divider>
-            <sl-tooltip content="画笔" placement="right">
-                <sl-icon-button id="btn-pen" class="dm-tool-btn" name="pencil-fill" label="画笔" onclick="setTool('draw')"></sl-icon-button>
-            </sl-tooltip>
-            <sl-tooltip content="矩形" placement="right">
-                <sl-icon-button id="btn-rect" class="dm-tool-btn" name="bounding-box" label="矩形" onclick="setTool('rect')"></sl-icon-button>
-            </sl-tooltip>
-            <sl-tooltip content="橡皮" placement="right">
-                <sl-icon-button id="btn-eraser" class="dm-tool-btn" name="eraser-fill" label="橡皮" onclick="setTool('erase')"></sl-icon-button>
-            </sl-tooltip>
-            <sl-tooltip content="迷雾遮罩（拖拽绘制，双击删除）" placement="right">
-                <sl-icon-button id="btn-fog" class="dm-tool-btn" name="clouds-fill" label="迷雾" onclick="setTool('fog')"></sl-icon-button>
-            </sl-tooltip>
-            <sl-divider></sl-divider>
-            <sl-tooltip content="撤销 (Ctrl+Z)" placement="right">
-                <sl-icon-button id="btn-undo" class="dm-tool-btn" name="arrow-counterclockwise" label="撤销" onclick="emitWorldUndo()"></sl-icon-button>
-            </sl-tooltip>
-            <sl-tooltip content="重做 (Ctrl+Shift+Z)" placement="right">
-                <sl-icon-button id="btn-redo" class="dm-tool-btn" name="arrow-clockwise" label="重做" onclick="emitWorldRedo()"></sl-icon-button>
-            </sl-tooltip>
-        </div>
-        <div id="dm-toolbar-popout"></div>
-    </div>
-</div>
-
-    <!-- 笔记视图 -->
+    <div class="float-panel-body">
     <div id="notes-view">
         <div id="notes-left">
             <textarea id="notes-textarea" placeholder="在此输入共享笔记...&#10;&#10;所有人都可以编辑，内容会实时同步给所有玩家。"></textarea>
@@ -1150,8 +1194,16 @@
             <button class="char-notes-add-btn" onclick="addCharacterNote()">+ 添加人物</button>
         </div>
     </div>
+    </div>
+</div>
 
-    <!-- 角色卡视图 -->
+<div class="float-panel " id="panel-character">
+    <div class="float-panel-header">
+        <span class="float-panel-title">角色卡</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+    <div class="float-panel-body">
     <div id="character-view">
         <!-- 顶部操作栏 -->
         <div class="char-toolbar">
@@ -1234,13 +1286,16 @@
             <button id="char-save-btn" onclick="saveCharacterData()">保存</button>
         </div>
     </div>
+    </div>
+</div>
 
-    <!-- 角色卡 Toast 通知 -->
-    <div id="char-toast"></div>
-</div><!-- end main-content -->
-
-<!-- 右侧边栏（骰子） -->
-<div id="right-sidebar">
+<div class="float-panel " id="panel-dice">
+    <div class="float-panel-header">
+        <span class="float-panel-title">骰子</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+    <div class="float-panel-body">
     <div id="dice-column">
         <div class="dice" style="background: #b2bfc0;" onclick="rollDice(4, this)"><div class="dice-label">D4</div><div class="dice-val">?</div></div>
         <div class="dice" style="background: #95a5a6;" onclick="rollDice(6, this)"><div class="dice-label">D6</div><div class="dice-val">?</div></div>
@@ -1250,7 +1305,26 @@
         <div class="dice" style="background: #c0392b;" onclick="rollDice(20, this)"><div class="dice-label">D20</div><div class="dice-val">?</div></div>
         <div class="dice" style="background: #2c3e50;" onclick="rollDice(100, this)"><div class="dice-label">D100</div><div class="dice-val">?</div></div>
     </div>
+    </div>
 </div>
+
+<div class="float-panel" id="panel-chat">
+    <div class="float-panel-header">
+        <span class="float-panel-title">聊天室</span>
+        <button class="float-panel-btn pin-btn" title="固定显示">📌</button>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+<div id="chat-panel-messages"></div>
+        <div id="chat-panel-input-container">
+            <div class="mention-popup" id="mention-popup-panel"></div>
+            <input type="text" id="chat-panel-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
+                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
+            <button id="chat-panel-send" onclick="sendChat(document.getElementById('chat-panel-input'))">发送</button>
+        </div>
+</div>
+
+<!-- 角色卡 Toast 通知 -->
+<div id="char-toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -1290,7 +1364,6 @@
     });
 
     // --- DOM 元素 ---
-    const chatMessages = document.getElementById('chat-messages');
     const chatPanelMessages = document.getElementById('chat-panel-messages');
 
     let currentTool = 'move';
@@ -1303,43 +1376,12 @@
     const notesTextarea = document.getElementById('notes-textarea');
     let notesTimeout = null;
 
-    function switchTab(tabName) {
-        // 更新 Tab 按钮状态
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.tab === tabName);
-        });
-
-        // 切换视图
-        document.getElementById('viewport').style.display = tabName === 'map' ? 'flex' : 'none';
-        document.getElementById('notes-view').style.display = tabName === 'notes' ? 'flex' : 'none';
-        document.getElementById('character-view').style.display = tabName === 'character' ? 'block' : 'none';
-
-        // 进入角色卡时刷新列表
-        if (tabName === 'character') {
-            socket.emit('character:list');
-
-            // Player 自动加载同名角色卡
-            if (!isDM) {
-                socket.emit('character:load', { name: userName });
-            }
-        }
+    // 打开角色卡面板时才拉取列表（原先由 switchTab('character') 触发）
+    function onCharacterPanelOpen() {
+        socket.emit('character:list');
+        // Player 自动加载同名角色卡
+        if (!isDM) socket.emit('character:load', { name: userName });
     }
-
-    // --- 笔记同步 ---
-    notesTextarea.oninput = () => {
-        clearTimeout(notesTimeout);
-        notesTimeout = setTimeout(() => {
-            socket.emit('notes:update', notesTextarea.value);
-        }, 500); // 500ms 防抖
-    };
-
-    socket.on('notes:sync', (content) => {
-        notesTextarea.value = content;
-    });
-
-    // --- 人物记录 ---
-    let localCharacterNotes = [];
-    let charNotesTimeout = null;
 
     function renderCharacterNotes() {
         const tbody = document.getElementById('char-notes-body');
@@ -1496,6 +1538,7 @@
 
     function startApp() {
         applyPermissions();
+        initFloatPanels();
 
         // 如果是玩家且还没选颜色，显示弹窗
         if (!isDM && !userColor) {
@@ -1617,12 +1660,18 @@
         const btnId = tool === 'draw' ? 'btn-pen' : tool === 'erase' ? 'btn-eraser' : 'btn-' + tool;
         const btn = document.getElementById(btnId);
         const popout = document.getElementById('dm-toolbar-popout');
-        const container = document.getElementById('world-container');
-        if (!btn || !popout || !container) return;
+        if (!btn || !popout) return;
+        // 工具条在屏幕底部，弹出面板改为向上展开并水平居中于按钮
         const btnRect = btn.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        popout.style.top = (btnRect.top - containerRect.top) + 'px';
-        popout.style.left = (btnRect.right - containerRect.left + 6) + 'px';
+        popout.style.visibility = 'hidden';
+        popout.style.display = 'flex';
+        const pw = popout.offsetWidth, ph = popout.offsetHeight;
+        popout.style.display = '';
+        popout.style.visibility = '';
+        const left = Math.max(8, Math.min(btnRect.left + btnRect.width / 2 - pw / 2,
+                                          window.innerWidth - pw - 8));
+        popout.style.top = (btnRect.top - ph - 8) + 'px';
+        popout.style.left = left + 'px';
     }
 
     function refreshSwatchHighlight(activeColor) {
@@ -1818,27 +1867,6 @@
         return out + escapeHtml(message.slice(last));
     }
 
-    // 紧凑列表（侧边栏原聊天框）的一行
-    function buildCompactMessage(entry) {
-        const div = document.createElement('div');
-        div.className = 'chat-msg';
-        if (entry.kind === 'system') {
-            div.innerHTML = `<span class="system">${escapeHtml(entry.message)}</span>`;
-            return div;
-        }
-        const body = renderMessageHtml(entry.message);
-        const isMine = isMyMessage(entry);
-        if (entry.to) {
-            div.classList.add('private-msg');
-            const label = isMine ? `我 → ${entry.to}` : `${displayName(entry)} → 我`;
-            div.innerHTML = `<span class="name private-name">🔒[${escapeHtml(label)}]</span> ${body}`;
-            return div;
-        }
-        const roleClass = entry.role === 'DM' ? 'dm' : (isMine ? 'mine' : 'player');
-        div.innerHTML = `<span class="name ${roleClass}">[${escapeHtml(displayName(entry))}]</span> ${body}`;
-        return div;
-    }
-
     // 展开面板的气泡（自己靠右，别人靠左，系统居中）
     function buildBubbleMessage(entry) {
         const div = document.createElement('div');
@@ -1862,32 +1890,33 @@
         return div;
     }
 
-    // 同时写入紧凑列表和展开面板
     function appendChatEntry(entry) {
         chatLog.push(entry);
         if (chatLog.length > MAX_CHAT_LOG) chatLog.shift();
-        chatMessages.appendChild(buildCompactMessage(entry));
-        chatMessages.scrollTop = chatMessages.scrollHeight;
         chatPanelMessages.appendChild(buildBubbleMessage(entry));
         chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+        flagChatMention(entry);
     }
 
     // 名单变化后重渲染（头像颜色 / @高亮依赖名单）
     function rerenderChat() {
-        chatMessages.innerHTML = '';
         chatPanelMessages.innerHTML = '';
-        chatLog.forEach(entry => {
-            chatMessages.appendChild(buildCompactMessage(entry));
-            chatPanelMessages.appendChild(buildBubbleMessage(entry));
-        });
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        chatLog.forEach(entry => chatPanelMessages.appendChild(buildBubbleMessage(entry)));
         chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
     }
 
     function clearChatLog() {
         chatLog.length = 0;
-        chatMessages.innerHTML = '';
         chatPanelMessages.innerHTML = '';
+    }
+
+    // 被私聊或被 @ 到，且聊天窗没开着 -> 红点
+    function flagChatMention(entry) {
+        if (entry.kind !== 'chat' || isMyMessage(entry)) return;
+        const hitMe = entry.to === userName || entry.message.includes('@' + userName);
+        if (!hitMe) return;
+        if (document.getElementById('panel-chat').classList.contains('show')) return;
+        document.getElementById('chat-badge').classList.add('show');
     }
 
     function addChatMessage(data) {
@@ -2014,9 +2043,7 @@
 
     function onChatInput(e) {
         const input = e.target;
-        const popup = document.getElementById(
-            input.id === 'chat-panel-input' ? 'mention-popup-panel' : 'mention-popup-main'
-        );
+        const popup = document.getElementById('mention-popup-panel');
         const hit = getMentionQuery(input);
         if (!hit) { closeMentionPopup(); return; }
         openMentionPopup(input, popup, hit.start, hit.query);
@@ -2036,7 +2063,7 @@
     }
 
     function sendChat(inputEl) {
-        const input = inputEl || document.getElementById('chat-input');
+        const input = inputEl || document.getElementById('chat-panel-input');
         const message = input.value.trim();
         if (!message) return;
         input.value = '';
@@ -2052,6 +2079,180 @@
         socket.emit('chat:message', { message, to: resolvePrivateTarget(message) });
     }
 
+    // ===== 浮动窗口管理（悬浮展开 / 点击固定 / 拖拽 / 按用户名记住位置）=====
+    const HIDE_DELAY = 180;          // 移出后的宽限，便于鼠标从按钮滑进窗口
+    let savedLayout = {};            // { panelId: { x, y, pinned } }，来自服务端
+    let hideTimer = null;
+    let topZ = 50;
+
+    function panelEl(id)   { return document.getElementById(id); }
+    function triggerEl(id) { return document.querySelector(`[data-panel="${id}"]`); }
+
+    // 没有记录过位置时，贴着触发按钮摆放
+    function defaultPanelPos(panelId, panel) {
+        const trigger = triggerEl(panelId);
+        const tr = trigger.getBoundingClientRect();
+        const pw = panel.offsetWidth, ph = panel.offsetHeight;
+        if (panelId === 'panel-chat') {
+            return { x: tr.left + tr.width / 2 - pw / 2, y: tr.top - ph - 12 };
+        }
+        if (trigger.closest('#right-rail')) {
+            return { x: tr.left - pw - 12, y: tr.top + tr.height / 2 - ph / 2 };
+        }
+        return { x: tr.right + 12, y: tr.top + tr.height / 2 - ph / 2 };
+    }
+
+    // 始终留在视口内
+    function clampToViewport(x, y, panel) {
+        const m = 8;
+        const maxX = window.innerWidth - panel.offsetWidth - m;
+        const maxY = window.innerHeight - panel.offsetHeight - m;
+        return { x: Math.max(m, Math.min(x, maxX)), y: Math.max(m, Math.min(y, maxY)) };
+    }
+
+    function placePanel(panelId, x, y) {
+        const panel = panelEl(panelId);
+        const pos = clampToViewport(x, y, panel);
+        panel.style.left = pos.x + 'px';
+        panel.style.top = pos.y + 'px';
+        return pos;
+    }
+
+    function showPanel(panelId) {
+        const panel = panelEl(panelId);
+        if (panel.classList.contains('show')) { panel.style.zIndex = ++topZ; return; }
+
+        panel.classList.add('show');
+        panel.style.zIndex = ++topZ;
+
+        // 先显示再量尺寸，否则 offsetWidth 为 0
+        const saved = savedLayout[panelId];
+        const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y))
+            ? saved : defaultPanelPos(panelId, panel);
+        placePanel(panelId, pos.x, pos.y);
+
+        triggerEl(panelId).classList.add('open');
+        if (panelId === 'panel-chat') document.getElementById('chat-badge').classList.remove('show');
+        if (panelId === 'panel-character') onCharacterPanelOpen();
+    }
+
+    function hidePanel(panelId) {
+        panelEl(panelId).classList.remove('show');
+        triggerEl(panelId).classList.remove('open');
+    }
+
+    function isPinned(panelId) {
+        return !!(savedLayout[panelId] && savedLayout[panelId].pinned);
+    }
+
+    function setPinned(panelId, pinned) {
+        savedLayout[panelId] = Object.assign({}, savedLayout[panelId], { pinned });
+        triggerEl(panelId).classList.toggle('pinned', pinned);
+        const pinBtn = panelEl(panelId).querySelector('.pin-btn');
+        if (pinBtn) pinBtn.classList.toggle('active', pinned);
+        socket.emit('layout:save', { panelId, pinned });
+    }
+
+    function scheduleHide(panelId) {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+            if (!isPinned(panelId) && !panelEl(panelId).matches(':hover')) hidePanel(panelId);
+        }, HIDE_DELAY);
+    }
+
+    function togglePin(panelId) {
+        if (isPinned(panelId)) {
+            setPinned(panelId, false);
+            hidePanel(panelId);
+        } else {
+            showPanel(panelId);
+            setPinned(panelId, true);
+        }
+    }
+
+    // 拖拽标题栏移动窗口，松手时把位置存到服务端（按用户名）
+    function makeDraggable(panel) {
+        const header = panel.querySelector('.float-panel-header');
+        let startX = 0, startY = 0, originX = 0, originY = 0, dragging = false;
+
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.float-panel-btn')) return;   // 按钮不触发拖拽
+            dragging = true;
+            startX = e.clientX; startY = e.clientY;
+            originX = panel.offsetLeft; originY = panel.offsetTop;
+            panel.style.zIndex = ++topZ;
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            placePanel(panel.id, originX + (e.clientX - startX), originY + (e.clientY - startY));
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            const x = panel.offsetLeft, y = panel.offsetTop;
+            savedLayout[panel.id] = Object.assign({}, savedLayout[panel.id], { x, y });
+            socket.emit('layout:save', { panelId: panel.id, x, y });
+        });
+    }
+
+    function initFloatPanels() {
+        document.querySelectorAll('[data-panel]').forEach(trigger => {
+            const panelId = trigger.dataset.panel;
+            const panel = panelEl(panelId);
+            if (!panel) return;
+
+            // 悬浮即展开（按钮本身不消失，只是被“拉长”）
+            trigger.addEventListener('mouseenter', () => { clearTimeout(hideTimer); showPanel(panelId); });
+            trigger.addEventListener('mouseleave', () => scheduleHide(panelId));
+            // 点击固定 / 取消固定
+            trigger.addEventListener('click', () => togglePin(panelId));
+
+            panel.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+            panel.addEventListener('mouseleave', () => scheduleHide(panelId));
+
+            panel.querySelector('.pin-btn').addEventListener('click', () => setPinned(panelId, !isPinned(panelId)));
+            panel.querySelector('.close-btn').addEventListener('click', () => {
+                if (isPinned(panelId)) setPinned(panelId, false);
+                hidePanel(panelId);
+            });
+
+            makeDraggable(panel);
+
+            // 内容撑大窗口后（比如载入角色卡）重新夹回视口内
+            new ResizeObserver(() => {
+                if (panel.classList.contains('show')) {
+                    placePanel(panel.id, panel.offsetLeft, panel.offsetTop);
+                }
+            }).observe(panel);
+        });
+    }
+
+    // 登录后套用该用户上次的窗口布局
+    function applySavedLayout(layout) {
+        savedLayout = layout && typeof layout === 'object' ? layout : {};
+        Object.keys(savedLayout).forEach(panelId => {
+            const panel = panelEl(panelId);
+            const trigger = triggerEl(panelId);
+            if (!panel || !trigger) return;
+            if (savedLayout[panelId].pinned) {
+                showPanel(panelId);
+                trigger.classList.add('pinned');
+                const pinBtn = panel.querySelector('.pin-btn');
+                if (pinBtn) pinBtn.classList.add('active');
+            }
+        });
+    }
+
+    // 窗口尺寸变化时把飘到界外的窗口拉回来
+    window.addEventListener('resize', () => {
+        document.querySelectorAll('.float-panel.show').forEach(panel => {
+            placePanel(panel.id, panel.offsetLeft, panel.offsetTop);
+        });
+    });
+
     // --- 退出游戏 ---
     // 主动退出不走宽限期：立刻释放颜色、移除棋子，别人会看到「xxx 离开了游戏」
     function exitGame() {
@@ -2062,16 +2263,16 @@
         setTimeout(() => { window.location.href = '/'; }, 150);
     }
 
-    // --- 展开式聊天面板 ---
+    // --- 聊天面板（统一走浮动窗口管理）---
     function openChatPanel() {
-        document.getElementById('chat-panel').classList.add('open');
+        showPanel('panel-chat');
         chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
         document.getElementById('chat-panel-input').focus();
     }
 
     function closeChatPanel() {
         closeMentionPopup();
-        document.getElementById('chat-panel').classList.remove('open');
+        hidePanel('panel-chat');
     }
 
     function rollDiceFromChat(count, sides, modifier, expr) {
@@ -2155,6 +2356,9 @@
             document.getElementById('dm-name').textContent = data.dmName;
         }
 
+        // 套用该用户上次的浮动窗口布局（按名字存在服务端）
+        applySavedLayout(data.layout);
+
         // 更新颜色选择弹窗
         if (data.takenColors) {
             updateColorOptions(data.takenColors);
@@ -2195,6 +2399,10 @@
             });
         }
 
+        // 重连时颜色已由服务端保留，不该再弹选色框
+        // （startApp 在 joinSuccess 到达前就同步跑完了，那时 userColor 还是 null）
+        if (userColor) document.getElementById('color-modal').style.display = 'none';
+
         // 恢复 Konva 世界状态（先清空防止重连时重复 push）
         if (gs.world) {
             placedMapsData.length = 0;
@@ -2233,6 +2441,13 @@
         if (userColor) {
             socket.emit('selectColor', userColor);
         }
+    });
+
+    // 加入被拒（DM 席位已被占等）——否则会停在一个空白的死页面上
+    socket.on('joinError', (message) => {
+        sessionStorage.removeItem('userData');
+        alert(message);
+        window.location.href = '/';
     });
 
     socket.on('playerJoined', (data) => {

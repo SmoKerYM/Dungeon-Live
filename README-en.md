@@ -23,6 +23,15 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Lock / Delete** — Lock to prevent accidental drags; controls appear on hover
 - **Independent Viewports** — Each client controls its own zoom/pan independently
 
+### Fullscreen Map + Floating UI
+- **Map fills the screen** — No sidebar, no top tab bar; the Konva grid world covers the whole viewport
+- **Liquid wall buttons** — Down the left edge: Maps / Players / NPCs (DM only) / Notes / Character Sheet; Dice sits on the right. Hovering stretches the button like a liquid drop (the button itself never disappears) and reveals a frosted, rounded floating window
+- **Click to pin** — Clicking the button pins the window open so it survives the mouse leaving; click again to unpin. The header's 📌 / ✕ do the same
+- **Drag freely, position remembered** — Drag the header to move a window; on release the position is saved server-side **per user name**, so next time it opens exactly where you left it, pinned state included
+- **DM in the player list** — The DM appears as the first row of the Players panel
+- **Horizontal bottom controls** — The DM toolbar runs along the bottom of the screen, with its colour picker opening upward
+- **Chat** — A rectangular "chat" button at bottom centre expands on hover and pins on click, draggable like the rest; a red dot appears on it when you are whispered or @-mentioned while it is closed
+
 ### Leaving the Game
 - **Exit button** — Top-right of the tab bar; after confirming, returns to the name-entry login page and clears the local identity
 - **Immediate** — A deliberate exit skips the grace period: the colour is released and the token removed at once, and everyone sees "xxx left the game" straight away

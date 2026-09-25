@@ -40,6 +40,7 @@ coc_app/
 - **Konva VTT model**: map canvas is a shared Konva.Stage world; all objects (maps, tokens, NPCs, drawings) use grid coordinates (`gridX/gridY`, 1 grid = 50px at zoom=1)
 - Game state lives in memory (`gameState` object in server.js), persisted to files for characters, character notes, shared notes, chat history, map assets, and world state
 - All CSS and JS are inline in HTML files (no separate css/js files)
+- **Fullscreen-map shell**: there is no sidebar or tab bar. The Konva map fills the viewport (`#viewport` is `position: fixed; inset: 0`) and every other surface is a frosted `.float-panel` summoned from a liquid wall button (`.rail-btn` in `#left-rail` / `#right-rail`, plus `#chat-rail-btn` in `#bottom-bar`). Hover opens a panel, click pins it, the header drags it
 - **Independent viewport**: every client controls their own zoom/pan on the Konva stage; transforms are not broadcast
 - **World authority**: server holds canonical `world` object; all mutations go through socket events with DM guard; undo/redo stack maintained server-side (20 entries, memory only)
 
@@ -59,6 +60,7 @@ coc_app/
 | Namespace | Events |
 |-----------|--------|
 | Auth | `join`, `selectColor`, `player:leave` |
+| Layout | `layout:save` (per-user float panel x/y/pinned) |
 | MapAsset | `mapAsset:upload`, `mapAsset:fetch` |
 | PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
@@ -96,6 +98,7 @@ coc_app/
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100, FIFO
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
+  uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { x, y, pinned } } } },
   world: {
     placedMaps: [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
     tokens:     [{ id, color, gridX, gridY }],
@@ -144,6 +147,7 @@ npm start       # Production server
 - `io.emit` used for all world mutations (no per-player filtering)
 - **Disconnect grace period** (`DISCONNECT_GRACE_MS`, default 120s, overridable via env): a dropped socket does NOT mean the player left. Browsers (Safari especially) suspend background tabs, which kills the Socket.IO heartbeat. On `disconnect` the player is only flagged `online: false` — roster entry, token, and color are all retained — and a timer runs `finalizePlayerLeave()` when it expires. Reconnecting with the same name+role inside the window silently takes over the old session (`takeOverPreviousSession()`), with no `playerJoined` system message
 - A DM's seat is held for the whole grace window; only the same name may reclaim it
+- Float panel positions persist **per user name** in `data/ui_prefs.json` under `layouts[name][panelId] = { x, y, pinned }` (there are no accounts, so the name is the identity). `joinSuccess` returns the caller's bucket as `layout`; the client replays pinned panels on load
 - `player:leave` (the 退出 button) bypasses the grace period entirely — `finalizePlayerLeave()` runs immediately, so a deliberate exit is instant while a suspended tab is not
 - `selectColor` compares against colors held by *other* sockets, so a reconnecting player can re-assert their own color
 - Whispers to a player mid-grace are accepted and persisted; the filtered history replay delivers them on reconnect
