@@ -35,6 +35,11 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-25: 修 DM 工具条 tooltip 与二级弹出面板重叠
+  - 表象是「文字描述和工具位置不匹配」，实测 tooltip 本身对齐正常（与按钮中心偏移 0）
+  - 真因：`positionPopout` 把面板放在 `btnRect.top - ph - 8`，与 `sl-tooltip` 的 `placement="top"` 落在同一条水平带上（实测面板 594~，tooltip 601~），tooltip 被画进面板的按钮行里，读起来像在标注面板上的按钮
+  - 加 `TOOLTIP_CLEARANCE = 38` 把面板再抬高一条 tooltip 的高度，形成「面板 / tooltip / 工具条」三层，互不重叠
+  - 对画笔、矩形的颜色面板同样生效（同一个 `positionPopout`）
 - 2026-09-25: 血条挪回左上角，与身份标识并排等高
   - 新增 `#top-left-controls`（`position: fixed; top/left: 14px; display: flex; gap: 8px`）把身份标识和血条装在一起，两者自身不再定位
   - 新增 CSS 变量 `--hud-h: 40px`，两个 HUD 共用；原身份标识靠 padding 撑出的 32px 与血条的 50px 不再各行其是

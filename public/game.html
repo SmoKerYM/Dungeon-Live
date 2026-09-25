@@ -1776,7 +1776,10 @@
         const btn = document.getElementById(btnId);
         const popout = document.getElementById('dm-toolbar-popout');
         if (!btn || !popout) return;
-        // 工具条在屏幕底部，弹出面板改为向上展开并水平居中于按钮
+        // 工具条在屏幕底部，弹出面板向上展开并水平居中于按钮。
+        // 额外抬高一条 tooltip 的高度——否则按钮的 sl-tooltip 会正好落在
+        // 弹出面板那一行里，看起来像是在标注面板上的按钮
+        const TOOLTIP_CLEARANCE = 38;
         const btnRect = btn.getBoundingClientRect();
         popout.style.visibility = 'hidden';
         popout.style.display = 'flex';
@@ -1785,7 +1788,7 @@
         popout.style.visibility = '';
         const left = Math.max(8, Math.min(btnRect.left + btnRect.width / 2 - pw / 2,
                                           window.innerWidth - pw - 8));
-        popout.style.top = (btnRect.top - ph - 8) + 'px';
+        popout.style.top = (btnRect.top - ph - 8 - TOOLTIP_CLEARANCE) + 'px';
         popout.style.left = left + 'px';
     }
 
