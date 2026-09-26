@@ -75,3 +75,47 @@
 /* 出错提示（没听清是哪项豁免 / 没听懂 / 没有同名角色卡） */
 .vr-preview.vr-error { border-color: rgba(231, 76, 60, 0.55); }
 .vr-preview-error-text { font-size: 12px; color: #e74c3c; }
+
+/* 麦克风按钮：按住说话、松开发送，坐在聊天输入框和发送键之间 */
+.vr-mic {
+    width: 34px; height: 34px;
+    margin: 0 6px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ecf0f1;
+    font-size: 15px; line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    /* 按住不放时别触发长按选中 / iOS 的放大镜 */
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+.vr-mic:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.vr-mic:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* 录音中：红底 + 跟着音量涨落的光环（--vr-level 由 voice-roll.js 按帧写入） */
+.vr-mic.recording {
+    background: rgba(231, 76, 60, 0.75);
+    border-color: rgba(231, 76, 60, 0.9);
+    box-shadow: 0 0 0 calc(2px + var(--vr-level, 0) * 8px) rgba(231, 76, 60, 0.25);
+}
+.vr-mic.recording .vr-mic-icon { animation: vr-pulse 1.2s ease-in-out infinite; }
+@keyframes vr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* 录音中的实时转写条，和预览卡片同一个位置 */
+.vr-partial {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 8px; right: 8px;
+    background: rgba(20, 26, 34, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 12px; color: #cdd6e0;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    z-index: 29;
+    word-break: break-all;
+}

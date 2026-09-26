@@ -2003,6 +2003,8 @@
     let myCharacter = null;
     // 进场自动拉角色卡只为填血条，没有卡也不该弹提示
     let silentCharLoad = false;
+    // 服务端配没配 ASR key（joinSuccess 里告知）；没配就禁用麦克风按钮
+    let voiceRollEnabled = false;
 
     function renderHpHud(name, hp) {
         const hud = document.getElementById('hp-hud');
@@ -3001,6 +3003,9 @@
     socket.on('joinSuccess', (data) => {
         console.log('加入成功，同步游戏数据...', data);
 
+        voiceRollEnabled = !!data.voiceRollEnabled;
+        if (window.VoiceRoll) VoiceRoll.refreshAvailability();
+
         // 重连时清理旧状态，防止 Konva 节点堆叠和数据重复
         if (hasJoined) {
             ['orange', 'yellow', 'green', 'blue', 'purple'].forEach(c => hidePlayerCard(c));
@@ -3798,6 +3803,8 @@
         if (data.name === userName) {
             myCharacter = data;
             syncHpHudFromCharacter();
+            // 有没有同名角色卡决定麦克风按钮能不能用
+            if (window.VoiceRoll) VoiceRoll.refreshAvailability();
         }
         loadCharacterToUI();
         requestCharacterSummary(false);
@@ -3831,7 +3838,11 @@
     });
 
     socket.on('character:notFound', (data) => {
-        if (data && data.name === userName) { myCharacter = null; renderHpHud(null, null); }
+        if (data && data.name === userName) {
+            myCharacter = null;
+            renderHpHud(null, null);
+            if (window.VoiceRoll) VoiceRoll.refreshAvailability();
+        }
         const wasSilent = silentCharLoad;
         silentCharLoad = false;
         // 仅对 Player 显示提示（DM 手动选择、以及进场自动加载时不显示）
@@ -5651,6 +5662,7 @@
         mountEl: document.getElementById('voice-roll-mount'),
         isDM,
         getMyCharacter: () => myCharacter,   // 用 getter：myCharacter 会在运行中被重新赋值
+        getEnabled: () => voiceRollEnabled,  // 同理：joinSuccess 之后才知道服务端配没配 ASR
         escapeHtml
     });
 </script>

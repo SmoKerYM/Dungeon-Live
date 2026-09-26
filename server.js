@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 // 语音掷骰：全部实现在 lib/voice-roll/ 下，这里只做接线（依赖由参数注入）
-const { registerVoiceRollHandlers } = require('./lib/voice-roll');
+const { registerVoiceRollHandlers, isVoiceRollEnabled } = require('./lib/voice-roll');
 
 // 笔记文件路径（Render Disk 挂载点）
 const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
@@ -294,6 +294,17 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
 // 用 v4-pro 的话输入贵 4 倍、输出贵 3 倍，没有必要
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-flash';
 
+// ===== 语音掷骰的 ASR 配置 =====
+// 和 DEEPSEEK_API_KEY 一样只存在于服务端，浏览器永远不直连 ASR。
+// 接入地址默认走国际站通用域名，ASR_WS_URL / ASR_WORKSPACE_ID / ASR_REGION 可覆盖
+const VOICE_ASR_CONFIG = {
+  apiKey: process.env.ASR_API_KEY || '',
+  model: process.env.ASR_MODEL || 'qwen-audio-3.0-asr-flash-streaming',
+  wsUrl: process.env.ASR_WS_URL || '',
+  workspaceId: process.env.ASR_WORKSPACE_ID || '',
+  region: process.env.ASR_REGION || ''
+};
+
 const ATTR_CN = {
   strength: '力量', dexterity: '敏捷', constitution: '体质',
   intelligence: '智力', wisdom: '感知', charisma: '魅力'
@@ -559,6 +570,8 @@ io.on('connection', (socket) => {
       name,
       dmName: gameState.dm?.name || null,
       takenColors,
+      // 服务端没配 ASR key 时前端直接禁用麦克风按钮
+      voiceRollEnabled: isVoiceRollEnabled({ asr: VOICE_ASR_CONFIG }),
       uiPrefs: role === 'DM' ? gameState.uiPrefs : undefined,
       layout: getLayoutFor(name),
       gameState: {
@@ -702,7 +715,8 @@ io.on('connection', (socket) => {
     getPlayer: () => gameState.players.get(socket.id),
     getCharacter,
     appendChatHistory,
-    deepseek: { apiKey: DEEPSEEK_API_KEY, model: DEEPSEEK_MODEL }
+    deepseek: { apiKey: DEEPSEEK_API_KEY, model: DEEPSEEK_MODEL },
+    asr: VOICE_ASR_CONFIG
   });
 
   // 骰子投掷 (所有人)
