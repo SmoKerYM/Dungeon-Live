@@ -16,10 +16,24 @@ Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial 
 coc_app/
 ├── server.js              # Main server, Socket.IO events
 ├── package.json           # Dependencies: express, socket.io, nodemon
-├── nodemon.json           # Watch config: ignores data/
+├── nodemon.json           # Watch config: watches server.js/lib/public, ignores data/
+├── .env.example           # Key 占位（DEEPSEEK_API_KEY / ASR_API_KEY），真实值在 .env
+├── lib/
+│   └── voice-roll/        # 语音掷骰（服务端）。对 server.js 只暴露 registerVoiceRollHandlers
+│       ├── index.js           # 唯一入口：voice:* 事件、pendingIntents 待确认表
+│       ├── vocab.js           # 属性/技能/别名/ASR 错字/热词的单一数据源
+│       ├── intent.js          # parseRollIntent 规则匹配 + validateIntent 严格校验
+│       ├── llm.js             # classifyWithDeepSeek 兜底分类（只输出枚举）
+│       ├── system-prompt.txt  # llm.js 的 system prompt 原文（改它也会触发 nodemon 重启）
+│       └── dice.js            # 调整值、中文标签、表达式、crypto 掷 d20
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
-│   └── game.html          # Main game UI (inline CSS+JS, Konva VTT model)
+│   ├── game.html          # Main game UI (inline CSS+JS, Konva VTT model)
+│   └── voice-roll/        # 语音掷骰（前端）：预览卡片与麦克风按钮
+│       ├── voice-roll.js      # VoiceRoll.init({socket, mountEl, isDM, getMyCharacter, escapeHtml})
+│       └── voice-roll.css
+├── scripts/
+│   └── test-voice-intent.js   # 离线跑语音掷骰纯函数的用例表（node scripts/test-voice-intent.js）
 ├── data/
 │   ├── characters.json        # Character card data (name-keyed object)
 │   ├── characters_notes.json  # Character records table [{name, info}]
@@ -37,7 +51,7 @@ coc_app/
 - Role-based: DM vs Player, DM password is `12138`
 - **Konva VTT model**: map canvas is a shared Konva.Stage world; all objects (maps, tokens, NPCs, drawings) use grid coordinates (`gridX/gridY`, 1 grid = 50px at zoom=1)
 - Game state lives in memory (`gameState` object in server.js), persisted to files for characters, character notes, shared notes, chat history, map assets, and world state
-- All CSS and JS are inline in HTML files (no separate css/js files)
+- All CSS and JS are inline in HTML files — **一个有意的例外**：语音掷骰的前端在 `public/voice-roll/*.{js,css}`（功能较大，且 `game.html` 已 5600 行），由 `game.html` 用 `<link>` / `<script src>` 引入，依赖通过 `VoiceRoll.init(...)` 显式传入
 - **Fullscreen-map shell**: there is no sidebar or tab bar. The Konva map fills the viewport (`#viewport` is `position: fixed; inset: 0`) and every other surface is a frosted `.float-panel` summoned from a liquid wall button (`.rail-btn` in `#left-rail` / `#right-rail`, plus `#chat-rail-btn` in `#bottom-bar`). Hovering a wall button for `OPEN_DELAY` (350ms) opens its panel transiently — a passing cursor triggers nothing. Leaving closes it after `HIDE_DELAY` (300ms) — enough to cross the gap from button into the panel, which keeps it open. There is no pin button: a panel becomes **pinned** when the user clicks its wall button, interacts with anything inside it (`mousedown` / `focusin`), or drags it; it is **unpinned** by the panel's ✕ or by clicking the same wall button again. A transiently-opened panel is placed by `findFreeSpot()` so it avoids already-pinned panels; a pinned panel always returns to its exact saved coordinates
 - **Independent viewport**: every client controls their own zoom/pan on the Konva stage; transforms are not broadcast
 - **World authority**: server holds canonical `world` object; all mutations go through socket events with DM guard; undo/redo stack maintained server-side (20 entries, memory only)
@@ -67,6 +81,7 @@ coc_app/
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
+| VoiceRoll | `voice:text`（调试：直接喂文本，跳过 ASR）, `voice:confirm`（`{ intentId }`）, `voice:cancel` |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
 ### Server -> Client
@@ -84,6 +99,8 @@ coc_app/
 | `chat:message` | Chat payload; carries `to` + `toRole` when private (sent only to sender + target) |
 | `chat:error` | Private-message failure sent back to sender only (offline target / self-whisper) |
 | `chat:notice` | Sender-only hint that the whisper target is mid-grace and will receive it on reconnect |
+| `voice:intent` | 语音掷骰的识别结果预览，**只发给说话者**：`{ intentId, transcript, intent, label, expr, modifier, source, confidence, autoConfirm }` |
+| `voice:error` | 语音掷骰的中文错误提示，只发给说话者（没听清是哪项豁免 / 没听懂 / 未找到同名角色卡） |
 
 ## Data Models
 
@@ -95,6 +112,7 @@ coc_app/
   notes: "string",
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., to?, toRole?, timestamp }],  // max 100, FIFO; `to` marks a private message
+  // 语音掷骰的 dice 条目额外带 { kept, advantage, label, source: 'voice' }
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
   uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } } },
   world: {
@@ -131,8 +149,16 @@ npm start       # Production server
 ```
 
 ## Important Notes
-- HTML is served with `Cache-Control: no-cache` (see the `express.static` options): every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build. `no-cache` only forces ETag revalidation — unchanged content still returns 304
+- HTML **and the standalone `.js` / `.css` under `public/voice-roll/`** are served with `Cache-Control: no-cache` (see the `express.static` options): nearly every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build — and a cached `voice-roll.js` freezes that module the same way. `no-cache` only forces ETag revalidation — unchanged content still returns 304
 - **AI character summary**: `character:summarize` calls DeepSeek server-side (`DEEPSEEK_API_KEY` env var — never exposed to the client) and caches the result in the character's `aiSummary`. The cache key is `characterFingerprint()`, a hash of the fields that actually change the conclusion (attributes / proficiency / saves / skills / feats) — editing HP does not trigger regeneration. Model is `deepseek-flash` with `thinking: { type: 'disabled' }`; the reasoning variant costs 3-4x for no benefit on this task
+- **语音掷骰（voice roll）**：玩家复述 DM 让自己做的检定（「带优势的隐匿」「过魅力豁免」「撬个锁」），系统判出「哪类检定 × 哪一项 × 优劣势」，服务端掷 d20 并在聊天里发一张带标签的骰子卡片。实现全部在 `lib/voice-roll/`（服务端）和 `public/voice-roll/`（前端），`server.js` / `game.html` 只做接线
+- 意图识别是**规则优先、DeepSeek 兜底**：`parseRollIntent()` 覆盖绝大多数说法（0ms、0 成本、不会幻觉），判不出来才调 LLM。**LLM 只输出意图枚举，不掷骰、不算数、不碰角色卡数值**——它的随机数不可信、算术偶尔出错。LLM 返回的 JSON 一律过 `validateIntent()` 严格校验，任何一项不合法都按「没听懂」处理
+- 「豁免」是**硬规则**：转写文本里出现「豁免」就走豁免路径，不交给 LLM；说了豁免却没说是哪一项 → 直接报错「没听清是哪项豁免」，不猜也不调 LLM。规则表里**只放无歧义的别名**（「撒谎」这种——自己说谎是欺瞒、看别人说谎是洞悉——必须留给 LLM）
+- 数值口径：角色卡 `attributes` 里存的**已经是调整值**，不要再做 `(score-10)/2`；属性检定/比拼用纯属性调整值不加熟练（本桌规则）；不熟练的技能照样加对应属性调整值，只是不加 PB
+- 掷骰在**服务端**用 `crypto.randomInt`（现有的 `dice:roll` 事件是直接信任客户端传来的 `result` 的，语音路径借机把掷骰收回服务端）。优势/劣势掷两次，`rolls` 存两颗、`kept` 存实际采用的那颗；`buildDiceCard` 的大成功/大失败按 `kept` 判断，**不能**把两颗骰子相加
+- 识别结果先以预览卡片给说话者本人看：高置信度 1.5 秒倒计时自动投（可取消），低置信度必须点一下。听错后投出去的骰子是公开的、收不回来。待确认意图存在 `pendingIntents`（内存、30 秒过期、只认发起的那个 socket、确认后立即删除，一条识别只能投一次）
+- `voice:text`（Client → Server）是调试入口：跳过 ASR 直接喂文本走完整流程，浏览器控制台里 `VoiceRoll.debugText('带优势的隐匿')` 即可。纯函数层另有 `node scripts/test-voice-intent.js` 跑用例表
+- ASR（语音转文字）用阿里云国际站 Model Studio 新加坡地域的 `qwen-audio-3.0-asr-flash-streaming`，key 在 `ASR_API_KEY`（可选 `ASR_MODEL`），和 `DEEPSEEK_API_KEY` 一样**只存在于服务端**，浏览器永远不直连 ASR
 - `data/` is **git-ignored**. Production (`NODE_ENV=production`) reads and writes the Render persistent disk at `/data`; the repo's `data/` is only a local dev snapshot, so untracking it cannot affect deployed data. `map_assets.json` alone runs to tens of MB of Base64
 - Map images are Base64-encoded and can be large (50MB max buffer); stored in `data/map_assets.json`
 - World state persisted to `data/world.json`; debounced 500ms on every mutation
