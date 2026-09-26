@@ -6,7 +6,7 @@ DND 多人协作跑团工具 - A real-time collaborative D&D (Dungeons & Dragons
 Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial use.
 
 ## Tech Stack
-- **Backend**: Node.js + Express 5 + Socket.IO 4
+- **Backend**: Node.js + Express 5 + Socket.IO 4（+ ws：连 ASR 的 WebSocket 客户端）
 - **Frontend**: Vanilla HTML/CSS/JavaScript + Canvas API
 - **Data**: JSON files (characters, character notes, chat history) + text files (notes), no database
 - **Dev**: nodemon for hot reload
@@ -15,7 +15,7 @@ Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial 
 ```
 coc_app/
 ├── server.js              # Main server, Socket.IO events
-├── package.json           # Dependencies: express, socket.io, nodemon
+├── package.json           # Dependencies: express, socket.io, ws（ASR WebSocket）, nodemon
 ├── nodemon.json           # Watch config: watches server.js/lib/public, ignores data/
 ├── .env.example           # Key 占位（DEEPSEEK_API_KEY / ASR_API_KEY），真实值在 .env
 ├── lib/
@@ -24,13 +24,15 @@ coc_app/
 │       ├── vocab.js           # 属性/技能/别名/ASR 错字/热词的单一数据源
 │       ├── intent.js          # parseRollIntent 规则匹配 + validateIntent 严格校验
 │       ├── llm.js             # classifyWithDeepSeek 兜底分类（只输出枚举）
+│       ├── asr.js             # ASR adapter：阿里云实时识别 WebSocket 会话
 │       ├── system-prompt.txt  # llm.js 的 system prompt 原文（改它也会触发 nodemon 重启）
 │       └── dice.js            # 调整值、中文标签、表达式、crypto 掷 d20
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
 │   ├── game.html          # Main game UI (inline CSS+JS, Konva VTT model)
 │   └── voice-roll/        # 语音掷骰（前端）：预览卡片与麦克风按钮
-│       ├── voice-roll.js      # VoiceRoll.init({socket, mountEl, isDM, getMyCharacter, escapeHtml})
+│       ├── voice-roll.js      # VoiceRoll.init({socket, mountEl, isDM, getMyCharacter, getEnabled, escapeHtml})
+│       ├── pcm-worklet.js     # AudioWorklet：48kHz Float32 → 16kHz PCM16 单声道
 │       └── voice-roll.css
 ├── scripts/
 │   └── test-voice-intent.js   # 离线跑语音掷骰纯函数的用例表（node scripts/test-voice-intent.js）
@@ -81,7 +83,7 @@ coc_app/
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
-| VoiceRoll | `voice:text`（调试：直接喂文本，跳过 ASR）, `voice:confirm`（`{ intentId }`）, `voice:cancel` |
+| VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId }`）, `voice:text`（调试：直接喂文本，跳过 ASR） |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
 ### Server -> Client
@@ -100,7 +102,8 @@ coc_app/
 | `chat:error` | Private-message failure sent back to sender only (offline target / self-whisper) |
 | `chat:notice` | Sender-only hint that the whisper target is mid-grace and will receive it on reconnect |
 | `voice:intent` | 语音掷骰的识别结果预览，**只发给说话者**：`{ intentId, transcript, intent, label, expr, modifier, source, confidence, autoConfirm }` |
-| `voice:error` | 语音掷骰的中文错误提示，只发给说话者（没听清是哪项豁免 / 没听懂 / 未找到同名角色卡） |
+| `voice:partial` | 录音中的实时转写，只发给说话者 |
+| `voice:error` | 语音掷骰的中文错误提示，只发给说话者（没听清是哪项豁免 / 没听懂 / 未找到同名角色卡 / 说太快了） |
 
 ## Data Models
 
@@ -158,7 +161,9 @@ npm start       # Production server
 - 掷骰在**服务端**用 `crypto.randomInt`（现有的 `dice:roll` 事件是直接信任客户端传来的 `result` 的，语音路径借机把掷骰收回服务端）。优势/劣势掷两次，`rolls` 存两颗、`kept` 存实际采用的那颗；`buildDiceCard` 的大成功/大失败按 `kept` 判断，**不能**把两颗骰子相加
 - 识别结果先以预览卡片给说话者本人看：高置信度 1.5 秒倒计时自动投（可取消），低置信度必须点一下。听错后投出去的骰子是公开的、收不回来。待确认意图存在 `pendingIntents`（内存、30 秒过期、只认发起的那个 socket、确认后立即删除，一条识别只能投一次）
 - `voice:text`（Client → Server）是调试入口：跳过 ASR 直接喂文本走完整流程，浏览器控制台里 `VoiceRoll.debugText('带优势的隐匿')` 即可。纯函数层另有 `node scripts/test-voice-intent.js` 跑用例表
-- ASR（语音转文字）用阿里云国际站 Model Studio 新加坡地域的 `qwen-audio-3.0-asr-flash-streaming`，key 在 `ASR_API_KEY`（可选 `ASR_MODEL`），和 `DEEPSEEK_API_KEY` 一样**只存在于服务端**，浏览器永远不直连 ASR
+- ASR（语音转文字）走阿里云 Model Studio 的实时识别 WebSocket，默认接入地址是国际站通用域名 `wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference`——文档上写的是按 workspace 分的 `wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/…`，但通用地址实测可用且不需要 WorkspaceId；要换地域/账号用 `ASR_WS_URL` / `ASR_WORKSPACE_ID` / `ASR_REGION` 覆盖。模型 `ASR_MODEL`（线上用 `qwen-audio-3.1-asr-flash-streaming`），key 在 `ASR_API_KEY`，和 `DEEPSEEK_API_KEY` 一样**只存在于服务端**，浏览器永远不直连 ASR
+- 音频约定 **16kHz / PCM16 LE / 单声道**，前端 `pcm-worklet.js` 负责从设备采样率（通常 48kHz）降下来，每 100ms 一帧。`run-task` 里带 `input.context` 热词串（`ASR_CONTEXT_PROMPT`）——「豁免」「奥秘」「劣势」这些低频词不给上下文很容易写成同音错字，而「豁免」正是判豁免路径的硬规则依据
+- 麦克风按钮按住说话、松开发送；DM 隐藏，没有同名角色卡或服务端没配 ASR key（`joinSuccess` 的 `voiceRollEnabled`）时禁用。单次录音上限 8 秒（前端自动松手 + 服务端按字节数兜底），同一 socket 两次开录间隔 2 秒。`getUserMedia` 需要 HTTPS 或 localhost
 - `data/` is **git-ignored**. Production (`NODE_ENV=production`) reads and writes the Render persistent disk at `/data`; the repo's `data/` is only a local dev snapshot, so untracking it cannot affect deployed data. `map_assets.json` alone runs to tens of MB of Base64
 - Map images are Base64-encoded and can be large (50MB max buffer); stored in `data/map_assets.json`
 - World state persisted to `data/world.json`; debounced 500ms on every mutation
