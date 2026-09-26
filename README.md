@@ -312,7 +312,9 @@ npm start    # 使用 node 运行
 
 #### Render（推荐）
 1. 创建 Web Service，连接 GitHub 仓库
-2. **必须**挂载 Persistent Disk 到 `/data`，否则重启后数据丢失
+2. **必须**挂载 Persistent Disk 到 `/data`，并设置 `NODE_ENV=production`，否则重启后数据丢失
+   - 生产环境所有数据读写的是持久盘 `/data`，与仓库里的 `data/` 无关；`data/` 已加入 `.gitignore`，只是本地开发用的快照
+3. 如需角色卡 AI 总结，在 Environment 里加 `DEEPSEEK_API_KEY`
 
 #### Railway
 ```bash

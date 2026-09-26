@@ -3,3 +3,8 @@ node_modules
 images
 coc_app.html
 .env
+
+# 运行时数据。生产环境读的是 Render 持久盘 /data（NODE_ENV=production），
+# 与仓库里的 data/ 无关；本地这份只是开发用的快照，不该入库
+# （map_assets.json 是 Base64 图片，动辄几十 MB）
+data/
