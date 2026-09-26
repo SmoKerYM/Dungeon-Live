@@ -1003,11 +1003,11 @@
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
         .attr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-        /* 六个属性框是正方形：aspect-ratio 跟着列宽走，面板宽度一改仍然是正方形 */
+        /* 扁的属性框：高度由内容撑，不跟着面板宽度长高 */
         .attr-box {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 4px; aspect-ratio: 1;
-            padding: 7px 4px; border-radius: 9px;
+            gap: 2px;
+            padding: 8px 4px; border-radius: 9px;
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.07);
         }
