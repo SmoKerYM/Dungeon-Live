@@ -154,8 +154,12 @@ npm start       # Production server
 ## Important Notes
 - HTML **and the standalone `.js` / `.css` under `public/voice-roll/`** are served with `Cache-Control: no-cache` (see the `express.static` options): nearly every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build — and a cached `voice-roll.js` freezes that module the same way. `no-cache` only forces ETag revalidation — unchanged content still returns 304
 - **AI character summary**: `character:summarize` calls DeepSeek server-side (`DEEPSEEK_API_KEY` env var — never exposed to the client) and caches the result in the character's `aiSummary`. The cache key is `characterFingerprint()`, a hash of the fields that actually change the conclusion (attributes / proficiency / saves / skills / feats) — editing HP does not trigger regeneration. Model is `deepseek-flash` with `thinking: { type: 'disabled' }`; the reasoning variant costs 3-4x for no benefit on this task
-- **语音掷骰（voice roll）**：玩家复述 DM 让自己做的检定（「带优势的隐匿」「过魅力豁免」「撬个锁」），系统判出「哪类检定 × 哪一项 × 优劣势」，服务端掷 d20 并在聊天里发一张带标签的骰子卡片。实现全部在 `lib/voice-roll/`（服务端）和 `public/voice-roll/`（前端），`server.js` / `game.html` 只做接线
+- **语音掷骰（voice roll）**：玩家复述 DM 让自己做的检定（「带优势的隐匿」「过魅力豁免」「撬个锁」「命中投」），系统判出「哪类检定 × 哪一项 × 优劣势」，服务端掷 d20 并在聊天里发一张带标签的骰子卡片。实现全部在 `lib/voice-roll/`（服务端）和 `public/voice-roll/`（前端），`server.js` / `game.html` 只做接线
+- 意图类型：`ability` / `save` / `skill` / `attack`（命中投）/ `initiative` / `deathSave`。`attack` 的 `key` 不是属性或技能，而是武器模式 `melee` / `ranged` / `finesse`
+- **命中投**：一律加熟练加值（5e 所有职业都熟练简易武器，角色卡也没有武器熟练字段）。`melee`（棍棒斧锤拳）用力量，`ranged`（枪弓弩）用敏捷，`finesse`（刀匕首）**以及没提武器时**取力量/敏捷中较高的、相等记为敏捷——后者是本桌规则。实际用了哪项属性由 `resolveAttackAbility(card, mode)` 决定，调整值和 label 都调它，所以 `buildRollLabel(intent, attackAbility)` 需要调用方先解出属性；label 会标出来：「带优势的命中投（敏捷）」
+- 伤害骰第一版不支持：文本里出现「伤害 / damage」直接回 `voice:error`「暂不支持伤害骰」。这一步排在攻击判定**之前**，否则「攻击伤害」会被当成命中投投出去
 - 意图识别是**规则优先、DeepSeek 兜底**：`parseRollIntent()` 覆盖绝大多数说法（0ms、0 成本、不会幻觉），判不出来才调 LLM。**LLM 只输出意图枚举，不掷骰、不算数、不碰角色卡数值**——它的随机数不可信、算术偶尔出错。LLM 返回的 JSON 一律过 `validateIntent()` 严格校验，任何一项不合法都按「没听懂」处理
+- 规则层只认明确的攻击触发词（命中投 / 攻击检定 / attack roll / to hit…）；只描述动作的（「我砍他一刀」「偷袭」）交给 LLM。「偷袭」判成命中投而不是隐匿，「擒抱」判成运动而不是命中投——这些歧义写在 system prompt 里
 - 「豁免」是**硬规则**：转写文本里出现「豁免」就走豁免路径，不交给 LLM；说了豁免却没说是哪一项 → 直接报错「没听清是哪项豁免」，不猜也不调 LLM。规则表里**只放无歧义的别名**（「撒谎」这种——自己说谎是欺瞒、看别人说谎是洞悉——必须留给 LLM）
 - 数值口径：角色卡 `attributes` 里存的**已经是调整值**，不要再做 `(score-10)/2`；属性检定/比拼用纯属性调整值不加熟练（本桌规则）；不熟练的技能照样加对应属性调整值，只是不加 PB
 - 掷骰在**服务端**用 `crypto.randomInt`（现有的 `dice:roll` 事件是直接信任客户端传来的 `result` 的，语音路径借机把掷骰收回服务端）。优势/劣势掷两次，`rolls` 存两颗、`kept` 存实际采用的那颗；`buildDiceCard` 的大成功/大失败按 `kept` 判断，**不能**把两颗骰子相加
