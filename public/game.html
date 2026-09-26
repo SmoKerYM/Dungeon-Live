@@ -2874,7 +2874,12 @@
         placePanel(panelId, pos.x, pos.y);
 
         triggerEl(panelId).classList.add('open');
-        if (panelId === 'panel-chat') document.getElementById('chat-badge').classList.remove('show');
+        if (panelId === 'panel-chat') {
+            document.getElementById('chat-badge').classList.remove('show');
+            // 窗口没显示时 scrollHeight 是 0，收到新消息时的自动贴底等于没生效，
+            // 所以一打开还停在第一条。这里补一次，让聊天室永远从最新一条看起
+            scrollChatToBottom();
+        }
         if (panelId === 'panel-character') onCharacterPanelOpen();
     }
 
