@@ -132,6 +132,7 @@ npm start       # Production server
 ```
 
 ## Important Notes
+- HTML is served with `Cache-Control: no-cache` (see the `express.static` options): every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build. `no-cache` only forces ETag revalidation — unchanged content still returns 304
 - Map images are Base64-encoded and can be large (50MB max buffer); stored in `data/map_assets.json`
 - World state persisted to `data/world.json`; debounced 500ms on every mutation
 - Notes, character records, and chat history writes are debounced at 500ms

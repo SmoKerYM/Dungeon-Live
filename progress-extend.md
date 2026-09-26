@@ -35,6 +35,10 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-26: HTML 加 `Cache-Control: no-cache`
+  - 起因：线上明明部署了 `ad697bb`，但用户界面表现仍是上一版 `cb15aaf`（菜单开着时全部气泡被禁）。curl 线上 `game.html` 确认服务端已是新代码，浏览器里 Shoelace 也正常注册、气泡能渲染 —— 指向浏览器缓存了旧 HTML
+  - 本项目 CSS/JS 全部内联在 HTML 里，所以 HTML 被缓存 = 整个前端冻在旧版本，这个坑会反复踩
+  - `express.static` 加 `setHeaders`，只对 `.html` 设 `no-cache`；实测响应头正确、带 ETag 的二次请求仍返回 304，不会重复下载 220KB
 - 2026-09-26: 二级菜单与 tooltip 改为互斥，取消上一版的抬高
   - 上一版用 `TOOLTIP_CLEARANCE = 38` 把二级菜单抬高避让 tooltip，线上看起来"往上飘了一截"，观感奇怪
   - 改为二者共用工具条正上方那一条带、互斥切换：悬浮出名字气泡，点击后名字气泡收掉并禁用、原地换成二级菜单，图标高亮

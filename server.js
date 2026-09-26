@@ -370,7 +370,13 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 // 静态文件服务
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    // 所有 CSS/JS 都内联在 HTML 里，HTML 一旦被缓存，等于整个前端被冻在旧版本。
+    // no-cache 只是要求每次带 ETag 回源校验，内容没变仍走 304，开销很小。
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 
 // 游戏状态存储
 const gameState = {
