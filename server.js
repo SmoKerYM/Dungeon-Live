@@ -4,6 +4,8 @@ const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+// 语音掷骰：全部实现在 lib/voice-roll/ 下，这里只做接线（依赖由参数注入）
+const { registerVoiceRollHandlers } = require('./lib/voice-roll');
 
 // 笔记文件路径（Render Disk 挂载点）
 const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
@@ -487,9 +489,10 @@ const PORT = process.env.PORT || 3000;
 // 静态文件服务
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, filePath) {
-    // 所有 CSS/JS 都内联在 HTML 里，HTML 一旦被缓存，等于整个前端被冻在旧版本。
+    // 绝大部分 CSS/JS 都内联在 HTML 里，HTML 一旦被缓存，等于整个前端被冻在旧版本。
+    // public/voice-roll/ 下的独立 .js / .css 同理：被启发式缓存住，玩家拿到的就是旧版前端。
     // no-cache 只是要求每次带 ETag 回源校验，内容没变仍走 304，开销很小。
-    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    if (/\.(html|js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
   }
 }));
 
@@ -691,6 +694,14 @@ io.on('connection', (socket) => {
     gameState.world.npcs = [];
     io.emit('npc:clearAll');
     scheduleWorldSave();
+  });
+
+  // 语音掷骰（voice:*）。实现在 lib/voice-roll/，这里只注入它需要的东西：
+  // 当前玩家、按名取角色卡、以及复用现有的聊天历史追加（保证实时与回放一致）
+  registerVoiceRollHandlers(io, socket, {
+    getPlayer: () => gameState.players.get(socket.id),
+    getCharacter,
+    appendChatHistory
   });
 
   // 骰子投掷 (所有人)
