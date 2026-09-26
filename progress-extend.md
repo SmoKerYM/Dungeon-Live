@@ -1,8 +1,9 @@
 # Progress (for plan-extend.md)
 
 ## 当前状态
-- **当前阶段**：Phase 9 全部完成（9-A / 9-B / 9-C），待进入 Phase 10
-- **最后更新**：2026-05-28
+- **当前阶段**：plan-extend Phase 9 全部完成（9-A / 9-B / 9-C），待进入 Phase 10
+- **plan 外进展**：TODO.md 三项（缩放后窗口跑位 / 角色卡界面重做 / 聊天窗口打磨）已全部完成
+- **最后更新**：2026-09-26
 
 ## 已完成的 Phase
 - **Phase 0** (2026-05-27)：
@@ -35,6 +36,25 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-26: 聊天输入历史存进 sessionStorage
+  - 按 `chatInputHistory:<userName>` 分桶，和浮动窗口布局同一思路——没有账号，名字即身份
+  - 刷新在本项目里是常态（拿新版本只能靠刷新），纯内存历史每次清零不划算
+  - 读写全包 try/catch：隐私模式 / 配额满时退回纯内存，不影响发消息；坏值按空历史处理，数组内非字符串项过滤
+- 2026-09-26: 头像与气泡齐平 + 输入框上下箭头调历史
+  - 原 `.panel-msg` 是一行「头像 + 竖排(名字/气泡)」，头像与**名字**齐平，实测头像 top 546 而气泡 top 564，悬在气泡上方半格
+  - 改为外层竖排：名字行与私聊标记在上（缩进 36px = 28 头像 + 8 间距），头像与气泡同处 `.panel-row`，头像因此永远与气泡齐平；`.mine` 侧按右边缘对齐
+  - 顺带修掉短消息气泡被撑宽：`.panel-body` 原为默认 `stretch`，气泡会被更宽的名字行拉长（实测气泡 54px = 名字行 54px，而文字仅 42px），改为 `flex-start`
+  - 输入框 ↑/↓ 调历史，语义对齐 shell：连续重复只占一格、↓ 翻过最新一条还原草稿、光标落在末尾；`@` 建议框打开时方向键仍归它
+- 2026-09-26: 聊天窗口打磨（TODO 第 3 项，六条全部落地）
+  - 连发合并（同发送者 + 同私聊对象 + 5 分钟内）、时间戳 + 跨天分隔、链接可点、长消息折叠、骰子结果卡片（单颗 d20 的 20/1 标大成功/大失败）、滚动位置保持（「↓ 有新消息」）、私聊气泡由品红改低饱和紫
+  - `renderMessageHtml()` 把 @提及与 URL 放进同一次扫描，避免互相切碎；句末标点不算进 href
+  - 补 `escapeAttr()`：原 `escapeHtml()` 走 `textContent` 不转义引号，用户输入的 URL 进 `href` 会有注入面。五个用例验证无 `on*` 属性漏出，`javascript:` 不被链接化
+  - `dice:result` 广播补 `timestamp`，使实时掷骰与历史回放渲染一致；`formatDiceMessage` 随之移除
+- 2026-09-26: 浮动窗口位置改用锚点存储（TODO 第 1 项）
+  - 根因比原猜测更严重：不只是算偏，而是**位置被永久破坏**——绝对坐标在缩小的视口下越界，被 `clampToViewport` 夹到边上，而 `resize` 监听又拿被夹过的 `offsetLeft` 顺延，等于把错误固化，缩放回去也回不来
+  - 改存 `{ ax:'left'|'right', ox, ay:'top'|'bottom', oy }`；`resize` 与 `ResizeObserver` 统一走 `relayoutPanel()`，从 `savedLayout` 重新推导
+  - 旧的纯 `x/y` 记录在 `resolveSavedPos()` 首次读取时就地升级为锚点并回存，线上已有布局不丢
+  - **原 TODO 里的一条猜测被证伪**：`defaultPanelPos` 混用 `getBoundingClientRect()` 与 `innerWidth` 不是诱因，两者都按当前视口实时读取；实测七个窗口在 1400×900 / 1000×700 / 900×650 三档下默认位置均正确
 - 2026-09-26: 血条绑定改为「自己的角色卡」，与查看中的卡解耦
   - 线上实测发现：玩家用「读取角色卡」下拉框翻别人的卡时，左上角血条会跟着变成那个角色的血（因为原本绑的是 `currentCharacter`）
   - 新增 `myCharacter`（名字等于 `userName` 的那张卡），血条、± 按钮、点击编辑全部改用它；`currentCharacter` 只负责角色卡面板的显示
@@ -253,7 +273,8 @@
   - [public/game.html](public/game.html) JS：`focusOnPlacedMap(assetId)` 移除 `if (!isDM) return` 守卫；未找到实例时按角色分支：DM → `placeMapAtViewportCenter` + toast "无对应地图实例，已生成新的"；玩家 → toast "DM还没有放置该地图"；找到实例时置顶+聚焦逻辑两者共用
 
 ## 下一步
-Phase 9-C 及扩展完成。后续进入 Phase 10（吸附开关 + 选框批量操作）。
+- plan-extend 线：Phase 9-C 及扩展完成，后续进入 Phase 10（吸附开关 + 选框批量操作）。
+- plan 外：TODO.md 三项已清空。已知待议项——DM 密码 `12138` 仍硬编码在 [public/game.html](public/game.html)（用户确认当前可接受，仅朋友间使用）。
 
 ## 与原计划的偏离 / 已确认的决策变更
 - **2026-05-27 网格渲染从 CSS overlay 改为 Konva 原生 `gridLayer`**：原 Phase 0/1 用 `#grid-overlay` 的 CSS `background-image` 画网格，缩放后地图边缘与网格线出现肉眼可见错位（两套渲染管线 + canvas 程序化 scale 不同步）。改为最底层 `gridLayer` 用 `Konva.Line` 按可视世界范围绘制（`strokeWidth = 1/scale`），与地图共享 stage 变换，彻底消除错位。已删除 `#grid-overlay` DOM、其 CSS 及 `syncGridOverlay`；新增 `drawGrid()`；`onStageTransformChanged()` 末尾加 `konvaStage.batchDraw()` 防止程序化变换后 canvas 滞留。plan-extend.md 决策章节已同步标注。

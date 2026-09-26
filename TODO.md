@@ -1,6 +1,14 @@
-# TODO — 2026-09-26
+# TODO
 
-前端打磨三项，均在 [public/game.html](public/game.html)。**三项已全部完成（2026-09-26）。**
+## 待办
+
+暂无。下方是已完成事项的记录，保留诊断结论备查。
+
+---
+
+# 2026-09-26 前端打磨三项 ✅
+
+均在 [public/game.html](public/game.html)，已全部完成。
 
 ---
 
@@ -50,8 +58,17 @@
 
 ---
 
+## 4. ~~头像与气泡齐平 + 输入框上下箭头调历史~~（2026-09-26 已完成，三项之外追加）
+
+**对齐**：原结构是一行「头像 + 竖排(名字/气泡)」，头像与*名字*齐平（实测头像 top 546、气泡 top 564）。改为外层竖排，名字行和私聊标记在上并缩进 36px，头像与气泡同处一行。顺带修掉 `.panel-body` 默认 `stretch` 导致短消息气泡被名字行撑宽的问题。
+
+**输入历史**：↑/↓ 调出发过的内容，语义对齐 shell（连续重复只占一格、↓ 翻过最新一条还原草稿、光标落末尾）。存 `sessionStorage`，按用户名分桶，刷新不丢；读写全包 try/catch，存储不可用时退回纯内存。
+
+---
+
 ## 备注
 
-- 本次会话把 remote 改成了 `git@github-personal:SmoKerYM/Dungeon-Live.git`（仓库已改名，且个人账号走 `github-personal` 别名）
+- remote 为 `git@github-personal:SmoKerYM/Dungeon-Live.git`（仓库已改名，且个人账号走 `github-personal` 别名）
+- **DM 密码 `12138` 仍硬编码在 [public/game.html](public/game.html)**，用户确认当前可接受（仅朋友间使用）。若日后对外开放需改为服务端校验的令牌流程
 - `data/` 结构本次为纯新增（`ui_prefs.json` 的 `layouts`、聊天记录的 `to`/`toRole`），旧文件可直接沿用，首次写入时自动升级
 - 第 1 项又给 `layouts[name][panelId]` 加了 `ax/ox/ay/oy` 四个字段，仍是纯新增：旧的 `x/y` 继续写入，客户端首次读到没有锚点的记录时就地升级，线上已有布局不会丢

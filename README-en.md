@@ -31,8 +31,9 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Pinning** — There is no separate pin button: **clicking the wall button**, **interacting with the window's contents** (a click, focusing an input) or **dragging the window** pins it; the window's ✕ or a second click on that wall button unpins and closes it. Pinned windows get a yellow-tinted border
 - **Automatic avoidance** — A window opened by hover positions itself to avoid the windows already pinned on screen
 - **Drag freely, position remembered** — Drag the header to move a window; on release the position is saved server-side **per user name**, so next time it opens exactly where you left it, pinned state included
+- **Zoom-proof** — Positions are stored as an edge anchor (which edge the window sits nearer to, and its distance from it) rather than absolute pixels, so changing the browser zoom level still puts the window back in the same visual place
 - **Identity badge** — A translucent pill at top left shows DM/Player, your colour dot and your name
-- **HP bar** — A flat capsule health bar sits right beside the identity badge at matching height, bound to the currently loaded character sheet (players auto-load their own on join; the DM's follows whichever sheet they open). Green above 50%, amber 25–50%, red below 25%. Click the bar to edit current/max HP inline; players also get ± buttons for 1 point of healing or damage (max HP still requires clicking the bar). Changes broadcast live to the player list and token tooltips
+- **HP bar** — A flat capsule health bar sits right beside the identity badge at matching height, **locked to the player's own character sheet**: browsing someone else's sheet still shows your own HP, and the ± buttons still edit your own card. **The DM never sees the bar at all**, whoever they are looking at. Green above 50%, amber 25–50%, red below 25%. Click the bar to edit current/max HP inline; players also get ± buttons for 1 point of healing or damage (max HP still requires clicking the bar). Changes broadcast live to the player list and token tooltips
 - **DM in the player list** — The DM appears as the first row of the Players panel
 - **Dice** — The dice button sits low on the right edge and opens a tight 2×3 tray (D4/D6/D8/D10/D20/D100) anchored to the bottom-right corner; D12 was dropped as a button but `/d12` and the like still work in chat
 - **Horizontal bottom controls** — The DM toolbar runs along the bottom of the screen, with its colour picker opening upward
@@ -84,8 +85,10 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 
 ### Character Sheet System
 - **D&D 5e Standard Sheet** — Six attributes, saving throws, skills
+- **Dense layout** — Attributes in a 3×2 grid (score and modifier share a cell), HP and proficiency lifted into a top row, saves and skills in two columns; over a third shorter than the original full-page version
 - **Feats / Traits** — Multiple feats with name + description
 - **Proficiency Bonus** — Auto-calculated proficiency bonuses
+- **AI one-line summary** — Beside the character's name, DeepSeek reads that sheet's attributes, proficiency, saves, skills and feats and writes a single sentence reminding the player what this character is actually good at. The result is cached on the sheet behind a fingerprint of the fields that change the conclusion, so editing HP never triggers a regeneration. Requires `DEEPSEEK_API_KEY` server-side; the key is never sent to the browser
 - **Persistent** — Character sheets saved to JSON files
 - **Auto-load** — Players automatically load their matching character sheet on join
 
@@ -98,6 +101,7 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Standard Dice** — D4, D6, D8, D10, D20, D100 (2×3 tray in the dice panel, with roll animation)
 - **Chat Dice Commands** — Type `/d20`, `/2d6+3` etc. to auto-roll with full breakdown
 - **Result Broadcast** — All results broadcast to every player
+- **Result cards** — Rolls render in chat as their own card (roller, expression, breakdown, large total) instead of blending into system messages; a single d20 showing 20 or 1 is flagged **critical** (green) or **fumble** (red)
 
 ### Chat System
 - **Real-time Chat** — Text messages with four distinct styles: system / DM / others / self (system messages use a monospace face)
@@ -106,6 +110,12 @@ A web-based real-time collaborative D&D (Dungeons & Dragons) tool supporting map
 - **Private Visibility** — A message containing `@someone` is visible to the **sender and that person only** (the DM does not observe player-to-player whispers); history replay is filtered per user, so others never see it after reconnecting either
 - **@Everyone** — Treated as a normal public message, merely highlighted inline
 - **Bubble Chat Room** — The chat button at the bottom centre expands on hover and pins on click: circular avatars in each player's chosen colour, own messages right-aligned, others left-aligned, system messages centred, ✕ to close
+- **Grouped runs** — Consecutive messages from the same sender within 5 minutes are grouped; only the first carries an avatar and name
+- **Timestamps** — HH:MM beside the sender's name, full time on hover; a date change inserts a 今天 / 昨天 / M月D日 divider
+- **Clickable links** — http(s) URLs in a message become links (opened in a new tab); trailing sentence punctuation is kept out of the href
+- **Long message folding** — Messages over 420 characters fold behind a 展开 (expand) toggle with a gradient hint
+- **Scroll is never hijacked** — While you are scrolled up reading history, new messages do not yank you to the bottom; a "↓ 有新消息" pill appears instead
+- **Input history** — ↑/↓ recall what you sent before, shell-style — re-rolling is just ↑ then Enter. Kept in `sessionStorage`, so a reload does not lose it
 
 ## Getting Started
 
@@ -171,14 +181,11 @@ npm start
 | Input | Meaning | Example output |
 |-------|---------|----------------|
 | `/d20` | 1d20 | `rolled d20, result: 15` |
-| `/2d6` | 2d6 | `rolled 2d6, result: 3 + 5 = 8` |
-| `/2d4+3` | 2d4 + 3 | `rolled 2d4+3, result: 2 + 3 + 3 = 8` |
-| `/d8-1` | 1d8 − 1 | `rolled d8-1, result: 6 - 1 = 5` |
+| `/2d6` | 2d6 | `rolled 2d6` / `3 + 5 = 8` → **8** |
+| `/2d4+3` | 2d4 + 3 | `rolled 2d4+3` / `2 + 3 + 3 = 8` → **8** |
+| `/d8-1` | 1d8 − 1 | `rolled d8-1` / `6 − 1 = 5` → **5** |
 
-### Tab System
-- **Map** — Main game view with Konva grid world
-- **Notes** — Left: shared notes; Right: character records table
-- **Character Sheet** — Create and edit D&D 5e character sheets
+> After rolling once, press ↑ in the input and hit Enter to roll it again — no retyping.
 
 ## Project Structure
 
@@ -186,18 +193,24 @@ npm start
 coc_app/
 ├── server.js              # Main server (Express + Socket.IO)
 ├── package.json           # Dependencies
+├── nodemon.json           # Hot-reload watch config (ignores data/)
+├── .env.example           # Env var template (DEEPSEEK_API_KEY …); .env itself is git-ignored
+├── CLAUDE.md              # Project conventions and implementation notes for AI assistants
 ├── README.md              # Documentation (Chinese)
 ├── README-en.md           # Documentation (English)
+├── TODO.md                # Open and completed work items
+├── plan-extend.md         # Konva grid-world refactor plan
+├── progress-extend.md     # Development progress log
 ├── public/
 │   ├── index.html         # Login page
 │   └── game.html          # Main game UI (inline CSS+JS+Konva)
-├── data/
+├── data/                      # git-ignored; a local dev snapshot only
 │   ├── characters.json        # Character sheet data
 │   ├── characters_notes.json  # Character records
 │   ├── chat_history.json      # Last 100 chat/dice entries
 │   ├── map_assets.json        # Map image assets (Base64)
 │   ├── world.json             # World state (maps, tokens, drawings, fog…)
-│   ├── ui_prefs.json          # DM drawing colours + per-user float panel layouts
+│   ├── ui_prefs.json          # DM drawing colours + per-user float panel layouts (edge anchors)
 │   └── notes.txt              # Shared notes
 └── images/                # (legacy, unused)
 ```
@@ -226,12 +239,19 @@ coc_app/
 ```javascript
 {
   dm: { socketId, name },
-  players: Map<socketId, { name, color, role }>,
+  players: Map<socketId, { name, color, role, online }>,   // online=false means inside the disconnect grace window
   notes: "string",
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // max 100
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
-  uiPrefs: { penColor: "#cc0000", rectColor: "#cc0000" },
+  uiPrefs: {
+    penColor: "#cc0000",
+    rectColor: "#cc0000",
+    // Float panel positions, bucketed per user name. ax/ox and ay/oy are
+    // "which edge, how far from it", so browser zoom cannot shift them.
+    // x/y are written alongside but only for readability.
+    layouts: { "<userName>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } }
+  },
   world: {
     placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }],
     tokens:       [{ id, color, gridX, gridY }],
@@ -254,7 +274,10 @@ coc_app/
   attributes: { strength, dexterity, constitution, intelligence, wisdom, charisma },
   savingThrows: ["dexterity"],  // max 2
   skills: ["stealth"],          // max 4
-  feats: [{ name: "Feat Name", description: "..." }]
+  feats: [{ name: "Feat Name", description: "..." }],
+  // DeepSeek one-liner; fingerprint hashes only the fields that change the
+  // conclusion, so editing HP never triggers a regeneration
+  aiSummary: { text: "…", fingerprint: "…", at: 1758800000000 }   // optional
 }
 ```
 
@@ -263,7 +286,8 @@ coc_app/
 ### Client → Server
 | Namespace | Events |
 |-----------|--------|
-| Auth | `join`, `selectColor` |
+| Auth | `join`, `selectColor`, `player:leave` |
+| Layout | `layout:save` (per-user float panel anchor/pinned) |
 | MapAsset | `mapAsset:upload`, `mapAsset:fetch`, `mapAsset:remove` |
 | PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:setBound`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
@@ -271,8 +295,8 @@ coc_app/
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
 | Fog | `fog:add`, `fog:remove` |
 | History | `history:undo`, `history:redo` |
-| Character | `character:list`, `character:load`, `character:save` |
-| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update`, `uiPrefs:save` |
+| Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
+| Other | `chat:message` (payload `{ message, to }`; `to` makes it a whisper), `dice:roll`, `notes:update`, `characterNotes:update`, `uiPrefs:save` |
 
 ### Server → Client
 | Event | Description |
@@ -305,7 +329,9 @@ npm start
 
 #### Render (recommended)
 1. Create a Web Service, connect GitHub repo
-2. **Mount a Persistent Disk** to `/data` — required or data is lost on restart
+2. **Mount a Persistent Disk** to `/data` and set `NODE_ENV=production` — required or data is lost on restart
+   - In production every read and write goes to the persistent disk at `/data`, unrelated to the repo's `data/`, which is git-ignored and only a local dev snapshot
+3. For the AI character summary, add `DEEPSEEK_API_KEY` under Environment Variables
 
 #### Railway
 ```bash
@@ -329,6 +355,8 @@ npm install -g @railway/cli && railway login && railway init && railway up
 3. **Sync lag** — check network; reduce concurrent users
 4. **Character sheet won't save** — check `data/` write permission; name must not be empty
 5. **World state lost after restart (production)** — ensure Persistent Disk is mounted at `/data`
+6. **AI summary says `DEEPSEEK_API_KEY` is not configured** — put the key in `.env` locally (see `.env.example`), or in Render's Environment Variables in production
+7. **Code changed but the page did not** — every byte of CSS and JS is inline in the HTML, so a cached HTML freezes the whole frontend; the server sends `Cache-Control: no-cache` for `.html`, but force-reload if it persists
 
 ## Copyright & License
 

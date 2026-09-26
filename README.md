@@ -31,8 +31,9 @@
 - **固定逻辑** - 没有单独的「固定」按钮：**点呼出按钮**、**跟窗口里的内容交互**（点击、聚焦输入框）或**拖动窗口**即视为固定；**点窗口的 ✕** 或**再点一次那个呼出按钮**则取消固定并收起。固定中的窗口边框会泛黄
 - **自动避让** - 悬浮展开的窗口会自动避开屏幕上已经固定显示的窗口，尽量不互相遮挡
 - **自由拖拽 + 记住位置** - 拖动标题栏移动窗口，松手即按**用户名**存到服务端；下次展开直接回到上次拖到的位置，固定状态也一并恢复
+- **缩放不跑位** - 位置按「贴哪条边 + 到该边的距离」存储而非绝对像素，改浏览器缩放比例后窗口仍回到同一个视觉位置
 - **身份标识** - 左上角半透明胶囊显示 DM/玩家 + 自己的颜色圆点 + 名字
-- **血条 HUD** - 紧挨身份标识右侧的扁平胶囊血条（两者等高），绑定当前载入的角色卡（玩家进场自动载入自己的，DM 跟着他在角色卡面板打开的那张）。血量高于 50% 绿、25~50% 黄、低于 25% 红。点血条就地变成输入框改「当前血量 / 生命上限」；玩家另有 ± 按钮各增减 1 点（只改当前血量，改上限仍需点血条）。改动实时广播，玩家列表和棋子悬浮提示同步
+- **血条 HUD** - 紧挨身份标识右侧的扁平胶囊血条（两者等高），**锁定玩家自己的角色卡**：翻看别人的角色卡时血条依然显示自己的血，± 按钮改的也始终是自己那张。**DM 侧永不显示血条**，无论他在看谁的卡。血量高于 50% 绿、25~50% 黄、低于 25% 红。点血条就地变成输入框改「当前血量 / 生命上限」；玩家另有 ± 按钮各增减 1 点（只改当前血量，改上限仍需点血条）。改动实时广播，玩家列表和棋子悬浮提示同步
 - **玩家列表含 DM** - DM 作为第一行显示在玩家列表里
 - **骰子** - 右侧靠下的骰子按钮展开 2×3 六颗骰（D4/D6/D8/D10/D20/D100），默认从屏幕右下角长出；D12 已移除，但聊天框里 `/d12`、`/2d12+3` 这类指令依然可用
 - **底部横向控制栏** - DM 工具条改为屏幕下方横排，颜色选择器向上弹出
@@ -84,8 +85,10 @@
 
 ### 📋 角色卡系统
 - **D&D 5e 标准角色卡** - 支持六大属性、豁免检定、技能
+- **紧凑布局** - 六大属性 3×2 网格（属性值与调整值同格），血量／熟练加值上提到顶部一行，豁免与技能分栏，高度较早期整页版本砍掉三分之一以上
 - **特质记录** - 支持添加多条角色特质（名称+详细描述）
 - **熟练项加值** - 自动计算熟练项加成
+- **AI 一句话总结** - 角色名右侧由 DeepSeek 读取该角色的属性／熟练／豁免／技能／专长，生成一句「xxx 是一个……的人，ta 十分擅长……」，提醒玩家自己这个角色擅长做什么。结果带指纹缓存写进角色卡，只有影响结论的字段变了才会重新生成（改血量不会触发）。需要服务端配置 `DEEPSEEK_API_KEY`，密钥不会下发到浏览器
 - **数据持久化** - 角色卡保存到 JSON 文件
 - **自动加载** - 玩家自动加载同名角色卡
 
@@ -98,6 +101,7 @@
 - **标准骰子集** - D4, D6, D8, D10, D20, D100（右侧骰子浮动窗口，2×3 排列，含滚动动画）
 - **聊天框掷骰** - 输入 `/d20`、`/2d6+3` 等指令自动掷骰，显示完整拆解式
 - **结果广播** - 投掷结果实时广播给所有玩家
+- **结果卡片** - 掷骰在聊天里显示为独立卡片（投掷者、表达式、拆解过程、大号结果），不再混在系统提示里；单颗 d20 投出 20/1 会标记**大成功**（绿）／**大失败**（红）
 
 ### 💬 聊天系统
 - **实时聊天** - 支持文本消息交流
@@ -107,6 +111,12 @@
 - **私聊可见性** - 带 `@某人` 的消息仅**发送者与被 @ 的人**可见（DM 不会旁观玩家之间的私聊）；历史回放同样按人过滤，他人重连后也看不到
 - **@所有人** - 视为普通公开消息，仅在正文中高亮
 - **气泡聊天室** - 屏幕底部正中的「聊天」按钮悬浮展开、点击固定：玩家以自选颜色圆形头像标识，自己的消息靠右、他人靠左、系统消息居中，右上角 ✕ 关闭
+- **连发合并** - 同一人 5 分钟内的连续发言合并为一组，只在第一条显示头像和名字
+- **时间戳** - 名字行右侧显示 HH:MM，悬停气泡可看完整时间；跨天的历史之间插入「今天／昨天／M月D日」分隔
+- **链接可点** - 正文中的 http(s) 链接自动转为可点链接（新标签打开），句末标点不会被算进链接
+- **长消息折叠** - 超过 420 字的消息先折叠，底部渐变提示，点「展开」看全文
+- **滚动不被打断** - 正在往上翻历史时新消息不会强行把你拉到底部，改为浮出「↓ 有新消息」，点一下才跳转
+- **输入历史** - 输入框支持 ↑/↓ 调出发过的内容（像终端一样），重复投骰只需 ↑ + 回车；存在 sessionStorage 里，刷新页面不丢
 
 ## 🚀 快速开始
 
@@ -172,20 +182,19 @@ npm start
 - **移动棋子**：拖动自己颜色的棋子（松手自动对齐网格）
 - **生成棋子**：左侧「玩家」按钮展开后，点自己颜色的那一行
 - **投掷骰子**：点击右侧骰子栏，或在聊天框输入掷骰指令
-- **编辑角色卡**：切换到角色卡标签页
+- **编辑角色卡**：右侧「角色卡」按钮展开浮动窗口
 
 #### 聊天框掷骰语法
-| 输入 | 含义 | 示例输出 |
-|------|------|---------|
-| `/d20` | 1 个 20 面骰 | `投掷了 d20，结果是 15` |
-| `/2d6` | 2 个 6 面骰 | `投掷了 2d6，结果是 3 + 5 = 8` |
-| `/2d4+3` | 2d4 加 3 | `投掷了 2d4+3，结果是 2 + 3 + 3 = 8` |
-| `/d8-1` | 1d8 减 1 | `投掷了 d8-1，结果是 6 - 1 = 5` |
+结果以骰子卡片呈现（投掷者 + 表达式 + 拆解过程 + 大号结果）：
 
-### 标签页系统
-- **地图**：主游戏界面，显示 Konva 网格世界
-- **笔记**：左侧共享笔记 + 右侧登场人物记录表
-- **角色卡**：角色卡创建和编辑界面（含特质记录）
+| 输入 | 含义 | 卡片内容 |
+|------|------|---------|
+| `/d20` | 1 个 20 面骰 | `投掷 d20` → **15** |
+| `/2d6` | 2 个 6 面骰 | `投掷 2d6` / `3 + 5 = 8` → **8** |
+| `/2d4+3` | 2d4 加 3 | `投掷 2d4+3` / `2 + 3 + 3 = 8` → **8** |
+| `/d8-1` | 1d8 减 1 | `投掷 d8-1` / `6 − 1 = 5` → **5** |
+
+> 投过一次之后，在输入框按 ↑ 调出上一条再回车即可重投，不必重新打字。
 
 ## 🏗️ 项目结构
 
@@ -193,18 +202,24 @@ npm start
 coc_app/
 ├── server.js              # 主服务器文件 (Express + Socket.IO)
 ├── package.json           # 项目依赖配置
+├── nodemon.json           # 热重载监听配置（忽略 data/）
+├── .env.example           # 环境变量模板（DEEPSEEK_API_KEY 等），.env 本身不入库
+├── CLAUDE.md              # 面向 AI 助手的项目约定与实现要点
 ├── README.md              # 项目说明文档（中文）
 ├── README-en.md           # 项目说明文档（英文）
+├── TODO.md                # 待办 / 已完成事项记录
+├── plan-extend.md         # Konva 网格世界重构计划
+├── progress-extend.md     # 开发进度记录
 ├── public/                # 静态文件目录
 │   ├── index.html         # 登录页面
 │   └── game.html          # 主游戏界面 (CSS+JS+Konva 内联)
-├── data/                  # 数据存储目录
+├── data/                  # 数据存储目录（已加入 .gitignore，仅本地开发快照）
 │   ├── characters.json        # 角色卡数据
 │   ├── characters_notes.json  # 登场人物记录
 │   ├── chat_history.json      # 聊天/骰子历史（最近 100 条）
 │   ├── map_assets.json        # 地图图片资产（Base64）
 │   ├── world.json             # 世界状态（地图实例、棋子、笔迹、迷雾等）
-│   ├── ui_prefs.json          # DM 绘图颜色偏好 + 各用户的浮动窗口布局（layouts）
+│   ├── ui_prefs.json          # DM 绘图颜色偏好 + 各用户的浮动窗口布局（layouts，按边锚点存储）
 │   └── notes.txt              # 共享笔记
 └── images/                # （已废弃）
 ```
@@ -233,12 +248,19 @@ coc_app/
 ```javascript
 {
   dm: { socketId, name },
-  players: Map<socketId, { name, color, role }>,
+  players: Map<socketId, { name, color, role, online }>,   // online=false 表示在宽限期内
   notes: "string",
   characterNotes: [{ name, info }],
-  chatHistory: [{ type: 'chat'|'dice', name, role, ..., timestamp }],  // 最多 100 条
+  // to/toRole 存在时为私聊，仅发送者与接收者可见（含历史回放）
+  chatHistory: [{ type: 'chat'|'dice', name, role, ..., to?, toRole?, timestamp }],  // 最多 100 条
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
-  uiPrefs: { penColor: "#cc0000", rectColor: "#cc0000" },
+  uiPrefs: {
+    penColor: "#cc0000",
+    rectColor: "#cc0000",
+    // 浮动窗口位置按用户名分桶；ax/ox、ay/oy 是「贴哪条边 + 到该边的距离」，
+    // 这样改浏览器缩放比例也不会跑位。x/y 是同时写入的旧字段，仅供人读
+    layouts: { "<用户名>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } }
+  },
   world: {
     placedMaps:   [{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }],
     tokens:       [{ id, color, gridX, gridY }],
@@ -261,7 +283,10 @@ coc_app/
   attributes: { strength, dexterity, constitution, intelligence, wisdom, charisma },
   savingThrows: ["dexterity"],  // 最多 2 个
   skills: ["stealth"],          // 最多 4 个
-  feats: [{ name: "特质名", description: "详细描述" }]
+  feats: [{ name: "特质名", description: "详细描述" }],
+  // DeepSeek 生成的一句话总结；fingerprint 是影响结论那些字段的哈希，
+  // 只有它变了才重新调用 API（改血量不会触发）
+  aiSummary: { text: "……", fingerprint: "……", at: 1758800000000 }   // 可选
 }
 ```
 
@@ -270,7 +295,8 @@ coc_app/
 ### 客户端 → 服务端
 | 命名空间 | 事件 |
 |----------|------|
-| Auth | `join`, `selectColor` |
+| Auth | `join`, `selectColor`, `player:leave` |
+| Layout | `layout:save`（按用户名保存浮动窗口锚点 / 固定状态）|
 | MapAsset | `mapAsset:upload`, `mapAsset:fetch`, `mapAsset:remove` |
 | PlacedMap | `placedMap:add`, `placedMap:move`, `placedMap:resize`, `placedMap:setLock`, `placedMap:setBound`, `placedMap:remove` |
 | Token | `token:spawn`, `token:move`, `token:clearAll` |
@@ -278,8 +304,8 @@ coc_app/
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
 | Fog | `fog:add`, `fog:remove` |
 | History | `history:undo`, `history:redo` |
-| Character | `character:list`, `character:load`, `character:save` |
-| Other | `chat:message`, `dice:roll`, `notes:update`, `characterNotes:update`, `uiPrefs:save` |
+| Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
+| Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update`, `characterNotes:update`, `uiPrefs:save` |
 
 ### 服务端 → 客户端
 | 事件 | 说明 |
@@ -294,7 +320,14 @@ coc_app/
 | `npc:spawn/move/remove/clearAll` | NPC 状态广播 |
 | `draw:freeStroke/rect/liveStroke/remove/clearAll` | 绘图广播 |
 | `world:sync` | undo/redo 后完整世界快照广播 |
-| `dice:result` | 骰子结果广播 |
+| `dice:result` | 骰子结果广播（含 timestamp，与历史回放渲染一致）|
+| `roster:sync` | 在线名单广播 `[{ name, role, color, online }]` |
+| `chat:message` | 聊天消息；私聊时带 `to`/`toRole`，只发给发送者与接收者 |
+| `chat:error` | 私聊失败（对方不在线 / 私聊自己），仅回发送者 |
+| `chat:notice` | 提示发送者：对方正在宽限期内，重连后会收到 |
+| `characterNotes:sync` | 登场人物记录广播 |
+| `character:hpUpdated` | 血量变更广播 |
+| `character:summary` | AI 一句话总结结果（或未配置密钥的错误）|
 
 ## 🚢 部署选项
 
@@ -338,6 +371,8 @@ npm install -g @railway/cli && railway login && railway init && railway up
 3. **实时同步延迟** — 检查网络连接
 4. **角色卡无法保存** — 检查 `data/` 目录写入权限，角色名不能为空
 5. **生产环境重启后世界状态丢失** — 确认 `/data` 挂载了 Persistent Disk
+6. **AI 总结显示「服务端未配置 DEEPSEEK_API_KEY」** — 本地把密钥写进 `.env`（参考 `.env.example`），线上在 Render 的 Environment Variables 里添加
+7. **改了代码但页面没变化** — 所有 CSS/JS 都内联在 HTML 里，浏览器缓存住 HTML 就等于冻结整个前端；服务端已对 `.html` 下发 `Cache-Control: no-cache`，若仍异常请强制刷新
 
 ## 📄 版权与许可证
 
