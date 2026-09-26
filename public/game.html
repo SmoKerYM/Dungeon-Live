@@ -1687,8 +1687,7 @@
         closeToolbarPopout();
         currentTool = tool;
         document.querySelectorAll('.dm-tool-btn').forEach(b => b.classList.remove('active'));
-        const btnId = tool === 'draw' ? 'btn-pen' : tool === 'erase' ? 'btn-eraser' : 'btn-' + tool;
-        document.getElementById(btnId)?.classList.add('active');
+        document.getElementById(toolButtonId(tool))?.classList.add('active');
         if (tool === 'draw' || tool === 'rect' || tool === 'erase') openToolbarPopout(tool);
         if (konvaStage) {
             konvaStage.draggable(tool === 'move');
@@ -1766,30 +1765,34 @@
 
         positionPopout(tool);
         popout.style.display = 'flex';
-        setToolbarTooltipsEnabled(false);
+        suppressTooltipFor(toolButtonId(tool));
     }
 
-    // 二级菜单和按钮名字气泡占同一条带，只能二选一
-    function setToolbarTooltipsEnabled(enabled) {
+    // 工具名与按钮 id 并非一一对应（draw->btn-pen、erase->btn-eraser），统一在这里换算
+    function toolButtonId(tool) {
+        return tool === 'draw' ? 'btn-pen' : tool === 'erase' ? 'btn-eraser' : 'btn-' + tool;
+    }
+
+    // 只压掉「菜单正开着的那个工具」自己的名字气泡——它的位置已经被菜单占了。
+    // 其他工具照常提示，哪怕压在色板上：知道悬浮的是什么工具更重要。
+    // 传 null 表示恢复全部。
+    function suppressTooltipFor(btnId) {
         document.querySelectorAll('#dm-toolbar sl-tooltip').forEach(tip => {
-            if (enabled) {
-                tip.disabled = false;
-            } else {
-                tip.open = false;      // 已经弹出来的先收掉
-                tip.disabled = true;
-            }
+            const own = tip.querySelector('sl-icon-button');
+            const hit = btnId && own && own.id === btnId;
+            if (hit) tip.open = false;   // 已经弹出来的先收掉
+            tip.disabled = !!hit;
         });
     }
 
     function closeToolbarPopout() {
         const popout = document.getElementById('dm-toolbar-popout');
         if (popout) { popout.style.display = 'none'; popout.innerHTML = ''; }
-        setToolbarTooltipsEnabled(true);
+        suppressTooltipFor(null);
     }
 
     function positionPopout(tool) {
-        const btnId = tool === 'draw' ? 'btn-pen' : tool === 'erase' ? 'btn-eraser' : 'btn-' + tool;
-        const btn = document.getElementById(btnId);
+        const btn = document.getElementById(toolButtonId(tool));
         const popout = document.getElementById('dm-toolbar-popout');
         if (!btn || !popout) return;
         // 工具条在屏幕底部，弹出面板向上展开并水平居中于按钮。

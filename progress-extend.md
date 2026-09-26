@@ -38,7 +38,10 @@
 - 2026-09-26: 二级菜单与 tooltip 改为互斥，取消上一版的抬高
   - 上一版用 `TOOLTIP_CLEARANCE = 38` 把二级菜单抬高避让 tooltip，线上看起来"往上飘了一截"，观感奇怪
   - 改为二者共用工具条正上方那一条带、互斥切换：悬浮出名字气泡，点击后名字气泡收掉并禁用、原地换成二级菜单，图标高亮
-  - 新增 `setToolbarTooltipsEnabled(enabled)`，在 `openToolbarPopout` 末尾关、`closeToolbarPopout` 里开；关时同步把已弹出的 `tip.open` 置 false
+  - 新增 `suppressTooltipFor(btnId)`：只压掉「菜单正开着的那个工具」自己的气泡（位置已被菜单占用），其余六个照常提示，哪怕压在色板上——知道悬浮的是什么工具比不遮挡更重要（用户明确要求）
+  - 气泡经 `hoist` 渲染在更高的层，压在色板上方可读
+  - 注：Shoelace 的 `disabled` 只阻止渲染，`tip.open` 属性会残留为 true，但 `sl-popup.active` 为 false、`display: none`，实际不显示；已验证菜单关闭恢复 disabled 时不会凭空冒出气泡
+  - 顺带抽出 `toolButtonId(tool)`，消掉三处重复的 `draw->btn-pen / erase->btn-eraser` 三元映射
   - `setTool` 本来就先 `closeToolbarPopout()` 再开新的，"选 A 自动关 B 的菜单"无需额外改动
   - 实测：tooltip 带 701~729，二级菜单带 695~729，底边严格对齐
 - 2026-09-26: 再修工具条 tooltip 错位（上一次只解决了与弹出面板重叠）
