@@ -701,7 +701,8 @@ io.on('connection', (socket) => {
   registerVoiceRollHandlers(io, socket, {
     getPlayer: () => gameState.players.get(socket.id),
     getCharacter,
-    appendChatHistory
+    appendChatHistory,
+    deepseek: { apiKey: DEEPSEEK_API_KEY, model: DEEPSEEK_MODEL }
   });
 
   // 骰子投掷 (所有人)
