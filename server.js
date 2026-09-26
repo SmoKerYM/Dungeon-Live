@@ -1210,7 +1210,7 @@ io.on('connection', (socket) => {
   // 位置以「贴哪条边 + 到该边的距离」存储（ax/ox、ay/oy），不是绝对坐标——
   // 浏览器缩放会改变视口的 CSS 像素尺寸，绝对坐标在新比例下会落到界外。
   // 旧的 x/y 仍然读写，客户端首次解析时就地升级成锚点
-  socket.on('layout:save', ({ panelId, x, y, ax, ox, ay, oy, pinned }) => {
+  socket.on('layout:save', ({ panelId, x, y, w, h, ax, ox, ay, oy, pinned }) => {
     const player = gameState.players.get(socket.id);
     if (!player || typeof panelId !== 'string') return;
 
@@ -1224,6 +1224,9 @@ io.on('connection', (socket) => {
     if (ay === 'top'  || ay === 'bottom') entry.ay = ay;
     if (Number.isFinite(ox)) entry.ox = Math.round(ox);
     if (Number.isFinite(oy)) entry.oy = Math.round(oy);
+    // 用户拖边框改过的窗口尺寸。上下限由前端把关，这里只挡明显不合理的值
+    if (Number.isFinite(w) && w > 0 && w <= 4000) entry.w = Math.round(w);
+    if (Number.isFinite(h) && h > 0 && h <= 4000) entry.h = Math.round(h);
     if (typeof pinned === 'boolean') entry.pinned = pinned;
 
     scheduleUiPrefsSave();

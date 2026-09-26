@@ -206,6 +206,15 @@
             overflow: hidden;
         }
         .float-panel.show { display: flex; }
+        /* 四条边的缩放把手：只有可缩放的窗口才会被 JS 插入这些元素。
+           条带压在圆角边框上，6px 宽度够点中又不至于挡住内容 */
+        .float-panel-resizer { position: absolute; z-index: 3; }
+        .float-panel-resizer.n { top: 0; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+        .float-panel-resizer.s { bottom: 0; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+        .float-panel-resizer.w { left: 0; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+        .float-panel-resizer.e { right: 0; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+        /* 缩放过程中禁掉选中，免得拖出一片高亮文本 */
+        body.panel-resizing { user-select: none; -webkit-user-select: none; }
         .float-panel-header {
             display: flex; align-items: center; gap: 8px;
             padding: 10px 12px; cursor: grab;
@@ -546,7 +555,8 @@
         #panel-notes { width: 780px; height: 70vh; }
         /* 浮动窗口内右栏收窄，给共享笔记留出宽度 */
         #panel-notes #notes-right { width: 320px; }
-        #panel-character { width: 620px; max-height: 82vh; }
+        /* 宽度就是按「六个属性框是正方形」定的：内宽 = 3 × 框边长 + 2 × 间隙 */
+        #panel-character { width: 380px; max-height: 82vh; }
         /* 骰子窗贴着 2x3 网格收紧，不要 .float-panel 的 220px 最小宽 */
         #panel-dice { width: max-content; min-width: 0; }
         #panel-dice .float-panel-body { padding: 8px; }
@@ -988,16 +998,18 @@
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
         .attr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        /* 六个属性框是正方形：aspect-ratio 跟着列宽走，面板宽度一改仍然是正方形 */
         .attr-box {
-            display: flex; flex-direction: column; align-items: center; gap: 2px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 4px; aspect-ratio: 1;
             padding: 7px 4px; border-radius: 9px;
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.07);
         }
-        .attr-box label { font-size: 11px; color: #9aa4bb; font-weight: 600; }
+        .attr-box label { font-size: 12px; color: #9aa4bb; font-weight: 600; }
         .attr-box input {
             background: transparent; border: 1px solid transparent; border-radius: 6px;
-            color: #eef2fa; font-size: 19px; font-weight: 700;
+            color: #eef2fa; font-size: 26px; font-weight: 700;
             width: 100%; text-align: center; padding: 1px 0;
             font-variant-numeric: tabular-nums;
         }
@@ -2584,7 +2596,14 @@
     const HIDE_DELAY = 300;          // 离开后的宽限，留够鼠标从按钮挪进窗口的时间
     const PANEL_GAP = 12;            // 窗口之间的最小间距
     const EDGE_MARGIN = 14;          // 贴边留白，与左上角身份标识的 top/left 保持一致
-    let savedLayout = {};            // { panelId: { x, y, pinned } }，来自服务端
+    let savedLayout = {};            // { panelId: { x, y, w, h, pinned } }，来自服务端
+    // 可缩放的窗口及其尺寸上下限。字号不跟着变，只是窗口本身变大变小
+    const PANEL_SIZE_LIMITS = {
+        'panel-chat': { minW: 300, maxW: 760, minH: 260, maxH: 900 }
+    };
+    // 正在缩放的窗口：缩放期间 ResizeObserver 不能去「重新落位」，
+    // 否则拖左边/上边时它会按旧锚点把窗口拽回去，边拖边抖
+    let resizingPanel = null;
     // 每个面板各自持有计时器：共用一个的话，悬浮第二个按钮时
     // clearTimeout 会把第一个面板待执行的收起/展开一并取消掉
     const openTimers = new Map();   // panelId -> timeout
@@ -2677,6 +2696,40 @@
         socket.emit('layout:save', Object.assign({ panelId, x: Math.round(x), y: Math.round(y) }, a));
     }
 
+    /**
+     * 把一个尺寸夹到该窗口的上下限内，同时不允许超出视口。
+     * @returns {{w: number, h: number}}
+     */
+    function clampPanelSize(panelId, w, h) {
+        const lim = PANEL_SIZE_LIMITS[panelId];
+        if (!lim) return { w, h };
+        // 上限还要服从 .float-panel 自己的 max-width: 92vw / max-height: 82vh，
+        // 否则 style.width 写了个更大的值、实际渲染被 CSS 夹住，
+        // 拖左边/上边时按写进去的值算位置，对面那条边就会跟着飘
+        const maxW = Math.min(lim.maxW, Math.floor(window.innerWidth * 0.92));
+        const maxH = Math.min(lim.maxH, Math.floor(window.innerHeight * 0.82));
+        return {
+            w: Math.round(Math.max(lim.minW, Math.min(w, maxW))),
+            h: Math.round(Math.max(lim.minH, Math.min(h, maxH)))
+        };
+    }
+
+    // 套用该窗口记住的尺寸（在 showPanel 量位置之前调用，否则位置按旧尺寸算）
+    function applySavedSize(panelId, panel) {
+        if (!PANEL_SIZE_LIMITS[panelId]) return;
+        const saved = savedLayout[panelId];
+        if (!saved || !Number.isFinite(saved.w) || !Number.isFinite(saved.h)) return;
+        const size = clampPanelSize(panelId, saved.w, saved.h);
+        panel.style.width = size.w + 'px';
+        panel.style.height = size.h + 'px';
+    }
+
+    function persistPanelSize(panelId, w, h) {
+        const size = clampPanelSize(panelId, w, h);
+        savedLayout[panelId] = Object.assign({}, savedLayout[panelId], size);
+        socket.emit('layout:save', { panelId, w: size.w, h: size.h });
+    }
+
     // 视口尺寸变了（缩放 / 改窗口大小 / 面板内容撑大）就按锚点重新落位。
     // 关键是从 savedLayout 重新推导，而不是拿 DOM 里可能已被夹过的 offsetLeft 顺延
     function relayoutPanel(panel) {
@@ -2725,6 +2778,9 @@
 
         panel.classList.add('show');
         panel.style.zIndex = ++topZ;
+
+        // 位置是按尺寸算的，所以先把记住的尺寸套回去
+        applySavedSize(panelId, panel);
 
         // 先显示再量尺寸，否则 offsetWidth 为 0
         let pos = resolveSavedPos(panelId, panel) || defaultPanelPos(panelId, panel);
@@ -2811,6 +2867,68 @@
         });
     }
 
+    /**
+     * 给窗口的四条边装上缩放把手。拖左边/上边时对面那条边不动（改尺寸同时改位置），
+     * 拖右边/下边只改尺寸。尺寸受 PANEL_SIZE_LIMITS 与视口双重限制，
+     * 松手后连同新位置一起存到服务端（按用户名）。
+     *
+     * 只改窗口尺寸，不碰任何字号——聊天内容该多大还是多大。
+     */
+    function makeResizable(panel) {
+        if (!PANEL_SIZE_LIMITS[panel.id]) return;
+
+        ['n', 's', 'w', 'e'].forEach(dir => {
+            const handle = document.createElement('div');
+            handle.className = 'float-panel-resizer ' + dir;
+            panel.appendChild(handle);
+
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();   // 别让它冒泡成「拖标题栏移动窗口」
+                const rect = panel.getBoundingClientRect();
+                const start = {
+                    x: e.clientX, y: e.clientY,
+                    w: rect.width, h: rect.height,
+                    left: rect.left, top: rect.top,
+                    right: rect.right, bottom: rect.bottom
+                };
+                resizingPanel = panel;
+                panel.style.zIndex = ++topZ;
+                document.body.classList.add('panel-resizing');
+
+                const onMove = (ev) => {
+                    const dx = ev.clientX - start.x;
+                    const dy = ev.clientY - start.y;
+                    let w = start.w, h = start.h;
+                    if (dir === 'e') w = start.w + dx;
+                    if (dir === 'w') w = start.w - dx;
+                    if (dir === 's') h = start.h + dy;
+                    if (dir === 'n') h = start.h - dy;
+
+                    const size = clampPanelSize(panel.id, w, h);
+                    panel.style.width = size.w + 'px';
+                    panel.style.height = size.h + 'px';
+                    // 往左/往上拉的时候，固定的是对面那条边
+                    if (dir === 'w') panel.style.left = (start.right - size.w) + 'px';
+                    if (dir === 'n') panel.style.top = (start.bottom - size.h) + 'px';
+                };
+
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.body.classList.remove('panel-resizing');
+                    resizingPanel = null;
+                    persistPanelSize(panel.id, panel.offsetWidth, panel.offsetHeight);
+                    // 尺寸变了，贴边锚点也要按新尺寸重算，否则下次还原会偏
+                    persistPanelPos(panel.id, panel, panel.offsetLeft, panel.offsetTop);
+                };
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        });
+    }
+
     function initFloatPanels() {
         document.querySelectorAll('[data-panel]').forEach(trigger => {
             const panelId = trigger.dataset.panel;
@@ -2854,9 +2972,12 @@
             });
 
             makeDraggable(panel);
+            makeResizable(panel);
 
-            // 内容撑大窗口后（比如载入角色卡）按锚点重新落位
+            // 内容撑大窗口后（比如载入角色卡）按锚点重新落位。
+            // 用户正拖着边框改大小时不能掺和，那是他自己在定位置
             new ResizeObserver(() => {
+                if (resizingPanel === panel) return;
                 if (panel.classList.contains('show')) relayoutPanel(panel);
             }).observe(panel);
         });
