@@ -554,9 +554,9 @@
         #panel-npcs { width: 260px; }
         #panel-notes { width: 780px; height: 70vh; }
         /* 浮动窗口内右栏收窄，给共享笔记留出宽度 */
-        #panel-notes #notes-right { width: 320px; }
+        #panel-notes #notes-right { flex-basis: 320px; }
         /* 宽度就是按「六个属性框是正方形」定的：内宽 = 3 × 框边长 + 2 × 间隙 */
-        #panel-character { width: 380px; max-height: 82vh; }
+        #panel-character { width: 440px; max-height: 82vh; }
         /* 骰子窗贴着 2x3 网格收紧，不要 .float-panel 的 220px 最小宽 */
         #panel-dice { width: max-content; min-width: 0; }
         #panel-dice .float-panel-body { padding: 8px; }
@@ -747,11 +747,13 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            min-width: 0;
+            /* 窗口可以被拖窄，但共享笔记再窄就变成一列单字了 */
+            min-width: 180px;
         }
         #notes-right {
-            width: 360px;
-            flex-shrink: 0;
+            /* 允许收缩到 220px：固定 360px 的话，窗口一拖窄全压在左栏头上 */
+            flex: 0 1 360px;
+            min-width: 220px;
             display: flex;
             flex-direction: column;
         }
@@ -919,6 +921,9 @@
             align-items: end; margin-bottom: 12px;
         }
         .char-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        /* 血量和熟练加值的数字是居中的，标题默认左对齐就会偏在数字左边一截，
+           所以除了姓名那栏（输入框内容左对齐），标题一律跟着数字居中 */
+        .char-field:not(.char-field-name) { align-items: center; }
         .char-field .section-title {
             font-size: 10px; letter-spacing: 0.6px; color: #8b95ab;
             margin: 0; padding: 0; border: none; text-transform: none;
@@ -1017,8 +1022,14 @@
         .attr-box input:focus { outline: none; border-color: rgba(93,173,226,0.8); }
 
         /* 豁免 / 技能并排两栏 */
-        .char-columns { display: grid; grid-template-columns: minmax(0,0.85fr) minmax(0,1.15fr); gap: 14px; }
+        /* 豁免与技能上下排开，各自内部分两列：
+           技能 18 项单列会拖出很长一条，和只有 6 行的豁免并排时左右严重不平衡 */
+        .char-columns { display: block; }
         .char-column { min-width: 0; }
+        #saving-throws, #skills-list {
+            display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+            column-gap: 12px;
+        }
         .save-row, .skill-row {
             display: flex; align-items: center; gap: 7px;
             padding: 3px 5px; border-radius: 6px; font-size: 12px;
@@ -2599,7 +2610,9 @@
     let savedLayout = {};            // { panelId: { x, y, w, h, pinned } }，来自服务端
     // 可缩放的窗口及其尺寸上下限。字号不跟着变，只是窗口本身变大变小
     const PANEL_SIZE_LIMITS = {
-        'panel-chat': { minW: 300, maxW: 760, minH: 260, maxH: 900 }
+        'panel-chat':  { minW: 300, maxW: 760,  minH: 260, maxH: 900 },
+        // 笔记是左右两栏（共享笔记 + 登场人物表），比聊天需要更宽的下限
+        'panel-notes': { minW: 460, maxW: 1400, minH: 300, maxH: 1000 }   // 460 = 左 180 + 右 220 + 间距与内边距
     };
     // 正在缩放的窗口：缩放期间 ResizeObserver 不能去「重新落位」，
     // 否则拖左边/上边时它会按旧锚点把窗口拽回去，边拖边抖
