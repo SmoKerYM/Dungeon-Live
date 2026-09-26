@@ -1566,9 +1566,51 @@
     let penCustomColor = '#cc0000';  // 画笔自定义色槽
     let rectCustomColor = '#cc0000'; // 矩形自定义色槽
 
-    // --- Tab 切换 ---
+    // --- 共享笔记同步 ---
+    // 这套接线在「全屏地图 + 液态悬浮界面」重构（93db83e）里被整段删掉了，
+    // 于是笔记框变成了只读一次的本地草稿纸：进游戏时从服务端灌一次，之后
+    // 写的东西既不落盘也不同步给别人，一刷新就没。别再把它删了
     const notesTextarea = document.getElementById('notes-textarea');
     let notesTimeout = null;
+    let pendingRemoteNotes = null;   // 自己正在打字时收到的别人那份，等失焦再补上
+
+    function flushNotes() {
+        if (notesTimeout === null) return;
+        clearTimeout(notesTimeout);
+        notesTimeout = null;
+        socket.emit('notes:update', notesTextarea.value);
+    }
+
+    notesTextarea.oninput = () => {
+        pendingRemoteNotes = null;   // 自己改了，远端那份作废：本地这份马上就发出去
+        clearTimeout(notesTimeout);
+        notesTimeout = setTimeout(() => {
+            notesTimeout = null;
+            socket.emit('notes:update', notesTextarea.value);
+        }, 500);   // 500ms 防抖
+    };
+
+    // 关页面/切后台时把还没发出去的那 500ms 补发掉，别让最后一句话丢在防抖里
+    window.addEventListener('pagehide', flushNotes);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushNotes();
+    });
+
+    socket.on('notes:sync', (content) => {
+        // 正在打字时不覆盖，否则会把光标和刚写的半句一起冲掉
+        if (document.activeElement === notesTextarea) { pendingRemoteNotes = content; return; }
+        notesTextarea.value = content;
+    });
+
+    notesTextarea.addEventListener('blur', () => {
+        // 自己还有没发出去的改动就以自己为准，否则补上刚才压着的那份别人的。
+        // 两条路都得让「框里显示的」和「服务端存的」是同一份，不能各留一半
+        if (notesTimeout !== null) { flushNotes(); pendingRemoteNotes = null; return; }
+        if (pendingRemoteNotes !== null) {
+            notesTextarea.value = pendingRemoteNotes;
+            pendingRemoteNotes = null;
+        }
+    });
 
     // ===== 角色卡 AI 总结 =====
     function setAiSummary(text, state) {
@@ -3314,10 +3356,9 @@
         const gs = data.gameState;
         if (!gs) return;
 
-        // 恢复笔记
-        if (gs.notes) {
-            notesTextarea.value = gs.notes;
-        }
+        // 恢复笔记（服务端那份才是准的，空也要盖掉本地残留）
+        notesTextarea.value = gs.notes || '';
+        pendingRemoteNotes = null;
 
         // 回放聊天历史
         if (Array.isArray(gs.chatHistory) && gs.chatHistory.length > 0) {
