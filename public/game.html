@@ -568,6 +568,23 @@
             display: flex; flex-direction: column; gap: 10px;
         }
         #chat-panel-input-container { display: flex; padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); position: relative; flex-shrink: 0; }
+        /* 回车待确认：第一下回车只是「举手」，提示再按一次才真发 */
+        #chat-panel-input.enter-armed { box-shadow: inset 0 0 0 1px rgba(243, 156, 18, 0.7); }
+        #enter-hint {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 4px);
+            right: 8px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(243, 156, 18, 0.9);
+            color: #1b1b1b;
+            font-size: 11px;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 5;
+        }
+        #enter-hint.show { display: block; }
         /* 气泡消息（Teams 风格） */
         /* 外层是列：名字行在上，头像与气泡在同一行——头像要跟气泡齐平，
            跟名字齐平会让它悬在气泡上方半格 */
@@ -1501,8 +1518,9 @@
         <button id="chat-jump-latest" onclick="scrollChatToBottom()">↓ 有新消息</button>
         <div id="chat-panel-input-container">
             <div class="mention-popup" id="mention-popup-panel"></div>
+            <div id="enter-hint">再按一次回车发送</div>
             <input type="text" id="chat-panel-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
-                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
+                   onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)" onblur="disarmEnter()">
             <!-- 语音掷骰的挂载点：麦克风按钮和识别结果预览卡片都由 voice-roll.js 挂在这里 -->
             <div id="voice-roll-mount"></div>
             <button id="chat-panel-send" onclick="sendChat(document.getElementById('chat-panel-input'))">发送</button>
@@ -2656,6 +2674,7 @@
 
     function onChatInput(e) {
         const input = e.target;
+        disarmEnter();                 // 又打了字，上一下回车不再算数
         const popup = document.getElementById('mention-popup-panel');
         const hit = getMentionQuery(input);
         if (!hit) { closeMentionPopup(); return; }
@@ -3233,7 +3252,31 @@
         setChatInputValue(input, chatInputHistory[chatHistoryIndex]);
     }
 
+    // 连按两下回车才发送。中文输入法下打英文时，回车只是把字母上屏，
+    // 单次回车就发送会把还没写完的消息送出去；两下之间超时或又打了字都要重新来
+    const ENTER_CONFIRM_MS = 1500;
+    let enterArmedInput = null;
+    let enterArmedTimer = null;
+
+    function armEnter(input) {
+        enterArmedInput = input;
+        input.classList.add('enter-armed');
+        document.getElementById('enter-hint')?.classList.add('show');
+        clearTimeout(enterArmedTimer);
+        enterArmedTimer = setTimeout(disarmEnter, ENTER_CONFIRM_MS);
+    }
+
+    function disarmEnter() {
+        clearTimeout(enterArmedTimer);
+        enterArmedTimer = null;
+        enterArmedInput?.classList.remove('enter-armed');
+        enterArmedInput = null;
+        document.getElementById('enter-hint')?.classList.remove('show');
+    }
+
     function handleChatKeypress(e) {
+        // 输入法组字中的回车是用来上屏的（keyCode 229 是老 Safari/IE 的同义写法），一律不当发送
+        if (e.isComposing || e.keyCode === 229) return;
         // 建议框打开时，方向键/回车/Tab/Esc 归建议框使用
         if (mentionCtx && mentionCtx.input === e.target) {
             if (e.key === 'ArrowDown') { e.preventDefault(); moveMentionSelection(1); return; }
@@ -3242,9 +3285,15 @@
             if (e.key === 'Escape') { e.preventDefault(); closeMentionPopup(); return; }
         }
         // 单行输入框里上下箭头本来只是把光标挪到首尾，让给历史更有用
-        if (e.key === 'ArrowUp')   { e.preventDefault(); recallChatInputHistory(e.target, -1); return; }
-        if (e.key === 'ArrowDown') { e.preventDefault(); recallChatInputHistory(e.target,  1); return; }
-        if (e.key === 'Enter') sendChat(e.target);
+        if (e.key === 'ArrowUp')   { e.preventDefault(); disarmEnter(); recallChatInputHistory(e.target, -1); return; }
+        if (e.key === 'ArrowDown') { e.preventDefault(); disarmEnter(); recallChatInputHistory(e.target,  1); return; }
+        if (e.key === 'Escape')    { disarmEnter(); return; }
+        if (e.key !== 'Enter') return;
+
+        e.preventDefault();
+        if (!e.target.value.trim()) { disarmEnter(); return; }   // 空输入框没什么可确认的
+        if (enterArmedInput === e.target) { disarmEnter(); sendChat(e.target); return; }
+        armEnter(e.target);
     }
 
     // --- Socket 事件监听 ---
