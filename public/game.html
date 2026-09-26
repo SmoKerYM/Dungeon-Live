@@ -1895,6 +1895,9 @@
     // ===== 右上角血条 HUD =====
     // 绑定到「当前载入的角色卡」：玩家是自己（加入时自动载入），DM 是他在角色卡面板里打开的那张
     let hpHudName = null;
+    // 血条只认「自己的角色卡」，和角色卡面板里正在查看的那张解耦——
+    // 否则玩家用下拉框翻别人的卡时，左上角会显示成别人的血
+    let myCharacter = null;
     // 进场自动拉角色卡只为填血条，没有卡也不该弹提示
     let silentCharLoad = false;
 
@@ -1923,10 +1926,10 @@
         wrap.title = `${name}　点击修改当前血量 / 生命上限`;
     }
 
-    // 把当前角色卡的血量同步到血条
+    // 把「自己那张卡」的血量同步到血条（DM 在 renderHpHud 里直接短路）
     function syncHpHudFromCharacter() {
-        if (currentCharacter && currentCharacter.hp) {
-            renderHpHud(currentCharacter.name, currentCharacter.hp);
+        if (myCharacter && myCharacter.hp) {
+            renderHpHud(myCharacter.name, myCharacter.hp);
         } else {
             renderHpHud(null, null);
         }
@@ -1939,22 +1942,22 @@
 
     // 加号 / 减号：只动当前血量，上限要点血条改
     function stepHp(delta) {
-        if (!currentCharacter || !currentCharacter.hp) return;
-        const max = currentCharacter.hp.max;
-        const next = Math.max(0, Math.min(currentCharacter.hp.cur + delta, max));
-        if (next === currentCharacter.hp.cur) return;
+        if (!myCharacter || !myCharacter.hp) return;
+        const max = myCharacter.hp.max;
+        const next = Math.max(0, Math.min(myCharacter.hp.cur + delta, max));
+        if (next === myCharacter.hp.cur) return;
         emitHpChange(next, undefined);
     }
 
     function openHpEditor() {
-        if (!currentCharacter || !currentCharacter.hp) return;
+        if (!myCharacter || !myCharacter.hp) return;
         document.getElementById('hp-bar-wrap').style.display = 'none';
         const box = document.getElementById('hp-bar-edit');
         box.classList.add('show');
         const curInput = document.getElementById('hp-edit-cur');
         const maxInput = document.getElementById('hp-edit-max');
-        curInput.value = currentCharacter.hp.cur;
-        maxInput.value = currentCharacter.hp.max;
+        curInput.value = myCharacter.hp.cur;
+        maxInput.value = myCharacter.hp.max;
         curInput.focus();
         curInput.select();
     }
@@ -3355,7 +3358,11 @@
     socket.on('character:loaded', (data) => {
         silentCharLoad = false;
         currentCharacter = data;
-        syncHpHudFromCharacter();
+        // 只有载入的确实是自己那张卡，才更新左上角血条
+        if (data.name === userName) {
+            myCharacter = data;
+            syncHpHudFromCharacter();
+        }
         loadCharacterToUI();
         requestCharacterSummary(false);
         document.getElementById('char-sheet').classList.add('visible');
@@ -3388,7 +3395,7 @@
     });
 
     socket.on('character:notFound', (data) => {
-        if (data && data.name === userName) renderHpHud(null, null);
+        if (data && data.name === userName) { myCharacter = null; renderHpHud(null, null); }
         const wasSilent = silentCharLoad;
         silentCharLoad = false;
         // 仅对 Player 显示提示（DM 手动选择、以及进场自动加载时不显示）
@@ -3400,10 +3407,14 @@
 
     // 角色卡 HP 更新（同步侧边栏 HP 显示）
     socket.on('character:hpUpdated', (data) => {
-        // 改的正是血条绑定的那张卡 -> 同步本地副本和血条
+        // 血条只跟自己那张卡
+        if (myCharacter && myCharacter.name === data.name) {
+            myCharacter.hp = data.hp;
+            syncHpHudFromCharacter();
+        }
+        // 角色卡面板显示的是当前查看的卡，按它自己的名字同步
         if (currentCharacter && currentCharacter.name === data.name) {
             currentCharacter.hp = data.hp;
-            syncHpHudFromCharacter();
             const curInput = document.getElementById('char-hp-cur');
             const maxInput = document.getElementById('char-hp-max');
             if (curInput) curInput.value = data.hp.cur;

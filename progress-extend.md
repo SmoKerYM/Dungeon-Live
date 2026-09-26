@@ -35,6 +35,11 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-26: 血条绑定改为「自己的角色卡」，与查看中的卡解耦
+  - 线上实测发现：玩家用「读取角色卡」下拉框翻别人的卡时，左上角血条会跟着变成那个角色的血（因为原本绑的是 `currentCharacter`）
+  - 新增 `myCharacter`（名字等于 `userName` 的那张卡），血条、± 按钮、点击编辑全部改用它；`currentCharacter` 只负责角色卡面板的显示
+  - `character:loaded` 只在 `data.name === userName` 时更新 `myCharacter`；`character:hpUpdated` 拆成两段——血条跟 `myCharacter`，面板输入框跟 `currentCharacter`
+  - DM 侧无论查看谁都不显示血条（`renderHpHud` 开头的 `isDM` 短路已覆盖，本次逐张验证）
 - 2026-09-26: 角色卡 AI 一句话总结（DeepSeek）+ 数字输入框箭头放大
   - 数字框的 WebKit spinner 从默认迷你尺寸放大到 18×26，且只在编辑模式显示（只读时 `display: none`，界面更干净）
   - 角色名 13px → 24px 加粗，成为整张卡的视觉主角
