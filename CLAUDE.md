@@ -83,7 +83,7 @@ coc_app/
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
-| VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId }`）, `voice:text`（调试：直接喂文本，跳过 ASR） |
+| VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId }`）, `voice:text`（`{ text, via }`：跳过 ASR 直接喂文本，`via='text'` 是聊天框 @ai） |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
 ### Server -> Client
@@ -169,7 +169,10 @@ npm start       # Production server
 - 数值口径：角色卡 `attributes` 里存的**已经是调整值**，不要再做 `(score-10)/2`；属性检定/比拼用纯属性调整值不加熟练（本桌规则）；不熟练的技能照样加对应属性调整值，只是不加 PB
 - 掷骰在**服务端**用 `crypto.randomInt`（现有的 `dice:roll` 事件是直接信任客户端传来的 `result` 的，语音路径借机把掷骰收回服务端）。优势/劣势掷两次，`rolls` 存两颗、`kept` 存实际采用的那颗；`buildDiceCard` 的大成功/大失败按 `kept` 判断，**不能**把两颗骰子相加
 - 识别结果先以预览卡片给说话者本人看：高置信度 1.5 秒倒计时自动投（可取消），低置信度必须点一下。听错后投出去的骰子是公开的、收不回来。待确认意图存在 `pendingIntents`（内存、30 秒过期、只认发起的那个 socket、确认后立即删除，一条识别只能投一次）
-- `voice:text`（Client → Server）是调试入口：跳过 ASR 直接喂文本走完整流程，浏览器控制台里 `VoiceRoll.debugText('带优势的隐匿')` 即可。纯函数层另有 `node scripts/test-voice-intent.js` 跑用例表
+- **打字掷骰（聊天框 `@ai`）**：`@` 建议框里 `ai` 固定排在最后一项，选它插入 `@ai `，后面写要投什么（「@ai 带优势的隐匿」）。发送时 `sendChat` 分流到 `VoiceRoll.rollFromText()`，走的是**和语音完全同一条链路**（规则 → LLM 兜底 → 预览卡片 → 确认 → 服务端掷骰），只是不经过 ASR，因此**不需要 ASR key**；DM 和没有同名角色卡的人看不到这一项（`VoiceRoll.canRollFromText()`）。只认开头的 `@ai`——句中的 `@ai` 更可能是在跟人聊 AI，仍按普通聊天发送。服务端对文字入口有 1 秒冷却（规则判不出来时会调 LLM）
+- 结果条目的 `source` 区分输入方式：`'voice'`（说的）/ `'text'`（打的），卡片来源行据此写「识别自」或「来自输入」
+- `voice:text`（Client → Server）同时也是调试入口：浏览器控制台里 `VoiceRoll.debugText('带优势的隐匿')` 可跳过 ASR 直接喂文本。纯函数层另有 `node scripts/test-voice-intent.js` 跑用例表（它同时导出用例表，可以把同一份期望值灌进 `@ai` 通道做端到端比对）
+- LLM **调不通**（超时/网络断/接口报错）和「听懂了但判不出来」要分开报：前者回「AI 判定服务暂时不可用」，报成「没听懂」会让玩家以为是自己说得不清楚、白白重说好几遍
 - ASR（语音转文字）走阿里云 Model Studio 的实时识别 WebSocket，默认接入地址是国际站通用域名 `wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference`——文档上写的是按 workspace 分的 `wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/…`，但通用地址实测可用且不需要 WorkspaceId；要换地域/账号用 `ASR_WS_URL` / `ASR_WORKSPACE_ID` / `ASR_REGION` 覆盖。模型 `ASR_MODEL`（线上用 `qwen-audio-3.1-asr-flash-streaming`），key 在 `ASR_API_KEY`，和 `DEEPSEEK_API_KEY` 一样**只存在于服务端**，浏览器永远不直连 ASR
 - 音频约定 **16kHz / PCM16 LE / 单声道**，前端 `pcm-worklet.js` 负责从设备采样率（通常 48kHz）降下来，每 100ms 一帧。`run-task` 里带 `input.context` 热词串（`ASR_CONTEXT_PROMPT`）——「豁免」「奥秘」「劣势」这些低频词不给上下文很容易写成同音错字，而「豁免」正是判豁免路径的硬规则依据
 - 麦克风按钮按住说话、松开发送；DM 隐藏，没有同名角色卡或服务端没配 ASR key（`joinSuccess` 的 `voiceRollEnabled`）时禁用。单次录音上限 8 秒（前端自动松手 + 服务端按字节数兜底），同一 socket 两次开录间隔 2 秒。`getUserMedia` 需要 HTTPS 或 localhost

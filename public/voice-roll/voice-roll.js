@@ -2,7 +2,8 @@
  * 语音掷骰前端主体。
  *
  * 负责：识别结果的预览卡片（转写原文、标签、表达式）、自动确认倒计时、
- *       确认/取消按钮、错误提示，以及（第 5 期）麦克风按钮与录音采集。
+ *       确认/取消按钮、错误提示、麦克风按钮与录音采集，
+ *       以及聊天框 @ai 打字掷骰的入口（rollFromText，不经过 ASR，后续流程完全一致）。
  * 不负责：骰子结果的渲染——结果仍然走 game.html 现有的
  *         socket.on('dice:result') → addDiceMessage → buildDiceCard，
  *         保证语音投和手打投在聊天里长得一样、历史回放也一致。
@@ -102,14 +103,54 @@
      */
     function refreshAvailability() {
         if (!micBtn || !ctx) return;
-        let reason = '';
-        if (ctx.isDM) reason = 'DM 不需要语音掷骰';
-        else if (ctx.getEnabled && !ctx.getEnabled()) reason = '服务端未配置语音识别';
-        else if (ctx.getMyCharacter && !ctx.getMyCharacter()) reason = '未找到与你同名的角色卡';
+        // 麦克风还多一个条件：服务端得配了 ASR key。打字入口不需要 ASR
+        const reason = textRollReason() ||
+            (ctx.getEnabled && !ctx.getEnabled() ? '服务端未配置语音识别' : '');
 
         micBtn.disabled = !!reason;
         micBtn.title = reason || '按住说话：说出你要做的检定';
         micBtn.style.display = ctx.isDM ? 'none' : '';
+    }
+
+    /**
+     * 打字掷骰（聊天框 @ai）不可用的原因，可用时返回空串。
+     * 和麦克风的区别：不需要 ASR key，因为这条路根本不经过语音识别。
+     * @returns {string}
+     */
+    function textRollReason() {
+        if (!ctx) return '语音掷骰未初始化';
+        if (ctx.isDM) return 'DM 不需要掷骰检定';
+        if (ctx.getMyCharacter && !ctx.getMyCharacter()) return '未找到与你同名的角色卡';
+        return '';
+    }
+
+    /**
+     * 聊天框里 @ai 能不能用。game.html 用它决定 @ 建议框里要不要列出 ai 这一项。
+     * @returns {boolean}
+     */
+    function canRollFromText() {
+        return !textRollReason();
+    }
+
+    /**
+     * 把一段玩家**打出来**的文本送进掷骰流程（跳过 ASR，其余与语音完全一致：
+     * 规则判定 → 判不出来走 AI → 预览卡片 → 确认后服务端掷骰）。
+     *
+     * @param {string} text 玩家在 @ai 后面写的内容，例如「带优势的隐匿」
+     * @returns {boolean} 是否真的发出去了（不可用或空文本时返回 false 并给出提示）
+     */
+    function rollFromText(text) {
+        if (!ctx) return false;
+        const reason = textRollReason();
+        if (reason) { showError(reason); return false; }
+
+        const content = String(text || '').trim();
+        if (!content) {
+            showError('@ai 后面写上要投什么，例如「@ai 带优势的隐匿」');
+            return false;
+        }
+        ctx.socket.emit('voice:text', { text: content, via: 'text' });
+        return true;
     }
 
     /** 关掉当前预览卡片并清掉它的定时器 */
@@ -336,5 +377,5 @@
         ctx.socket.emit('voice:text', { text: String(text || '') });
     }
 
-    window.VoiceRoll = { init, debugText, refreshAvailability };
+    window.VoiceRoll = { init, debugText, refreshAvailability, rollFromText, canRollFromText };
 })();

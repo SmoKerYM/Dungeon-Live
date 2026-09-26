@@ -2007,6 +2007,8 @@
     const DM_AVATAR_HEX = '#e74c3c';
     const NO_COLOR_HEX = '#7f8c8d';
     const MENTION_ALL = '所有人';
+    // 聊天框里 @ai 把后面的话交给掷骰识别（和语音同一条链路，只是不经过语音识别）
+    const MENTION_AI = 'ai';
     const MAX_CHAT_LOG = 500;
 
     let rosterData = [];   // 在线名单 [{ name, role, color }]，由 roster:sync 维护
@@ -2313,7 +2315,8 @@
         // 识别原话 + 来源。掷骰本来就是当着全桌说出来的，公开原话没有隐私问题，
         // 而它能让所有人一眼看出是不是听错了
         const srcHtml = entry.transcript
-            ? `<div class="dice-card-src">识别自：「${escapeHtml(entry.transcript)}」· ` +
+            ? `<div class="dice-card-src">${entry.source === 'text' ? '来自输入' : '识别自'}：` +
+              `「${escapeHtml(entry.transcript)}」· ` +
               `${entry.intentSource === 'llm' ? 'AI' : '规则'}</div>`
             : '';
 
@@ -2530,6 +2533,12 @@
         if (!q || MENTION_ALL.includes(q) || 'everyone'.startsWith(q)) {
             list.push({ name: MENTION_ALL, role: null, color: null, isAll: true });
         }
+        // ai 固定排在最后：它不是「发给谁」，而是把后面的话交给掷骰识别。
+        // DM 和没有同名角色卡的人用不了，就不列出来
+        if ((!q || MENTION_AI.startsWith(q)) &&
+            window.VoiceRoll && VoiceRoll.canRollFromText()) {
+            list.push({ name: MENTION_AI, role: null, color: null, isAi: true });
+        }
         return list;
     }
 
@@ -2541,9 +2550,12 @@
             const active = i === index ? ' active' : '';
             const avatar = item.isAll
                 ? '<div class="mention-avatar" style="background: #5f6368;">@</div>'
-                : avatarHtml(item.name, item.role, 'mention-avatar');
+                : item.isAi
+                    ? '<div class="mention-avatar" style="background: #8e44ad;">🎲</div>'
+                    : avatarHtml(item.name, item.role, 'mention-avatar');
             let sub;
-            if (item.isAll) sub = '通知聊天中的所有人';
+            if (item.isAi) sub = '说出要投的检定，AI 帮你算调整值';
+            else if (item.isAll) sub = '通知聊天中的所有人';
             else if (item.online === false) sub = '离线 · 重连后送达';
             else sub = (item.role === 'DM' ? 'DM（地下城主）' : '玩家 · 私聊');
             const offline = (!item.isAll && item.online === false) ? ' offline' : '';
@@ -2618,6 +2630,7 @@
     // 根据正文里的 @ 决定私聊目标；@所有人 视为公开消息
     function resolvePrivateTarget(message) {
         if (message.includes('@' + MENTION_ALL)) return null;
+        if (parseAiMention(message) !== null) return null;   // @ai 不是收件人
         const names = rosterData
             .map(r => r.name)
             .filter(n => n && n !== userName)
@@ -2628,6 +2641,13 @@
         return null;
     }
 
+    // 取出「@ai 后面那句话」；不是 @ai 开头就返回 null。
+    // 只认开头：句中的 @ai 更可能是在跟人聊 AI，不该被当成掷骰指令
+    function parseAiMention(message) {
+        const m = message.match(/^@ai\b[\s,，:：]*([\s\S]*)$/i);
+        return m ? m[1].trim() : null;
+    }
+
     function sendChat(inputEl) {
         const input = inputEl || document.getElementById('chat-panel-input');
         const message = input.value.trim();
@@ -2635,6 +2655,14 @@
         pushChatInputHistory(message);
         input.value = '';
         closeMentionPopup();
+
+        // @ai：不发聊天，交给掷骰识别（和语音同一条链路，只是跳过 ASR）
+        const aiText = parseAiMention(message);
+        if (aiText !== null) {
+            if (window.VoiceRoll) VoiceRoll.rollFromText(aiText);
+            return;
+        }
+
         const diceMatch = message.match(/^\/(\d+)?d(\d+)([+-]\d+)?$/i);
         if (diceMatch) {
             const count = parseInt(diceMatch[1] || '1');

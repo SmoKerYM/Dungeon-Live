@@ -202,4 +202,10 @@ console.log('\n【可观测性：临时武器（LLM 路径的意图）】');
 });
 
 console.log(`\n通过 ${pass} / ${pass + fail}`);
-process.exit(fail === 0 ? 0 : 1);
+
+// 用例表也导出去，方便把同一份期望值灌进聊天框的 @ai 文字通道做端到端比对
+// （两条通道共用服务端同一条链路，期望值也该是同一份）
+module.exports = { CASES, CONTROL_CASES, CARD_V, CARD_AILIN, CARD_STRONG, CARD_TIE };
+
+// 被 require 时不能把宿主进程一起退掉
+if (require.main === module) process.exit(fail === 0 ? 0 : 1);
