@@ -286,49 +286,60 @@
             pointer-events: none;
             overflow: hidden;
         }
-        .placed-map-lock, .placed-map-delete {
+        .placed-map-lock, .placed-map-delete, .placed-map-bind {
             position: absolute;
-            width: 28px; height: 28px;
-            border-radius: 6px;
-            border: none;
+            width: 30px; height: 30px;
+            border-radius: 9px;
+            border: 1px solid var(--glass-border);
+            background: var(--glass-bg);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            color: rgba(215, 222, 238, 0.92);
             cursor: pointer;
-            font-size: 14px;
+            font-size: 15px;
             line-height: 1;
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.45);
             pointer-events: auto;
             user-select: none;
             padding: 0;
+            transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
         }
-        .placed-map-lock { background: rgba(243, 156, 18, 0.92); color: white; }
-        .placed-map-lock:hover { background: rgba(241, 196, 15, 1); }
-        .placed-map-lock.locked { background: rgba(231, 76, 60, 0.92); }
-        .placed-map-lock.locked:hover { background: rgba(192, 57, 43, 1); }
-        .placed-map-bind { background: rgba(39, 174, 96, 0.92); color: white; }
-        .placed-map-bind:hover { background: rgba(46, 204, 113, 1); }
-        .placed-map-bind.unbound { background: rgba(100, 100, 110, 0.85); color: white; }
-        .placed-map-bind.unbound:hover { background: rgba(140, 140, 150, 1); }
-        .placed-map-delete { background: rgba(192, 57, 43, 0.92); color: white; }
-        .placed-map-delete:hover { background: rgba(231, 76, 60, 1); }
+        .placed-map-lock:hover, .placed-map-delete:hover, .placed-map-bind:hover {
+            background: rgba(38, 42, 58, 0.88);
+            color: #fff;
+            transform: translateY(-1px);
+        }
+        .placed-map-lock:active, .placed-map-delete:active, .placed-map-bind:active { transform: scale(0.92); }
+        /* 状态用描边和图标颜色表达，不再整块涂成实色 */
+        .placed-map-lock.locked { color: #f1c40f; border-color: rgba(241, 196, 15, 0.6); }
+        .placed-map-bind { color: #5dade2; border-color: rgba(93, 173, 226, 0.5); }
+        .placed-map-bind.unbound { color: #7f8c8d; border-color: var(--glass-border); }
+        .placed-map-delete:hover { background: rgba(231, 76, 60, 0.92); border-color: transparent; }
+
         /* 缩放手柄（右下角）+ 实时格数标签 */
         .placed-map-resize {
             position: absolute;
-            width: 18px; height: 18px;
-            border-radius: 4px;
-            background: rgba(22, 160, 133, 0.95);
-            border: 2px solid white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            width: 16px; height: 16px;
+            border-radius: 5px;
+            background: rgba(240, 245, 255, 0.95);
+            border: 2px solid rgba(22, 24, 32, 0.85);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
             cursor: nwse-resize;
             pointer-events: auto;
+            transition: transform 0.12s, background 0.15s;
         }
+        .placed-map-resize:hover { background: #fff; transform: scale(1.18); }
         .placed-map-size-label {
             position: absolute;
-            padding: 2px 8px;
-            border-radius: 4px;
-            background: rgba(0, 0, 0, 0.78);
-            color: #fff;
+            padding: 3px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--glass-border);
+            background: var(--glass-bg);
+            -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+            color: #eef2fa;
             font-size: 12px;
-            font-weight: bold;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
             white-space: nowrap;
             pointer-events: none;
             transform: translate(-50%, -50%);
@@ -1974,7 +1985,12 @@
 
     function renderHpHud(name, hp) {
         const hud = document.getElementById('hp-hud');
-        if (!name || !hp || !Number.isFinite(hp.max)) { hud.classList.remove('show'); hpHudName = null; return; }
+        // DM 没有自己的角色，血条对他没有意义
+        if (isDM || !name || !hp || !Number.isFinite(hp.max)) {
+            hud.classList.remove('show');
+            hpHudName = null;
+            return;
+        }
 
         hpHudName = name;
         hud.classList.add('show');
@@ -4633,13 +4649,18 @@
         imgEl.src = asset.base64;
     }
 
+    // 四角控件统一用矢量图标，别混 emoji
+    function setCtrlIcon(el, iconName) {
+        el.innerHTML = `<sl-icon name="${iconName}"></sl-icon>`;
+    }
+
     function createOverlayForPlacedMap(placed) {
         const wrap = document.createElement('div');
         wrap.dataset.mapid = placed.id;
 
         const lockBtn = document.createElement('button');
         lockBtn.className = 'placed-map-lock' + (placed.isLocked ? ' locked' : '');
-        lockBtn.textContent = placed.isLocked ? '🔒' : '🔓';
+        setCtrlIcon(lockBtn, placed.isLocked ? 'lock-fill' : 'unlock');
         lockBtn.title = placed.isLocked ? '点击解锁' : '点击锁定';
         lockBtn.style.display = 'none';
         lockBtn.addEventListener('click', (ev) => {
@@ -4649,7 +4670,7 @@
 
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'placed-map-delete';
-        deleteBtn.textContent = '🗑';
+        setCtrlIcon(deleteBtn, 'trash3-fill');
         deleteBtn.title = '删除该地图';
         deleteBtn.style.display = 'none';
         deleteBtn.addEventListener('click', (ev) => {
@@ -4665,8 +4686,8 @@
 
         const initialBound = placed.isBound !== false;
         const bindBtn = document.createElement('button');
-        bindBtn.className = 'placed-map-lock placed-map-bind' + (initialBound ? '' : ' unbound');
-        bindBtn.textContent = initialBound ? '📌' : '📍';
+        bindBtn.className = 'placed-map-bind' + (initialBound ? '' : ' unbound');
+        setCtrlIcon(bindBtn, initialBound ? 'pin-angle-fill' : 'pin-angle');
         bindBtn.title = initialBound ? '对象已绑定（点击解绑）' : '对象未绑定（点击绑定）';
         bindBtn.style.display = 'none';
         bindBtn.addEventListener('click', (ev) => {
@@ -5147,7 +5168,7 @@
         if (node && isDM) node.draggable(!isLocked);
         const overlay = placedMapOverlays.get(id);
         if (overlay) {
-            overlay.lockBtn.textContent = isLocked ? '🔒' : '🔓';
+            setCtrlIcon(overlay.lockBtn, isLocked ? 'lock-fill' : 'unlock');
             overlay.lockBtn.title = isLocked ? '点击解锁' : '点击锁定';
             overlay.lockBtn.classList.toggle('locked', isLocked);
             // 若当前正在 hover，刷新 delete/resize 可见性（锁定后隐藏，解锁后显示）
@@ -5160,7 +5181,7 @@
         if (placed) placed.isBound = isBound;
         const overlay = placedMapOverlays.get(id);
         if (overlay && overlay.bindBtn) {
-            overlay.bindBtn.textContent = isBound ? '📌' : '📍';
+            setCtrlIcon(overlay.bindBtn, isBound ? 'pin-angle-fill' : 'pin-angle');
             overlay.bindBtn.title = isBound ? '对象已绑定（点击解绑）' : '对象未绑定（点击绑定）';
             overlay.bindBtn.classList.toggle('unbound', !isBound);
         }

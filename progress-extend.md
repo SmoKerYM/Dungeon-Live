@@ -35,6 +35,13 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-26: DM 不显示血条 + 地图四角控件改版
+  - `renderHpHud` 开头加 `isDM` 短路：DM 没有自己的角色，血条对他没有意义
+  - 四角控件（锁 / 删除 / 绑定 / 缩放手柄 + 格数标签）从"实色方块 + emoji"改成与全站一致的磨砂玻璃：`--glass-bg` + `backdrop-filter` + 30×30 圆角 9px，hover 上浮、按下缩放
+  - 状态改用**描边和图标颜色**表达，不再整块涂色：锁定=琥珀 `#f1c40f`、已绑定=蓝 `#5dade2`、未绑定=灰 `#7f8c8d`
+  - emoji 换成 Shoelace 的 Bootstrap 矢量图标（`lock-fill`/`unlock`、`trash3-fill`、`pin-angle-fill`/`pin-angle`），与底部工具条的图标语言统一；emoji 在各平台渲染不一致
+  - 新增 `setCtrlIcon(el, name)` 统一设置图标，替换原先 5 处 `textContent = emoji`
+  - 绑定按钮不再蹭 `placed-map-lock` 的类名，基础样式已并入选择器
 - 2026-09-26: HTML 加 `Cache-Control: no-cache`
   - 起因：线上明明部署了 `ad697bb`，但用户界面表现仍是上一版 `cb15aaf`（菜单开着时全部气泡被禁）。curl 线上 `game.html` 确认服务端已是新代码，浏览器里 Shoelace 也正常注册、气泡能渲染 —— 指向浏览器缓存了旧 HTML
   - 本项目 CSS/JS 全部内联在 HTML 里，所以 HTML 被缓存 = 整个前端冻在旧版本，这个坑会反复踩
