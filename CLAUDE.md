@@ -116,6 +116,7 @@ coc_app/
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., to?, toRole?, timestamp }],  // max 100, FIFO; `to` marks a private message
   // 语音掷骰的 dice 条目额外带 { kept, advantage, label, source: 'voice' }
+  // 命中投还带 { modifierParts: [{name, value, note}], transcript, intentSource: 'rule'|'llm' }
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
   uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } } },
   world: {
@@ -155,8 +156,12 @@ npm start       # Production server
 - HTML **and the standalone `.js` / `.css` under `public/voice-roll/`** are served with `Cache-Control: no-cache` (see the `express.static` options): nearly every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build — and a cached `voice-roll.js` freezes that module the same way. `no-cache` only forces ETag revalidation — unchanged content still returns 304
 - **AI character summary**: `character:summarize` calls DeepSeek server-side (`DEEPSEEK_API_KEY` env var — never exposed to the client) and caches the result in the character's `aiSummary`. The cache key is `characterFingerprint()`, a hash of the fields that actually change the conclusion (attributes / proficiency / saves / skills / feats) — editing HP does not trigger regeneration. Model is `deepseek-flash` with `thinking: { type: 'disabled' }`; the reasoning variant costs 3-4x for no benefit on this task
 - **语音掷骰（voice roll）**：玩家复述 DM 让自己做的检定（「带优势的隐匿」「过魅力豁免」「撬个锁」「命中投」），系统判出「哪类检定 × 哪一项 × 优劣势」，服务端掷 d20 并在聊天里发一张带标签的骰子卡片。实现全部在 `lib/voice-roll/`（服务端）和 `public/voice-roll/`（前端），`server.js` / `game.html` 只做接线
-- 意图类型：`ability` / `save` / `skill` / `attack`（命中投）/ `initiative` / `deathSave`。`attack` 的 `key` 不是属性或技能，而是武器模式 `melee` / `ranged` / `finesse`
-- **命中投**：一律加熟练加值（5e 所有职业都熟练简易武器，角色卡也没有武器熟练字段）。`melee`（棍棒斧锤拳）用力量，`ranged`（枪弓弩）用敏捷，`finesse`（刀匕首）**以及没提武器时**取力量/敏捷中较高的、相等记为敏捷——后者是本桌规则。实际用了哪项属性由 `resolveAttackAbility(card, mode)` 决定，调整值和 label 都调它，所以 `buildRollLabel(intent, attackAbility)` 需要调用方先解出属性；label 会标出来：「带优势的命中投（敏捷）」
+- 意图类型：`ability` / `save` / `skill` / `attack`（命中投）/ `initiative` / `deathSave`
+- **命中投的意图结构**：规则层和 LLM 都只输出 `weaponClass`（8 类，见 `vocab.js` 的 `WEAPON_CLASSES`）+ `proficiencyOverride`（true=明说加 / false=明说不加 / null=没说）；`key`（`melee`/`ranged`/`finesse`）和「加不加熟练」**一律由服务端查表派生，不信任 LLM 给的值**。这样属性和熟练的来源都可追溯，卡片才写得出理由
+- **命中投的熟练**：按武器决定，玩家可口头覆盖——刀类、棍棒类、徒手默认加 PB；其余（未提武器、临时武器、枪弓弩、斧锤撬棍、短剑细剑）默认不加；玩家明说「加熟练 / 不加熟练」优先于武器默认。「熟练」只对命中投生效，其他检定类型里提到一律忽略（它们的熟练由角色卡决定）
+- **命中投的属性**：`melee` 用力量，`ranged` 用敏捷，`finesse`（刀匕首）**以及没提武器时**取力量/敏捷中较高的、相等记为敏捷（本桌规则）。`buildAttackPlan(card, intent)` 一次算出属性、是否加熟练**和两者的理由**，调整值 / label / 卡片明细全都从它出，别各算一遍
+- **可观测性（用户硬性要求）**：命中投的卡片要让任何人只看这一张卡就能复核——明细行逐项写出数值和理由「15 + 3 敏捷（刀类·力敏取高）+ 2 熟练（刀类·默认熟练）= 20」，没加熟练也要显示「未加熟练（未提武器·默认不加）」；再加一行灰色小字「识别自：「原话」· 规则/AI」。对应字段是 `modifierParts`（每项带 `note`）、`transcript`、`intentSource`，和 `label` 一样必须同时走实时广播与历史回放
+- 明细行的排版（各段空一格、全角「）」后不留空格）在 `lib/voice-roll/dice.js` 的 `formatModifierBreakdown` 和 `game.html` 的 `buildDiceCard` 里**各有一份**（前端拿不到 `lib/`），改一边要改另一边；`scripts/test-voice-intent.js` 按方案 §10 的表逐字校验服务端那份
 - 伤害骰第一版不支持：文本里出现「伤害 / damage」直接回 `voice:error`「暂不支持伤害骰」。这一步排在攻击判定**之前**，否则「攻击伤害」会被当成命中投投出去
 - 意图识别是**规则优先、DeepSeek 兜底**：`parseRollIntent()` 覆盖绝大多数说法（0ms、0 成本、不会幻觉），判不出来才调 LLM。**LLM 只输出意图枚举，不掷骰、不算数、不碰角色卡数值**——它的随机数不可信、算术偶尔出错。LLM 返回的 JSON 一律过 `validateIntent()` 严格校验，任何一项不合法都按「没听懂」处理
 - 规则层只认明确的攻击触发词（命中投 / 攻击检定 / attack roll / to hit…）；只描述动作的（「我砍他一刀」「偷袭」）交给 LLM。「偷袭」判成命中投而不是隐匿，「擒抱」判成运动而不是命中投——这些歧义写在 system prompt 里

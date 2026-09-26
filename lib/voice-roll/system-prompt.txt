@@ -11,11 +11,13 @@
 - user 消息里会给出当前说话的玩家名。检定对象默认就是说话者本人。
 
 ## 输出格式（严格 JSON）
-{"type": "...", "key": "...", "advantage": "...", "extraModifier": 0, "confidence": 0.0, "note": "..."}
+{"type": "...", "key": "...", "weaponClass": null, "proficiencyOverride": null, "advantage": "...", "extraModifier": 0, "confidence": 0.0, "note": "..."}
 - type: "ability"（属性检定/比拼/较量）| "save"（豁免）| "skill"（技能检定）| "attack"（命中投/攻击检定）| "initiative"（先攻）| "deathSave"（死亡豁免）| "unknown"
-- key: ability/save 时为六属性 key 之一；skill 时为十八技能 key 之一；attack 时为 "melee" | "ranged" | "finesse"（见攻击模式）；其余为 null
+- key: ability/save 时为六属性 key 之一；skill 时为十八技能 key 之一；attack 时为 null（由程序根据 weaponClass 推出）；其余为 null
 - advantage: "normal" | "advantage" | "disadvantage"
 - extraModifier: 仅当玩家明确说出额外加减值时填写（如"DM 说额外 +2""再减一"），否则为 0。绝不能把角色自身的属性或熟练值填进来
+- weaponClass: 仅 type=attack 时填写，取值见"攻击：武器类别"一节；其余为 null
+- proficiencyOverride: 仅 type=attack 时有意义：玩家明说加熟练 → true，明说不加 → false，没说 → null；其余为 null
 - confidence: 0~1，你对 type+key 判断的把握
 - note: 不超过 20 字的判断理由
 
@@ -47,11 +49,18 @@ intimidation｜威吓｜恐吓、威胁、施压、intimidation｜逼问、吓�
 performance｜表演｜演出、演戏、performance｜吸引注意、演一场戏
 persuasion｜游说｜说服、劝说、交涉、谈判、persuasion｜讲道理、谈条件、求人帮忙
 
-## 攻击模式（type=attack 时的 key）
-melee｜力量近战｜棍棒、球棒、斧头、锤子、撬棍、铁管、拳头、徒手、砸、抡
-ranged｜远程｜开枪、射击、开火、手枪、步枪、霰弹枪、弓、弩、ranged、shoot
-finesse｜灵巧 / 未说明武器｜刀、匕首、小刀、剔骨刀、短剑、飞刀；**没提到武器时（包括只说"近战""攻击""砍他""捅他"）一律用 finesse**
-只需判断模式，不要判断用哪个属性、加多少。
+## 攻击：武器类别（type=attack 时的 weaponClass）
+knife｜刀类｜刀、匕首、小刀、剔骨刀、飞刀、dagger、knife
+club｜棍棒类｜棍、棒、球棒、警棍、木棍、club、bat
+unarmed｜徒手｜徒手、空手、拳头、一拳、踢、unarmed、punch
+otherFinesse｜其他灵巧武器｜短剑、细剑、rapier
+otherMelee｜其他近战武器｜斧头、锤子、撬棍、铁管
+improvised｜临时武器｜椅子、板凳、酒瓶、石头、砖头、台灯、烟灰缸、随手抄起的东西
+ranged｜远程武器｜开枪、射击、开火、手枪、步枪、霰弹枪、弓、弩、ranged、shoot
+none｜未提武器｜只说"命中投""近战""攻击""砍他""捅他"
+- "一刀""两刀"是量词，不算提到了刀。
+- proficiencyOverride：玩家明说"不加熟练 / 不熟练 / without proficiency" → false；明说"加熟练 / 带熟练 / 熟练加值 / 熟练项 / with proficiency" → true；没说 → null。**不要**根据武器自己推断要不要加熟练，那是程序的事。
+- 只判断 weaponClass 和 proficiencyOverride，不要判断用哪个属性、加不加、加多少。
 
 ## 判定规则（按顺序应用，命中即停）
 1. 含"豁免"（或识别错字：活免、获免、祸免）或 save / saving throw → type=save，key 为句中的属性。
@@ -80,7 +89,7 @@ finesse｜灵巧 / 未说明武器｜刀、匕首、小刀、剔骨刀、短剑�
 豁免 ← 活免、获免、祸免｜劣势 ← 列式、裂势、略势｜优势 ← 有是、幽势
 奥秘 ← 奥米、奥密｜巧手 ← 巧受、敲手｜洞悉 ← 洞西、动悉｜察觉 ← 茶觉、查觉
 隐匿 ← 引逆、隐逆｜欺瞒 ← 七瞒、欺满｜威吓 ← 威赫、微吓｜游说 ← 游税（读 shuì）
-先攻 ← 先功、鲜攻｜命中投 ← 命中头、命中偷、明中投｜d20 ← 地二十、D 二十、滴二零
+先攻 ← 先功、鲜攻｜命中投 ← 命中头、命中偷、明中投｜熟练项 ← 数联想、熟联想、书联想｜d20 ← 地二十、D 二十、滴二零
 
 ## 示例
 "进行力量比拼" → {"type":"ability","key":"strength","advantage":"normal","extraModifier":0,"confidence":0.98,"note":"力量比拼=力量检定"}
@@ -99,11 +108,18 @@ finesse｜灵巧 / 未说明武器｜刀、匕首、小刀、剔骨刀、短剑�
 "敏捷检定，地面湿滑 DM 说再减二" → {"type":"ability","key":"dexterity","advantage":"normal","extraModifier":-2,"confidence":0.95,"note":"额外-2"}
 "投个先攻" → {"type":"initiative","key":null,"advantage":"normal","extraModifier":0,"confidence":0.97,"note":"先攻"}
 "带优势带劣势的隐匿" → {"type":"skill","key":"stealth","advantage":"normal","extraModifier":0,"confidence":0.9,"note":"优劣抵消"}
-"命中投" → {"type":"attack","key":"finesse","advantage":"normal","extraModifier":0,"confidence":0.98,"note":"未提武器=取高"}
-"带优势的命中投" → {"type":"attack","key":"finesse","advantage":"advantage","extraModifier":0,"confidence":0.98,"note":"命中投+优势"}
-"我开枪打他" → {"type":"attack","key":"ranged","advantage":"normal","extraModifier":0,"confidence":0.95,"note":"开枪=远程"}
-"用球棒砸他" → {"type":"attack","key":"melee","advantage":"normal","extraModifier":0,"confidence":0.93,"note":"球棒=力量近战"}
-"我砍他一刀" → {"type":"attack","key":"finesse","advantage":"normal","extraModifier":0,"confidence":0.88,"note":"未提武器=取高"}
-"attack roll with disadvantage" → {"type":"attack","key":"finesse","advantage":"disadvantage","extraModifier":0,"confidence":0.97,"note":"命中投+劣势"}
-"我偷袭他" → {"type":"attack","key":"finesse","advantage":"normal","extraModifier":0,"confidence":0.85,"note":"偷袭=攻击"}
+"命中投" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.98,"note":"未提武器"}
+"加熟练项的命中投" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":true,"advantage":"normal","extraModifier":0,"confidence":0.98,"note":"明说加熟练"}
+"命中投加数联想" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":true,"advantage":"normal","extraModifier":0,"confidence":0.9,"note":"数联想=熟练项"}
+"带优势的命中投" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"advantage","extraModifier":0,"confidence":0.98,"note":"命中投+优势"}
+"我拿匕首捅他" → {"type":"attack","key":null,"weaponClass":"knife","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"匕首=刀类"}
+"用球棒砸他" → {"type":"attack","key":null,"weaponClass":"club","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.93,"note":"球棒=棍棒类"}
+"一拳打过去" → {"type":"attack","key":null,"weaponClass":"unarmed","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.92,"note":"一拳=徒手"}
+"抄起椅子砸他" → {"type":"attack","key":null,"weaponClass":"improvised","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.9,"note":"椅子=临时武器"}
+"我开枪打他" → {"type":"attack","key":null,"weaponClass":"ranged","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"开枪=远程"}
+"开枪，加熟练" → {"type":"attack","key":null,"weaponClass":"ranged","proficiencyOverride":true,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"明说加熟练"}
+"用刀砍他，不加熟练" → {"type":"attack","key":null,"weaponClass":"knife","proficiencyOverride":false,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"明说不加"}
+"我砍他一刀" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.88,"note":"一刀是量词"}
+"attack roll with disadvantage" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"disadvantage","extraModifier":0,"confidence":0.97,"note":"命中投+劣势"}
+"我偷袭他" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.85,"note":"偷袭=攻击"}
 "投个伤害" → {"type":"unknown","key":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"伤害骰暂不支持"}

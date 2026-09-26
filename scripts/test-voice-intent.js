@@ -12,7 +12,9 @@
  */
 
 const { parseRollIntent } = require('../lib/voice-roll/intent');
-const { computeRollModifier, buildRollLabel, resolveAttackAbility } = require('../lib/voice-roll/dice');
+const {
+  computeRollModifier, buildRollLabel, buildModifierParts, formatModifierBreakdown
+} = require('../lib/voice-roll/dice');
 
 // §10 的测试角色：PB=2，熟练豁免 智力/敏捷，熟练技能 隐匿/巧手/医药/察觉
 const CARD_V = {
@@ -81,20 +83,35 @@ const CASES = [
   ['看看他是不是在撒谎',    'llm'],   // 「撒谎」是欺瞒的别名，但这句问的是识破 → 见下方说明
   ['我偷偷跟上去',          'llm'],
   ['敏捷检定，DM 说再减二', 'llm'],
-  // 命中投（V：力量 -1 / 敏捷 +3 / PB 2 → 没提武器取敏捷 3+2=+5，球棒 -1+2=+1）
-  ['命中投',                'attack', 'finesse', 'normal',        5, '命中投（敏捷）'],
-  ['带优势的命中投',        'attack', 'finesse', 'advantage',     5, '带优势的命中投（敏捷）'],
-  ['命中头',                'attack', 'finesse', 'normal',        5, '命中投（敏捷）'],
-  ['用剔骨刀的命中投',      'attack', 'finesse', 'normal',        5, '命中投（敏捷）'],
-  ['近战命中投',            'attack', 'finesse', 'normal',        5, '命中投（敏捷）'],
-  ['远程命中投',            'attack', 'ranged',  'normal',        5, '命中投（敏捷）'],
-  ['开枪的攻击检定',        'attack', 'ranged',  'normal',        5, '命中投（敏捷）'],
-  ['用球棒的命中投',        'attack', 'melee',   'normal',        1, '命中投（力量）'],
-  ['attack roll with disadvantage', 'attack', 'finesse', 'disadvantage', 5, '带劣势的命中投（敏捷）'],
+  // 命中投（V：力量 -1 / 敏捷 +3 / PB 2）。熟练按武器决定，玩家可口头覆盖
+  ['命中投',                'attack', 'finesse', 'normal',        3, '命中投（敏捷 +3，未加熟练）'],
+  ['加熟练项的命中投',      'attack', 'finesse', 'normal',        5, '命中投（敏捷 +3，熟练 +2）'],
+  ['命中投加数联想',        'attack', 'finesse', 'normal',        5, '命中投（敏捷 +3，熟练 +2）'],
+  // 「熟练加值」含「加值」，不能被 EXTRA_MOD_HINTS 误判成额外加减值踢给 LLM
+  ['命中投，熟练加值',      'attack', 'finesse', 'normal',        5, '命中投（敏捷 +3，熟练 +2）'],
+  ['带优势的命中投',        'attack', 'finesse', 'advantage',     3, '带优势的命中投（敏捷 +3，未加熟练）'],
+  ['命中头',                'attack', 'finesse', 'normal',        3, '命中投（敏捷 +3，未加熟练）'],
+  ['用剔骨刀的命中投',      'attack', 'finesse', 'normal',        5, '命中投（敏捷 +3，熟练 +2）'],
+  ['用刀的命中投，不加熟练', 'attack', 'finesse', 'normal',       3, '命中投（敏捷 +3，未加熟练）'],
+  // 「一刀」是量词不是武器，不能因此判成用刀并自动加熟练
+  ['命中投，砍他一刀',      'attack', 'finesse', 'normal',        3, '命中投（敏捷 +3，未加熟练）'],
+  ['近战命中投',            'attack', 'finesse', 'normal',        3, '命中投（敏捷 +3，未加熟练）'],
+  ['用球棒的命中投',        'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
+  ['徒手的命中投',          'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
+  ['用斧头的命中投',        'attack', 'melee',   'normal',       -1, '命中投（力量 -1，未加熟练）'],
+  ['开枪的攻击检定',        'attack', 'ranged',  'normal',        3, '命中投（敏捷 +3，未加熟练）'],
+  ['开枪的命中投加熟练',    'attack', 'ranged',  'normal',        5, '命中投（敏捷 +3，熟练 +2）'],
+  ['attack roll with proficiency',  'attack', 'finesse', 'normal', 5, '命中投（敏捷 +3，熟练 +2）'],
+  ['attack roll with disadvantage', 'attack', 'finesse', 'disadvantage', 3, '带劣势的命中投（敏捷 +3，未加熟练）'],
+  // 「加熟练」只对命中投生效，其他检定类型一律忽略
+  ['魅力豁免，加熟练',      'save',   'charisma', 'normal',      -1, '魅力豁免'],
   ['投个伤害',              'error'],
   ['攻击伤害',              'error'],   // 伤害优先级高于攻击
-  // 只描述动作、没有触发词的交给 LLM（「我砍他一刀」原来期望 unknown，现在应判成命中投）
+  // 只描述动作、没有触发词的交给 LLM
   ['我砍他一刀',            'llm'],
+  ['我拿匕首捅他',          'llm'],
+  ['一拳打过去',            'llm'],
+  ['抄起椅子砸他',          'llm'],
   ['我开枪打他',            'llm'],
   ['用球棒砸他',            'llm']
 ];
@@ -127,8 +144,7 @@ function runCase(card, [text, expType, expKey, expAdv, expMod, expLabel]) {
   }
 
   const mod = computeRollModifier(card, got);
-  const attackAbility = got.type === 'attack' ? resolveAttackAbility(card, got.key) : null;
-  const label = buildRollLabel(got, attackAbility);
+  const label = buildRollLabel(got, card);
   const ok = got.type === expType && got.key === expKey && got.advantage === expAdv &&
              mod === expMod && label === expLabel;
   const sign = mod >= 0 ? '+' + mod : String(mod);
@@ -144,16 +160,46 @@ CONTROL_CASES.forEach(c => runCase(CARD_AILIN, c));
 // 命中投取高的分支：V 和现有角色卡全是敏捷 ≥ 力量，只能靠假卡验证
 console.log('\n【对照组：力量流假卡（力量 +3 > 敏捷 +1，PB 2）】');
 [
-  ['命中投',     'attack', 'finesse', 'normal', 5, '命中投（力量）'],   // max(3,1)+2
-  ['开枪',       'llm'],                                                // 没有触发词 → LLM
-  ['远程命中投', 'attack', 'ranged',  'normal', 3, '命中投（敏捷）'],   // 1+2
-  ['用球棒的命中投', 'attack', 'melee', 'normal', 5, '命中投（力量）']  // 3+2
+  ['命中投',         'attack', 'finesse', 'normal', 3, '命中投（力量 +3，未加熟练）'],
+  ['用刀的命中投',   'attack', 'finesse', 'normal', 5, '命中投（力量 +3，熟练 +2）'],
+  ['开枪',           'llm'],                                                    // 没有触发词 → LLM
+  ['远程命中投',     'attack', 'ranged',  'normal', 1, '命中投（敏捷 +1，未加熟练）'],
+  ['用球棒的命中投', 'attack', 'melee',   'normal', 5, '命中投（力量 +3，熟练 +2）']
 ].forEach(c => runCase(CARD_STRONG, c));
 
 console.log('\n【对照组：力敏相等假卡（力量 = 敏捷 = +2）】');
 [
-  ['命中投', 'attack', 'finesse', 'normal', 4, '命中投（敏捷）']   // 相等时记为敏捷
+  ['命中投', 'attack', 'finesse', 'normal', 2, '命中投（敏捷 +2，未加熟练）']   // 相等时记为敏捷
 ].forEach(c => runCase(CARD_TIE, c));
+
+// 可观测性：卡片明细行必须逐字对得上 plan §10 的表（假设骰出 15）
+console.log('\n【可观测性：命中投明细行（V，骰出 15）】');
+[
+  ['命中投',                  '15 + 3 敏捷（未提武器·力敏取高）+ 未加熟练（未提武器·默认不加）= 18'],
+  ['加熟练项的命中投',        '15 + 3 敏捷（未提武器·力敏取高）+ 2 熟练（明说加熟练）= 20'],
+  ['用剔骨刀的命中投',        '15 + 3 敏捷（刀类·力敏取高）+ 2 熟练（刀类·默认熟练）= 20'],
+  ['用刀的命中投，不加熟练',  '15 + 3 敏捷（刀类·力敏取高）+ 未加熟练（明说不加熟练）= 18'],
+  ['用球棒的命中投',          '15 − 1 力量（棍棒类·近战用力量）+ 2 熟练（棍棒类·默认熟练）= 16'],
+  ['开枪的命中投加熟练',      '15 + 3 敏捷（远程武器·用敏捷）+ 2 熟练（明说加熟练）= 20']
+].forEach(([text, expected]) => {
+  const intent = parseRollIntent(text);
+  const parts = intent && !intent.error ? buildModifierParts(CARD_V, intent) : null;
+  const line = parts
+    ? formatModifierBreakdown('15', parts, 15 + computeRollModifier(CARD_V, intent))
+    : '（没有明细项）';
+  check(line === expected, `「${text}」→ ${line}` + (line === expected ? '' : `\n      期望 ${expected}`));
+});
+
+// 「抄起椅子砸他」走 LLM，这里直接用等价意图验证临时武器的理由文案
+console.log('\n【可观测性：临时武器（LLM 路径的意图）】');
+[[{ type: 'attack', key: 'melee', weaponClass: 'improvised', proficiencyOverride: null,
+    advantage: 'normal', extraModifier: 0 },
+   '15 − 1 力量（临时武器·近战用力量）+ 未加熟练（临时武器·默认不加）= 14']
+].forEach(([intent, expected]) => {
+  const parts = buildModifierParts(CARD_V, intent);
+  const line = formatModifierBreakdown('15', parts, 15 + computeRollModifier(CARD_V, intent));
+  check(line === expected, `抄起椅子砸他 → ${line}` + (line === expected ? '' : `\n      期望 ${expected}`));
+});
 
 console.log(`\n通过 ${pass} / ${pass + fail}`);
 process.exit(fail === 0 ? 0 : 1);

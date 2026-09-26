@@ -685,6 +685,10 @@
         /* 优势/劣势时被舍弃的那颗骰子 */
         .dice-card-expr .keep { color: #cdd6e0; }
         .dice-card-expr .drop { text-decoration: line-through; color: #5b636c; }
+        /* 命中投的明细行带着每一项的理由，宁可换行也不截断——信息不能丢 */
+        .dice-card-expr { white-space: normal; }
+        /* 识别原话 + 判定来源：一眼看出是不是听错了 */
+        .dice-card-src { font-size: 10px; color: #6b7280; margin-top: 2px; word-break: break-all; }
         /* 往上翻历史时来了新消息：不强行拉到底，给个可点的提示 */
         #chat-jump-latest {
             display: none; position: absolute; left: 50%; transform: translateX(-50%);
@@ -2241,9 +2245,10 @@
         return text.length > FOLD_CHARS || text.split('\n').length > FOLD_LINES;
     }
 
-    // 掉骨是游戏事件，不该和系统提示混在一起
-    // entry 可能带语音掉骨的额外字段：label（「带优势的察觉检定」）、
-    // advantage（normal/advantage/disadvantage）、kept（两颗骨里实际采用的那一颗）
+    // 掷骰是游戏事件，不该和系统提示混在一起
+    // entry 可能带语音掷骰的额外字段：label（「带优势的察觉检定」）、
+    // advantage（normal/advantage/disadvantage）、kept（两颗骰里实际采用的那一颗）、
+    // modifierParts（命中投的逐项明细，含理由）、transcript + intentSource（识别原话与来源）
     function buildDiceCard(entry) {
         const who = entry.role === 'DM' ? 'DM' : entry.name;
         const count = entry.count || 1;
@@ -2257,13 +2262,13 @@
         const modPart = modifier === 0 ? ''
             : (modifier > 0 ? ' + ' + modifier : ' − ' + Math.abs(modifier));
 
-        // 优势/劣势是两颗骨取一颗，不能像普通多骨那样相加；
+        // 骰子那一段：优势/劣势是两颗取一颗，不能像普通多骰那样相加；
         // 被舍弃的那颗划掉变灰，一眼看得出用的是哪个
-        let breakdownHtml = '';
+        let diceHtml = '';
         if (advantage !== 'normal' && rolls.length > 1 && hasKept) {
             const fn = advantage === 'advantage' ? 'max' : 'min';
             let dropped = false;
-            const parts = rolls.map(r => {
+            const shown = rolls.map(r => {
                 // 两颗相等时只把第一颗标成采用，另一颗照样划掉
                 if (!dropped && r === entry.kept) {
                     dropped = true;
@@ -2271,13 +2276,46 @@
                 }
                 return `<span class="drop">${escapeHtml(String(r))}</span>`;
             });
-            breakdownHtml = `${fn}(${parts.join(', ')})${escapeHtml(modPart)} = ${escapeHtml(String(entry.result))}`;
+            diceHtml = `${fn}(${shown.join(', ')})`;
+        } else if (rolls.length === 1) {
+            diceHtml = escapeHtml(String(rolls[0]));
+        }
+
+        // 命中投带 modifierParts：逐项展开并写出理由，任何人只看这张卡片就能复核这次掷骰。
+        // ⚠️ 这里的排版规则和服务端 lib/voice-roll/dice.js 的 formatModifierBreakdown 是一对，
+        //    前端拿不到 lib/，所以改一边要记得改另一边
+        const modParts = Array.isArray(entry.modifierParts) ? entry.modifierParts : null;
+        let breakdownHtml = '';
+        if (modParts && modParts.length && diceHtml) {
+            const tokens = [diceHtml];
+            modParts.forEach(part => {
+                const note = part.note ? `（${escapeHtml(part.note)}）` : '';
+                if (part.value === 0 && part.name === '熟练') {
+                    // 「没加熟练」本身也是要被看见的信息
+                    tokens.push(`+ 未加熟练${note}`);
+                } else {
+                    tokens.push(`${part.value < 0 ? '−' : '+'} ${Math.abs(part.value)} ` +
+                                `${escapeHtml(part.name)}${note}`);
+                }
+            });
+            tokens.push(`= ${escapeHtml(String(entry.result))}`);
+            // 全角右括号自带视觉间距，后面不再留空格
+            breakdownHtml = tokens.join(' ').replace(/）\s+/g, '）');
+        } else if (advantage !== 'normal' && rolls.length > 1 && hasKept) {
+            breakdownHtml = `${diceHtml}${escapeHtml(modPart)} = ${escapeHtml(String(entry.result))}`;
         } else if (rolls.length > 1 || (rolls.length && modifier !== 0)) {
             const sum = modifier < 0
                 ? rolls.join(' + ') + ' − ' + Math.abs(modifier)
                 : (modifier > 0 ? [...rolls.map(String), String(modifier)] : rolls.map(String)).join(' + ');
             breakdownHtml = escapeHtml(sum + ' = ' + entry.result);
         }
+
+        // 识别原话 + 来源。掷骰本来就是当着全桌说出来的，公开原话没有隐私问题，
+        // 而它能让所有人一眼看出是不是听错了
+        const srcHtml = entry.transcript
+            ? `<div class="dice-card-src">识别自：「${escapeHtml(entry.transcript)}」· ` +
+              `${entry.intentSource === 'llm' ? 'AI' : '规则'}</div>`
+            : '';
 
         // 单颗 d20 的大成功/大失败值得一眼认出来。
         // 优势/劣势投两颗，算的是采用的那颗（kept），不是两颗之和
@@ -2305,6 +2343,7 @@
                 `${escapeHtml(expr + advWord)}` +
                 (flag ? ` <span class="dice-card-flag">${flag}</span>` : '') + '</div>' +
                 (breakdownHtml ? `<div class="dice-card-expr">${breakdownHtml}</div>` : '') +
+                srcHtml +
             '</div>' +
             `<div class="dice-card-total">${escapeHtml(String(entry.result))}</div>`;
         return div;
@@ -2442,10 +2481,15 @@
             rolls: data.rolls || null,
             modifier: data.modifier || 0,
             count: data.count || 1,
-            // 语音掉骨的额外字段（手打掉骨没有，为 undefined）
+            // 语音掷骰的额外字段（手打掷骰没有，为 undefined）
             label: data.label || null,
             advantage: data.advantage || 'normal',
             kept: typeof data.kept === 'number' ? data.kept : null,
+            // 命中投的可观测性字段：逐项明细（含理由）、识别原话、判定来源。
+            // 实时广播与 joinSuccess 的历史回放都走这里，两条路径显示才会一致
+            modifierParts: Array.isArray(data.modifierParts) ? data.modifierParts : null,
+            transcript: data.transcript || '',
+            intentSource: data.intentSource || null,
             source: data.source || null,
             timestamp: data.timestamp || Date.now()
         });
