@@ -198,9 +198,6 @@ coc_app/
 ├── CLAUDE.md              # Project conventions and implementation notes for AI assistants
 ├── README.md              # Documentation (Chinese)
 ├── README-en.md           # Documentation (English)
-├── TODO.md                # Open and completed work items
-├── plan-extend.md         # Konva grid-world refactor plan
-├── progress-extend.md     # Development progress log
 ├── public/
 │   ├── index.html         # Login page
 │   └── game.html          # Main game UI (inline CSS+JS+Konva)

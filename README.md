@@ -207,9 +207,6 @@ coc_app/
 ├── CLAUDE.md              # 面向 AI 助手的项目约定与实现要点
 ├── README.md              # 项目说明文档（中文）
 ├── README-en.md           # 项目说明文档（英文）
-├── TODO.md                # 待办 / 已完成事项记录
-├── plan-extend.md         # Konva 网格世界重构计划
-├── progress-extend.md     # 开发进度记录
 ├── public/                # 静态文件目录
 │   ├── index.html         # 登录页面
 │   └── game.html          # 主游戏界面 (CSS+JS+Konva 内联)

@@ -5,8 +5,6 @@ DND 多人协作跑团工具 - A real-time collaborative D&D (Dungeons & Dragons
 
 Copyright (c) 2026 Mingwei Yan. All rights reserved. No unauthorized commercial use.
 
-> **Planned refactor in progress**: see [plan-extend.md](plan-extend.md) for the multi-phase migration of the map subsystem from `<img>` + DOM tokens to a Konva-based grid world (VTT model). Before extending the current map / token / drawing system, check whether the change should instead be folded into that plan.
-
 ## Tech Stack
 - **Backend**: Node.js + Express 5 + Socket.IO 4
 - **Frontend**: Vanilla HTML/CSS/JavaScript + Canvas API
@@ -19,7 +17,6 @@ coc_app/
 ├── server.js              # Main server, Socket.IO events
 ├── package.json           # Dependencies: express, socket.io, nodemon
 ├── nodemon.json           # Watch config: ignores data/
-├── plan-extend.md         # Konva grid-world refactor plan (Phase 0-9 complete, Phase 10 pending)
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
 │   └── game.html          # Main game UI (inline CSS+JS, Konva VTT model)
@@ -101,11 +98,12 @@ coc_app/
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
   uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } } },
   world: {
-    placedMaps: [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
+    placedMaps: [{ id, assetId, gridX, gridY, gridWidth, isLocked, isBound }],
     tokens:     [{ id, color, gridX, gridY }],
     npcs:       [{ id, gridX, gridY, color }],
     freeDrawings: [{ id, points: [x,y,...], color, strokeWidth }],
-    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }]
+    rects:        [{ id, gridX, gridY, gridW, gridH, color, strokeWidth }],
+    fogRects:     [{ id, x, y, w, h }]
   }
 }
 ```
@@ -153,7 +151,10 @@ npm start       # Production server
 - Player colors: orange, yellow, green, blue, purple (5 slots)
 - DM-only UI elements use `.dm-only` CSS class
 - Grid: 1 grid = 50px (`GRID_SIZE`) at zoom=1; all object coords in `gridX/gridY` (float)
-- Grid rendered as Konva.Line in `gridLayer`; shared stage transform — never misaligns
+- Grid rendered as Konva.Line in `gridLayer` (`strokeWidth = 1/scale`), sharing the stage transform. It was originally a CSS `background-image` overlay, which visibly drifted from the map edges under zoom because an overlay and the Konva canvas are two independent render pipelines — **do not go back to drawing the grid in CSS**. `onStageTransformChanged()` must end with `konvaStage.batchDraw()`, or the canvas keeps stale content after a programmatic transform
+- Layers, bottom to top: `gridLayer` / `staticLayer` (settled objects) / `dynamicLayer` (whatever is being dragged or drawn). Konva is loaded from a CDN, not npm — the frontend stays a pure static page
+- Snapping: tokens, NPCs, rects and placed maps snap to the grid; **free drawings do not**. Map rotation is not supported
+- `placedMaps[].isBound` (on by default) makes a map carry its contents: moving or resizing it moves the tokens, NPCs, drawings, rects and fog rects it encloses. Token/NPC scale anchor is `placed.gridX + (orig + 0.5 - placed.gridX) * scale - 0.5`; free drawings are remapped by pixel anchor; all four rect fields scale. When two `isBound` maps enclose the same object, the first match in `placedMapsData` wins
 - Undo/redo stack: 20 entries each, server-side memory only, cleared on restart
 - `io.emit` used for all world mutations (no per-player filtering)
 - **Disconnect grace period** (`DISCONNECT_GRACE_MS`, default 120s, overridable via env): a dropped socket does NOT mean the player left. Browsers (Safari especially) suspend background tabs, which kills the Socket.IO heartbeat. On `disconnect` the player is only flagged `online: false` — roster entry, token, and color are all retained — and a timer runs `finalizePlayerLeave()` when it expires. Reconnecting with the same name+role inside the window silently takes over the old session (`takeOverPreviousSession()`), with no `playerJoined` system message
