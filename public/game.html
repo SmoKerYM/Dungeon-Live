@@ -915,6 +915,27 @@
             border: 1px solid var(--glass-border); border-radius: 6px;
             color: #dbe2f0; font-size: 11px; cursor: pointer;
         }
+        /* 名字占满剩余宽度，点哪儿都能打开这张卡（✕ 除外） */
+        .char-list-item .char-open { flex: 1; min-width: 0; }
+        /* 删除：小红叉，点第一下变成「确认删除？」，3 秒内再点才真的删 */
+        .char-list-item .char-del {
+            flex-shrink: 0; margin-left: 8px;
+            padding: 2px 8px; border-radius: 6px;
+            border: 1px solid transparent; background: transparent;
+            color: #e06c5f; font-size: 12px; line-height: 1.4; cursor: pointer;
+            opacity: 0.55; transition: opacity 0.15s, background 0.15s;
+        }
+        .char-list-item:hover .char-del { opacity: 1; }
+        .char-list-item .char-del:hover { background: rgba(231,76,60,0.18); }
+        .char-list-item .char-del.locked {
+            color: #7a8399; cursor: default; opacity: 0.5; font-size: 11px;
+        }
+        .char-list-item .char-del.locked:hover { background: transparent; }
+        .char-list-item .char-del.armed {
+            opacity: 1; font-size: 11px;
+            background: rgba(231,76,60,0.85); color: #fff;
+            border-color: rgba(231,76,60,0.9);
+        }
 
         #char-sheet { display: none; }
         #char-sheet.visible { display: block; }
@@ -2046,6 +2067,8 @@
     let silentCharLoad = false;
     // 服务端配没配 ASR key（joinSuccess 里告知）；没配就禁用麦克风按钮
     let voiceRollEnabled = false;
+    // 不可删除的角色卡（主要角色），由服务端下发；真正的拦截也在服务端
+    let protectedCharacters = [];
 
     function renderHpHud(name, hp) {
         const hud = document.getElementById('hp-hud');
@@ -3229,6 +3252,7 @@
         console.log('加入成功，同步游戏数据...', data);
 
         voiceRollEnabled = !!data.voiceRollEnabled;
+        protectedCharacters = Array.isArray(data.protectedCharacters) ? data.protectedCharacters : [];
         if (window.VoiceRoll) VoiceRoll.refreshAvailability();
 
         // 重连时清理旧状态，防止 Konva 节点堆叠和数据重复
@@ -4000,12 +4024,66 @@
         names.forEach(name => {
             const item = document.createElement('div');
             item.className = 'char-list-item';
-            item.innerHTML = `
-                <div style="width: 100%; height: 100%;" onclick="loadCharacterByName('${name}')">
-                    <span class="name">📋 ${name}</span>
-                </div>`;
+
+            // 用 DOM 而不是内联 onclick：名字里带引号也不会把 HTML 拼坏
+            const open = document.createElement('div');
+            open.className = 'char-open';
+            open.innerHTML = `<span class="name">📋 ${escapeHtml(name)}</span>`;
+            open.addEventListener('click', () => loadCharacterByName(name));
+
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'char-del';
+            if (protectedCharacters.includes(name)) {
+                // 主要角色：换成锁，点不动。服务端也会再拦一道
+                del.classList.add('locked');
+                del.textContent = '🔒';
+                del.title = '主要角色，不可删除';
+                del.disabled = true;
+            } else {
+                del.textContent = '✕';
+                del.title = '删除这张角色卡（需要再点一次确认）';
+                del.addEventListener('click', (e) => {
+                    e.stopPropagation();   // 别顺手把卡打开了
+                    onDeleteCharacterClick(del, name);
+                });
+            }
+
+            item.appendChild(open);
+            item.appendChild(del);
             container.appendChild(item);
         });
+    }
+
+    // 「删除」点第一下后，等第二下确认的时间
+    const CHAR_DEL_ARM_MS = 3000;
+    let charDelArm = null;   // { btn, name, timer }
+
+    /**
+     * 删除角色卡要点两下：第一下变成红底的「确认删除？」，3 秒内再点才真的删。
+     * 删掉的是服务端文件里的整张卡，收不回来，所以不做「点一下就删」。
+     */
+    function onDeleteCharacterClick(btn, name) {
+        if (charDelArm && charDelArm.btn === btn) {
+            disarmCharDelete();
+            socket.emit('character:delete', { name });
+            return;
+        }
+        disarmCharDelete();          // 之前别的行还举着手，先放下
+        btn.textContent = '确认删除？';
+        btn.classList.add('armed');
+        charDelArm = { btn, name, timer: setTimeout(disarmCharDelete, CHAR_DEL_ARM_MS) };
+    }
+
+    function disarmCharDelete() {
+        if (!charDelArm) return;
+        clearTimeout(charDelArm.timer);
+        // 列表可能已经重新渲染过，按钮不在文档里了就不用还原
+        if (charDelArm.btn.isConnected) {
+            charDelArm.btn.textContent = '✕';
+            charDelArm.btn.classList.remove('armed');
+        }
+        charDelArm = null;
     }
 
     // DM 点击查看角色
@@ -4060,6 +4138,26 @@
         if (!currentCharacter || data.name !== currentCharacter.name) return;
         if (data.error) setAiSummary(data.error, 'error');
         else setAiSummary(data.summary, 'ok');
+    });
+
+    // 角色卡被 DM 删掉了：名单要刷新，卡主自己的血条、正在查看这张卡的面板也得清掉
+    socket.on('character:deleted', (data) => {
+        const names = data.names || [];
+        updateCharacterSelect(names);
+        updateCharacterList(names);
+
+        if (currentCharacter && currentCharacter.name === data.name) {
+            currentCharacter = null;
+            document.getElementById('char-sheet').classList.remove('visible');
+        }
+        if (data.name === userName) {
+            myCharacter = null;
+            renderHpHud(null, null);
+            // 没有同名角色卡就不能语音/打字掷骰了
+            if (window.VoiceRoll) VoiceRoll.refreshAvailability();
+        }
+        if (isDM) showCharToast(`✓ 已删除角色卡「${data.name}」`);
+        else if (data.name === userName) showCharToast('你的角色卡已被 DM 删除', true);
     });
 
     socket.on('character:notFound', (data) => {

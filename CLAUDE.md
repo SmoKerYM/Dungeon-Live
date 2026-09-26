@@ -93,7 +93,7 @@ coc_app/
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
 | History | `history:undo`, `history:redo` |
-| Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
+| Character | `character:list`, `character:load`, `character:save`, `character:delete`（仅 DM）, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
 | VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId }`）, `voice:text`（`{ text, via }`：跳过 ASR 直接喂文本，`via='text'` 是聊天框 @ai） |
 | Recap | `recap:fetch`（任何人）；DM 专用：`recap:start`, `recap:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `recap:stop`（`{ brief, people }`＝文本框当前内容）, `recap:cancel`, `recap:retry`（同上）, `recap:update`（`{ brief, people }`）, `recap:clear`, `recap:text`（调试：跳过 ASR） |
@@ -109,6 +109,7 @@ coc_app/
 | `npc:spawn/move/remove/clearAll` | NPC state broadcasts |
 | `draw:freeStroke/rect/liveStroke/remove/clearAll` | Drawing broadcasts |
 | `world:sync` | Full world snapshot after undo/redo |
+| `character:deleted` | DM 删卡后广播 `{ name, names }`：各端刷新名单；卡主清空血条与掷骰可用性，正在查看这张卡的面板关掉 |
 | `characterNotes:sync` | Broadcasts updated character records |
 | `roster:sync` | Broadcasts online roster `[{ name, role, color, online }]` (join / color pick / disconnect / grace expiry) |
 | `chat:message` | Chat payload; carries `to` + `toRole` when private (sent only to sender + target) |
@@ -215,6 +216,8 @@ npm start       # Production server
 - The chat input keeps a shell-style history (`chatInputHistory`, in memory, last 50, consecutive duplicates collapsed). ↑/↓ walk it and ↓ past the newest entry restores the draft the user was typing (`chatHistoryDraft`). The `@` popup claims the arrow keys first when it is open, so the two never fight. It is mirrored into `sessionStorage` under `chatInputHistory:<userName>` so a reload keeps it — reloading is routine here, since a new build only arrives that way. Every read and write is wrapped: a disabled or full store degrades to in-memory history rather than breaking the chat, and a corrupt value loads as empty
 - Notes panel split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
+- **角色卡删除（仅 DM）**：`已创建的角色卡` 每行一个小红 ✕，点第一下变红底的「确认删除？」，3 秒内再点才真的删（和前情提要的清空按钮同一套两步确认）。删的是 `characters.json` 里的整张卡，收不回来
+- **受保护的角色卡**：`PROTECTED_CHARACTERS`（默认 `V,艾琳,Forsyth,禾易苇`，可用同名环境变量覆盖）里的卡谁都删不掉。前端把这几行的 ✕ 换成 🔒，但**真正的拦截在服务端**——客户端是可以被绕过的
 - DM-only UI elements use `.dm-only` CSS class
 - Grid: 1 grid = 50px (`GRID_SIZE`) at zoom=1; all object coords in `gridX/gridY` (float)
 - Grid rendered as Konva.Line in `gridLayer` (`strokeWidth = 1/scale`), sharing the stage transform. It was originally a CSS `background-image` overlay, which visibly drifted from the map edges under zoom because an overlay and the Konva canvas are two independent render pipelines — **do not go back to drawing the grid in CSS**. `onStageTransformChanged()` must end with `konvaStage.batchDraw()`, or the canvas keeps stale content after a programmatic transform

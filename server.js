@@ -21,6 +21,10 @@ const CHAT_HISTORY_FILE = process.env.NODE_ENV === 'production'
   ? '/data/chat_history.json' : './data/chat_history.json';
 // 聊天历史最大保留条数
 const MAX_CHAT_HISTORY = 100;
+// 主要角色的卡不允许删除（DM 也不行）——这几张是本团的主角，
+// 误删一次就得整张重填。需要调整名单时改环境变量，不用动代码
+const PROTECTED_CHARACTERS = (process.env.PROTECTED_CHARACTERS || 'V,艾琳,Forsyth,禾易苇')
+  .split(',').map(n => n.trim()).filter(Boolean);
 // 撤销/重做栈最大长度
 const MAX_UNDO_STACK = 20;
 // 掉线宽限期：浏览器挂起后台标签页会中断心跳，此期间不判定玩家离开
@@ -150,6 +154,20 @@ function saveCharacter(characterData) {
     return { success: true, isNew };
   } catch (err) {
     console.error('保存角色卡失败:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// 删除指定角色卡（仅 DM 会走到这里）。删掉的是文件里的一整条，收不回来
+function deleteCharacter(name) {
+  try {
+    const characters = loadCharacters();
+    if (!characters[name]) return { success: false, error: '角色卡不存在' };
+    delete characters[name];
+    fs.writeFileSync(CHARACTERS_FILE, JSON.stringify(characters, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    console.error('删除角色卡失败:', err);
     return { success: false, error: err.message };
   }
 }
@@ -585,6 +603,8 @@ io.on('connection', (socket) => {
       takenColors,
       // 服务端没配 ASR key 时前端直接禁用麦克风按钮
       voiceRollEnabled: isVoiceRollEnabled({ asr: VOICE_ASR_CONFIG }),
+      // 不可删除的角色卡，前端据此把 ✕ 换成锁
+      protectedCharacters: PROTECTED_CHARACTERS,
       uiPrefs: role === 'DM' ? gameState.uiPrefs : undefined,
       layout: getLayoutFor(name),
       gameState: {
@@ -943,6 +963,30 @@ io.on('connection', (socket) => {
     } else {
       socket.emit('character:error', { message: '保存失败: ' + result.error });
     }
+  });
+
+  // 删除角色卡（仅 DM）。二次确认在前端，这里只认 DM 身份
+  socket.on('character:delete', ({ name }) => {
+    const player = gameState.players.get(socket.id);
+    if (player?.role !== 'DM') return;
+    if (typeof name !== 'string' || !name.trim()) return;
+
+    // 规则保护：主要角色的卡谁都删不掉。前端也会把这几张的 ✕ 换成锁，
+    // 但真正说了算的是这里——客户端是可以被绕过的
+    if (PROTECTED_CHARACTERS.includes(name)) {
+      socket.emit('character:error', { message: `「${name}」是主要角色，已设为不可删除` });
+      return;
+    }
+
+    const result = deleteCharacter(name);
+    if (!result.success) {
+      socket.emit('character:error', { message: '删除失败: ' + result.error });
+      return;
+    }
+    console.log(`DM "${player.name}" 删除了角色卡: ${name}`);
+
+    // 广播给所有人：名单要刷新；卡主自己的血条、正在查看这张卡的面板也得跟着清掉
+    io.emit('character:deleted', { name, names: getCharacterNames() });
   });
 
   // 上传地图资产 (仅 DM)
