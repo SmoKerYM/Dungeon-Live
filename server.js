@@ -715,7 +715,7 @@ io.on('connection', (socket) => {
     }
     appendChatHistory(historyEntry);
 
-    const broadcast = { playerName: player.name, role: player.role, sides: data.sides, result: data.result };
+    const broadcast = { playerName: player.name, role: player.role, sides: data.sides, result: data.result, timestamp: historyEntry.timestamp };
     if (data.expr) {
       broadcast.expr = data.expr;
       broadcast.rolls = data.rolls;

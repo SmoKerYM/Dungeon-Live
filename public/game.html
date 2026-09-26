@@ -568,25 +568,106 @@
         }
         .panel-body { display: flex; flex-direction: column; max-width: 78%; min-width: 0; }
         .panel-msg.mine .panel-body { align-items: flex-end; }
-        .panel-sender { font-size: 11px; color: #bdc3c7; margin-bottom: 3px; padding: 0 2px; }
-        .panel-private-tag { font-size: 10px; color: #f48fb1; margin-bottom: 3px; padding: 0 2px; }
+        .panel-sender {
+            font-size: 11px; color: #bdc3c7; margin-bottom: 3px; padding: 0 2px;
+            display: flex; gap: 6px; align-items: baseline;
+        }
+        .panel-msg.mine .panel-sender { flex-direction: row-reverse; }
+        .panel-time { font-size: 10px; color: #7f8c99; flex-shrink: 0; }
+        .panel-private-tag { font-size: 10px; color: #c9a6e0; margin-bottom: 3px; padding: 0 2px; }
+        /* 同一人连发：省掉重复的头像和名字，只把气泡贴紧上一条 */
+        .panel-msg.grouped { margin-top: -7px; }
+        .panel-msg.grouped .panel-avatar { visibility: hidden; }
+        .panel-msg.grouped .panel-sender { display: none; }
         .panel-bubble {
             background: #46617d; color: #ecf0f1;
             padding: 7px 10px; border-radius: 10px 10px 10px 2px;
             font-size: 12px; line-height: 1.45;
             word-break: break-word; white-space: pre-wrap;
         }
+        .panel-msg.grouped .panel-bubble { border-radius: 10px; }
         .panel-msg.from-dm .panel-bubble { background: #7d3b3b; }
         .panel-msg.mine .panel-bubble { background: #2f6fa8; border-radius: 10px 10px 2px 10px; }
-        .panel-bubble.private { background: #6d2450; border: 1px solid #e91e63; }
-        .panel-msg.mine .panel-bubble.private { background: #8e2b64; border: 1px solid #e91e63; }
+        .panel-msg.mine.grouped .panel-bubble { border-radius: 10px; }
+        /* 私聊：用低饱和的紫，靠左侧竖条点出「这条是悄悄话」，不再用品红硬撞 */
+        .panel-bubble.private {
+            background: #4b3b5e; border: 1px solid rgba(190,140,220,0.35);
+            box-shadow: inset 3px 0 0 #a97cc9;
+        }
+        .panel-msg.mine .panel-bubble.private {
+            background: #52406a; box-shadow: inset -3px 0 0 #a97cc9;
+        }
         .panel-bubble .mention { color: #ffd479; font-weight: bold; }
+        .panel-bubble a { color: #8ec8f0; text-decoration: underline; word-break: break-all; }
+        .panel-bubble a:hover { color: #b3ddf7; }
+        /* 长消息折叠：先裁到 10 行左右，底部压一层渐变提示还有内容 */
+        .panel-bubble.folded {
+            max-height: 150px; overflow: hidden; position: relative;
+        }
+        .panel-bubble.folded::after {
+            content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 36px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.35));
+            pointer-events: none;
+        }
+        .bubble-fold {
+            align-self: flex-start; margin-top: 3px; padding: 2px 8px;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px; color: #bdc3c7; font-size: 10px; cursor: pointer;
+        }
+        .panel-msg.mine .bubble-fold { align-self: flex-end; }
+        .bubble-fold:hover { background: rgba(255,255,255,0.15); color: #ecf0f1; }
         .panel-msg.system { justify-content: center; }
         .panel-system-text {
             font-family: 'Courier New', Consolas, monospace;
             font-size: 11px; color: #f1c40f; font-style: italic; text-align: center;
             background: rgba(0,0,0,0.25); padding: 4px 10px; border-radius: 10px;
         }
+        /* 日期分隔：跨天的历史回放里才看得出「这是昨天的事」 */
+        .chat-day-divider {
+            align-self: center; font-size: 10px; color: #8a949e;
+            background: rgba(0,0,0,0.25); padding: 2px 10px; border-radius: 8px;
+        }
+        /* 骰子结果卡片：掷骰是游戏事件，不该混在系统提示里 */
+        .dice-card {
+            align-self: center; max-width: 92%;
+            background: rgba(20,26,34,0.55); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px; padding: 7px 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .dice-card .dice-card-avatar {
+            width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: bold;
+        }
+        .dice-card-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+        .dice-card-head { font-size: 11px; color: #cdd6e0; }
+        .dice-card-head b { color: #ecf0f1; }
+        .dice-card-expr {
+            font-family: 'Courier New', Consolas, monospace;
+            font-size: 10px; color: #8a949e; word-break: break-all;
+        }
+        .dice-card-total {
+            margin-left: auto; flex-shrink: 0;
+            font-size: 19px; font-weight: bold; color: #f1c40f; line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+        .dice-card.crit  { border-color: rgba(46,204,113,0.55); }
+        .dice-card.crit  .dice-card-total { color: #2ecc71; }
+        .dice-card.fumble { border-color: rgba(231,76,60,0.55); }
+        .dice-card.fumble .dice-card-total { color: #e74c3c; }
+        .dice-card-flag { font-size: 10px; font-weight: bold; }
+        .dice-card.crit   .dice-card-flag { color: #2ecc71; }
+        .dice-card.fumble .dice-card-flag { color: #e74c3c; }
+        /* 往上翻历史时来了新消息：不强行拉到底，给个可点的提示 */
+        #chat-jump-latest {
+            display: none; position: absolute; left: 50%; transform: translateX(-50%);
+            bottom: 58px; z-index: 5;
+            padding: 4px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(35,45,58,0.92); color: #ecf0f1; font-size: 11px; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+        }
+        #chat-jump-latest.show { display: block; }
+        #chat-jump-latest:hover { background: rgba(50,63,80,0.95); }
 
         /* 颜色选择弹窗 */
         #color-modal {
@@ -1338,6 +1419,7 @@
         <button class="float-panel-btn close-btn" title="关闭">✕</button>
     </div>
 <div id="chat-panel-messages"></div>
+        <button id="chat-jump-latest" onclick="scrollChatToBottom()">↓ 有新消息</button>
         <div id="chat-panel-input-container">
             <div class="mention-popup" id="mention-popup-panel"></div>
             <input type="text" id="chat-panel-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
@@ -2022,66 +2104,232 @@
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // 转义正文并高亮其中的 @提及
+    // 正文里同时处理 @提及 与链接：两者走同一次扫描，避免互相切碎
+    const URL_PATTERN = /https?:\/\/[^\s<>"']+/;
+    const URL_TRAILING = /[.,;:!?)\]}。，；：！？、）】」』]+$/;
+
     function renderMessageHtml(message) {
         const names = [MENTION_ALL, ...rosterData.map(r => r.name)]
             .filter(Boolean)
             .sort((a, b) => b.length - a.length);
-        if (names.length === 0) return escapeHtml(message);
-        const pattern = new RegExp('@(' + names.map(escapeRegExp).join('|') + ')', 'g');
-        let out = '';
-        let last = 0;
-        let m;
+        const hasNames = names.length > 0;
+        const alts = [];
+        if (hasNames) alts.push('@(' + names.map(escapeRegExp).join('|') + ')');
+        alts.push('(' + URL_PATTERN.source + ')');
+        const pattern = new RegExp(alts.join('|'), 'g');
+        const mentionIdx = hasNames ? 1 : 0;
+        const urlIdx = hasNames ? 2 : 1;
+
+        let out = '', last = 0, m;
         while ((m = pattern.exec(message)) !== null) {
             out += escapeHtml(message.slice(last, m.index));
-            out += `<span class="mention">@${escapeHtml(m[1])}</span>`;
             last = m.index + m[0].length;
+            if (mentionIdx && m[mentionIdx] !== undefined) {
+                out += `<span class="mention">@${escapeHtml(m[mentionIdx])}</span>`;
+                continue;
+            }
+            // 结尾的标点多半属于句子而不是链接
+            let url = m[urlIdx], tail = '';
+            const trail = url.match(URL_TRAILING);
+            if (trail) { tail = trail[0]; url = url.slice(0, -tail.length); }
+            if (url) {
+                out += `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
+            }
+            out += escapeHtml(tail);
         }
         return out + escapeHtml(message.slice(last));
     }
 
-    // 展开面板的气泡（自己靠右，别人靠左，系统居中）
-    function buildBubbleMessage(entry) {
+    // --- 时间显示 ---
+    const GROUP_WINDOW_MS = 5 * 60 * 1000;   // 超过这个间隔就不再算「连发」
+    const FOLD_CHARS = 420;
+    const FOLD_LINES = 10;
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    function fmtTime(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    }
+
+    function fmtFull(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+               `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    }
+
+    function sameDay(a, b) {
+        return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    }
+
+    function fmtDay(ts) {
+        const d = new Date(ts), now = new Date();
+        if (sameDay(d, now)) return '今天';
+        if (sameDay(d, new Date(now.getTime() - 86400000))) return '昨天';
+        return `${d.getMonth() + 1}月${d.getDate()}日`;
+    }
+
+    // 回放历史时跨天的地方插一条分隔
+    function dayDividerFor(entry, prev) {
+        if (!entry.timestamp || !prev || !prev.timestamp) return null;
+        if (sameDay(new Date(entry.timestamp), new Date(prev.timestamp))) return null;
         const div = document.createElement('div');
+        div.className = 'chat-day-divider';
+        div.textContent = fmtDay(entry.timestamp);
+        return div;
+    }
+
+    // 同一人短时间内连发视为一组：后续几条省掉头像和名字
+    function canGroup(entry, prev) {
+        if (!prev || entry.kind !== 'chat' || prev.kind !== 'chat') return false;
+        if (entry.name !== prev.name || entry.role !== prev.role) return false;
+        if ((entry.to || null) !== (prev.to || null)) return false;
+        if (!entry.timestamp || !prev.timestamp) return true;   // 旧历史没时间戳，只按发送者判断
+        const gap = entry.timestamp - prev.timestamp;
+        return gap >= 0 && gap <= GROUP_WINDOW_MS;
+    }
+
+    function shouldFold(text) {
+        return text.length > FOLD_CHARS || text.split('\n').length > FOLD_LINES;
+    }
+
+    // 掷骰是游戏事件，不该和系统提示混在一起
+    function buildDiceCard(entry) {
+        const who = entry.role === 'DM' ? 'DM' : entry.name;
+        const count = entry.count || 1;
+        const modifier = entry.modifier || 0;
+        const rolls = Array.isArray(entry.rolls) ? entry.rolls : [];
+        const expr = entry.expr || ('d' + entry.sides);
+
+        let breakdown = '';
+        if (rolls.length > 1 || (rolls.length && modifier !== 0)) {
+            breakdown = modifier < 0
+                ? rolls.join(' + ') + ' − ' + Math.abs(modifier)
+                : (modifier > 0 ? [...rolls.map(String), String(modifier)] : rolls.map(String)).join(' + ');
+            breakdown += ' = ' + entry.result;
+        }
+
+        // 单颗 d20 的大成功/大失败值得一眼认出来
+        let cls = '', flag = '';
+        if (entry.sides === 20 && count === 1 && rolls.length <= 1) {
+            const raw = rolls.length ? rolls[0] : entry.result;
+            if (raw === 20) { cls = ' crit';   flag = '大成功'; }
+            if (raw === 1)  { cls = ' fumble'; flag = '大失败'; }
+        }
+
+        const div = document.createElement('div');
+        div.className = 'dice-card' + cls;
+        if (entry.timestamp) div.title = fmtFull(entry.timestamp);
+        div.innerHTML =
+            avatarHtml(entry.name, entry.role, 'dice-card-avatar') +
+            '<div class="dice-card-main">' +
+                `<div class="dice-card-head"><b>${escapeHtml(who)}</b> 投掷 ${escapeHtml(expr)}` +
+                (flag ? ` <span class="dice-card-flag">${flag}</span>` : '') + '</div>' +
+                (breakdown ? `<div class="dice-card-expr">${escapeHtml(breakdown)}</div>` : '') +
+            '</div>' +
+            `<div class="dice-card-total">${escapeHtml(String(entry.result))}</div>`;
+        return div;
+    }
+
+    // 展开面板的气泡（自己靠右，别人靠左，系统与骰子居中）
+    function buildBubbleMessage(entry, prev) {
         if (entry.kind === 'system') {
+            const div = document.createElement('div');
             div.className = 'panel-msg system';
             div.innerHTML = `<div class="panel-system-text">${escapeHtml(entry.message)}</div>`;
             return div;
         }
+        if (entry.kind === 'dice') return buildDiceCard(entry);
+
+        const div = document.createElement('div');
         const isMine = isMyMessage(entry);
-        div.className = 'panel-msg' + (isMine ? ' mine' : (entry.role === 'DM' ? ' from-dm' : ''));
+        const grouped = canGroup(entry, prev);
+        div.className = 'panel-msg'
+            + (isMine ? ' mine' : (entry.role === 'DM' ? ' from-dm' : ''))
+            + (grouped ? ' grouped' : '');
         const tag = entry.to
             ? `<div class="panel-private-tag">🔒 ${escapeHtml(isMine ? '私聊 → ' + entry.to : '私聊给我')}</div>`
             : '';
+        const time = fmtTime(entry.timestamp);
+        const folded = shouldFold(entry.message);
         div.innerHTML =
             avatarHtml(entry.name, entry.role, 'panel-avatar') +
             '<div class="panel-body">' +
-                `<div class="panel-sender">${escapeHtml(displayName(entry))}</div>` +
+                `<div class="panel-sender">${escapeHtml(displayName(entry))}` +
+                    (time ? `<span class="panel-time">${time}</span>` : '') +
+                '</div>' +
                 tag +
-                `<div class="panel-bubble${entry.to ? ' private' : ''}">${renderMessageHtml(entry.message)}</div>` +
+                `<div class="panel-bubble${entry.to ? ' private' : ''}${folded ? ' folded' : ''}"` +
+                    (entry.timestamp ? ` title="${escapeAttr(fmtFull(entry.timestamp))}"` : '') + '>' +
+                    renderMessageHtml(entry.message) +
+                '</div>' +
+                (folded ? '<button class="bubble-fold">展开</button>' : '') +
             '</div>';
+        if (folded) {
+            const btn = div.querySelector('.bubble-fold');
+            const bubble = div.querySelector('.panel-bubble');
+            btn.addEventListener('click', () => {
+                btn.textContent = bubble.classList.toggle('folded') ? '展开' : '收起';
+            });
+        }
         return div;
     }
 
+    // 一条消息可能带出一个日期分隔；跨天时同时切断连发分组
+    function chatNodesFor(entry, prev) {
+        const frag = document.createDocumentFragment();
+        const divider = dayDividerFor(entry, prev);
+        if (divider) frag.appendChild(divider);
+        frag.appendChild(buildBubbleMessage(entry, divider ? null : prev));
+        return frag;
+    }
+
+    // --- 滚动位置 ---
+    // 用户往上翻历史时不该被新消息强行拉到底，改成给一个可点的提示
+    function isChatAtBottom() {
+        const el = chatPanelMessages;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    }
+
+    function scrollChatToBottom() {
+        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+        document.getElementById('chat-jump-latest').classList.remove('show');
+    }
+
     function appendChatEntry(entry) {
+        const stick = isChatAtBottom();
         chatLog.push(entry);
         if (chatLog.length > MAX_CHAT_LOG) chatLog.shift();
-        chatPanelMessages.appendChild(buildBubbleMessage(entry));
-        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+        chatPanelMessages.appendChild(chatNodesFor(entry, chatLog[chatLog.length - 2] || null));
+        if (stick) scrollChatToBottom();
+        else document.getElementById('chat-jump-latest').classList.add('show');
         flagChatMention(entry);
     }
 
     // 名单变化后重渲染（头像颜色 / @高亮依赖名单）
     function rerenderChat() {
+        const stick = isChatAtBottom();
+        const prevTop = chatPanelMessages.scrollTop;
         chatPanelMessages.innerHTML = '';
-        chatLog.forEach(entry => chatPanelMessages.appendChild(buildBubbleMessage(entry)));
-        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+        chatLog.forEach((entry, i) => {
+            chatPanelMessages.appendChild(chatNodesFor(entry, chatLog[i - 1] || null));
+        });
+        // 内容没变，高度也没变，直接把滚动位置放回去
+        if (stick) scrollChatToBottom(); else chatPanelMessages.scrollTop = prevTop;
     }
 
     function clearChatLog() {
         chatLog.length = 0;
         chatPanelMessages.innerHTML = '';
+        document.getElementById('chat-jump-latest').classList.remove('show');
     }
+
+    // 用户自己滚回底部后，提示就不用留着了
+    chatPanelMessages.addEventListener('scroll', () => {
+        if (isChatAtBottom()) document.getElementById('chat-jump-latest').classList.remove('show');
+    });
 
     // 被私聊或被 @ 到，且聊天窗没开着 -> 红点
     function flagChatMention(entry) {
@@ -2098,12 +2346,29 @@
             name: data.name,
             role: data.role,
             message: data.message,
-            to: data.to || null
+            to: data.to || null,
+            timestamp: data.timestamp || Date.now()
+        });
+    }
+
+    // 实时广播用 playerName，历史回放用 name
+    function addDiceMessage(data) {
+        appendChatEntry({
+            kind: 'dice',
+            name: data.playerName || data.name,
+            role: data.role,
+            sides: data.sides,
+            result: data.result,
+            expr: data.expr || null,
+            rolls: data.rolls || null,
+            modifier: data.modifier || 0,
+            count: data.count || 1,
+            timestamp: data.timestamp || Date.now()
         });
     }
 
     function addSystemMessage(message) {
-        appendChatEntry({ kind: 'system', message });
+        appendChatEntry({ kind: 'system', message, timestamp: Date.now() });
     }
 
     // --- @ 提及建议框 ---
@@ -2567,7 +2832,7 @@
     // --- 聊天面板（统一走浮动窗口管理）---
     function openChatPanel() {
         showPanel('panel-chat');
-        chatPanelMessages.scrollTop = chatPanelMessages.scrollHeight;
+        scrollChatToBottom();
         document.getElementById('chat-panel-input').focus();
     }
 
@@ -2581,28 +2846,6 @@
         for (let i = 0; i < count; i++) rolls.push(Math.floor(Math.random() * sides) + 1);
         const total = rolls.reduce((a, b) => a + b, 0) + modifier;
         socket.emit('dice:roll', { sides, result: total, rolls, modifier, count, expr });
-    }
-
-    function formatDiceMessage(data) {
-        const who = data.role === 'DM' ? 'DM' : data.playerName;
-        if (data.expr) {
-            const count = data.count || 1;
-            const modifier = data.modifier || 0;
-            const rolls = data.rolls || [];
-            if (count === 1 && modifier === 0) {
-                return `${who} 投掷了 ${data.expr}，结果是 ${data.result}`;
-            }
-            let breakdown;
-            if (modifier < 0) {
-                breakdown = rolls.join(' + ') + ' - ' + Math.abs(modifier);
-            } else if (modifier > 0) {
-                breakdown = [...rolls.map(String), String(modifier)].join(' + ');
-            } else {
-                breakdown = rolls.join(' + ');
-            }
-            return `${who} 投掷了 ${data.expr}，结果是 ${breakdown} = ${data.result}`;
-        }
-        return `${who} 投掷了 d${data.sides}，结果是 ${data.result}`;
     }
 
     function handleChatKeypress(e) {
@@ -2680,7 +2923,7 @@
                 if (entry.type === 'chat') {
                     addChatMessage(entry);
                 } else if (entry.type === 'dice') {
-                    addSystemMessage(formatDiceMessage({ ...entry, playerName: entry.name }));
+                    addDiceMessage(entry);
                 }
             });
         }
@@ -2931,7 +3174,7 @@
     });
 
     socket.on('dice:result', (data) => {
-        addSystemMessage(formatDiceMessage(data));
+        addDiceMessage(data);
     });
 
     socket.on('chat:message', (data) => {
@@ -3191,6 +3434,12 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // escapeHtml 靠 textContent 实现，不会转义引号——往属性值里塞必须用这个
+    function escapeAttr(text) {
+        return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                           .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     // 同步UI中的专长内容到currentCharacter

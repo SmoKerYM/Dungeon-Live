@@ -143,6 +143,10 @@ npm start       # Production server
 - Private messages (`@` mentions) are visible to **sender + target only** — the DM is NOT an implicit observer of player-to-player whispers; `joinSuccess` filters `chatHistory` per user via `isChatEntryVisibleTo()`
 - `@所有人` is a normal public broadcast (highlighted client-side), not a private message
 - Client keeps `rosterData` (from `roster:sync`) — it drives the `@` suggestion popup, avatar colors, and `@` highlighting; the chat is re-rendered from `chatLog` whenever the roster changes
+- Chat entries carry a `kind` (`chat` / `system` / `dice`) and render through `chatNodesFor(entry, prev)`, which needs the *previous* entry: consecutive messages from the same sender within `GROUP_WINDOW_MS` (5 min) are grouped (`.grouped` hides the repeated avatar and sender row), and a date change between two entries inserts a `.chat-day-divider` — which also breaks the group
+- Dice rolls render as a `.dice-card` (roller, expression, breakdown, total), not as a system message. A single d20 showing 20 or 1 gets the `crit` / `fumble` treatment. `dice:result` carries the same `timestamp` as its history entry so a live roll and a replayed one look identical
+- `renderMessageHtml()` scans for `@mentions` and `http(s)` URLs in one pass, so the two can't cut each other apart. Only `http`/`https` are linkified; trailing sentence punctuation is pushed back out of the href. `escapeHtml()` is implemented via `textContent`, which does **not** escape quotes — anything going into an attribute must use `escapeAttr()`
+- New messages only auto-scroll when the user is already near the bottom (`isChatAtBottom()`); otherwise `#chat-jump-latest` appears instead of yanking them away from the history they were reading. Messages over `FOLD_CHARS` (420) render folded with a 展开/收起 toggle
 - Notes panel split into left (shared textarea) and right (登场人物 table with name/info columns)
 - Player colors: orange, yellow, green, blue, purple (5 slots)
 - DM-only UI elements use `.dm-only` CSS class
