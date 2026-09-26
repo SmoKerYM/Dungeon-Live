@@ -1181,7 +1181,10 @@ io.on('connection', (socket) => {
 
   // 保存 DM UI 偏好（画笔/矩形颜色，仅 DM）
   // 浮动窗口位置 / 固定状态（所有人都可存，按自己的名字分桶）
-  socket.on('layout:save', ({ panelId, x, y, pinned }) => {
+  // 位置以「贴哪条边 + 到该边的距离」存储（ax/ox、ay/oy），不是绝对坐标——
+  // 浏览器缩放会改变视口的 CSS 像素尺寸，绝对坐标在新比例下会落到界外。
+  // 旧的 x/y 仍然读写，客户端首次解析时就地升级成锚点
+  socket.on('layout:save', ({ panelId, x, y, ax, ox, ay, oy, pinned }) => {
     const player = gameState.players.get(socket.id);
     if (!player || typeof panelId !== 'string') return;
 
@@ -1191,6 +1194,10 @@ io.on('connection', (socket) => {
 
     if (Number.isFinite(x)) entry.x = Math.round(x);
     if (Number.isFinite(y)) entry.y = Math.round(y);
+    if (ax === 'left' || ax === 'right')  entry.ax = ax;
+    if (ay === 'top'  || ay === 'bottom') entry.ay = ay;
+    if (Number.isFinite(ox)) entry.ox = Math.round(ox);
+    if (Number.isFinite(oy)) entry.oy = Math.round(oy);
     if (typeof pinned === 'boolean') entry.pinned = pinned;
 
     scheduleUiPrefsSave();

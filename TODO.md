@@ -4,19 +4,15 @@
 
 ---
 
-## 1. 浏览器缩放后浮动窗口的默认生成位置会变
+## 1. ~~浏览器缩放后浮动窗口的默认生成位置会变~~（2026-09-26 已完成）
 
-**现象**：改变浏览器缩放比例后，浮动窗口不再出现在预期位置。
+**根因**：位置以绝对 CSS 像素存储。缩放改变的是视口的 CSS 像素尺寸，于是旧坐标落到界外被 `clampToViewport` 拉回边界；此后 DOM 里只剩被夹过的值，缩放回去也回不来 —— `resize` 监听拿 `offsetLeft/offsetTop` 顺延，等于把错误固化。
 
-**排查方向**：不完全是 relative position 的问题，更可能是**位置以绝对像素存储**。
+**做法**：改存锚点 `{ ax: 'left'|'right', ox, ay: 'top'|'bottom', oy }`（贴哪条边 + 到该边的距离）。`resize` 与 `ResizeObserver` 统一走 `relayoutPanel()`，从 `savedLayout` 重新推导而不是顺延 DOM 值。旧的纯 `x/y` 记录在 `resolveSavedPos()` 首次读取时就地升级成锚点。
 
-- `savedLayout[panelId] = { x, y }` 存的是 CSS 像素绝对值（[game.html:2476](public/game.html:2476) 拖拽结束时写入）。缩放会改变视口的 CSS 像素尺寸，于是同一组 x/y 在新比例下落点就偏了，甚至被 `clampToViewport`（[:2343](public/game.html:2343)）拉回边界，看起来就是"位置变了"。
-- `defaultPanelPos`（[:2317](public/game.html:2317)）混用了两类基准：贴按钮的那几个读 `getBoundingClientRect()`，地图/骰子/角色卡的特判读 `window.innerWidth/innerHeight` 和常量 `EDGE_MARGIN`。缩放下这两类的相对关系不一致。
-- `window.addEventListener('resize')`（[:2548](public/game.html:2548)）只做了 re-clamp，没有按新视口重新推导位置。注意浏览器缩放**会**触发 resize。
+**结论修正**：`defaultPanelPos` 混用 `getBoundingClientRect()` 与 `window.innerWidth/innerHeight` 并不是问题 —— 两者都是按当前视口实时读取的，任何缩放比例下都自洽，实测七个窗口在 1400×900 / 1000×700 / 900×650 下默认位置都正确。
 
-**可选做法**：把保存的位置改为相对量（比例，或"贴哪条边 + 偏移"），在 `showPanel` 时按当前视口换算回像素；服务端 `layouts` 的数据形状要同步调整，并兼容已存的旧绝对值。
-
-**验证**：在 67% / 100% / 150% 三档缩放下，分别检查各窗口的默认位置和拖拽后重新展开的位置。
+**验证**：拖到右下角后视口 1400×900 → 900×650 → 1400×900 往返，位置精确还原；换视口重新登录后固定窗口按锚点复现；旧格式数据升级后位置不变。
 
 ---
 

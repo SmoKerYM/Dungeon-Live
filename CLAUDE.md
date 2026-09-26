@@ -99,7 +99,7 @@ coc_app/
   characterNotes: [{ name, info }],
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., to?, toRole?, timestamp }],  // max 100, FIFO; `to` marks a private message
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
-  uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { x, y, pinned } } } },
+  uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } } },
   world: {
     placedMaps: [{ id, assetId, gridX, gridY, gridWidth, isLocked }],
     tokens:     [{ id, color, gridX, gridY }],
@@ -152,7 +152,8 @@ npm start       # Production server
 - `io.emit` used for all world mutations (no per-player filtering)
 - **Disconnect grace period** (`DISCONNECT_GRACE_MS`, default 120s, overridable via env): a dropped socket does NOT mean the player left. Browsers (Safari especially) suspend background tabs, which kills the Socket.IO heartbeat. On `disconnect` the player is only flagged `online: false` — roster entry, token, and color are all retained — and a timer runs `finalizePlayerLeave()` when it expires. Reconnecting with the same name+role inside the window silently takes over the old session (`takeOverPreviousSession()`), with no `playerJoined` system message
 - A DM's seat is held for the whole grace window; only the same name may reclaim it
-- Float panel positions persist **per user name** in `data/ui_prefs.json` under `layouts[name][panelId] = { x, y, pinned }` (there are no accounts, so the name is the identity). `joinSuccess` returns the caller's bucket as `layout`; the client replays pinned panels on load
+- Float panel positions persist **per user name** in `data/ui_prefs.json` under `layouts[name][panelId]` (there are no accounts, so the name is the identity). `joinSuccess` returns the caller's bucket as `layout`; the client replays pinned panels on load
+- A panel's position is stored as an **anchor**, not absolute pixels: `{ ax: 'left'|'right', ox, ay: 'top'|'bottom', oy }` — which edge the panel sits nearer to, and its distance from that edge. Browser zoom changes the viewport's size in CSS pixels, so an absolute `x/y` saved at one zoom level lands off-screen at another, gets pulled back by `clampToViewport`, and the original position is then lost for good (the DOM only holds the clamped value). `resize` / `ResizeObserver` therefore re-derive the position from `savedLayout` via `relayoutPanel()` rather than nudging `offsetLeft/offsetTop`. Legacy entries that only have `x/y` are upgraded to anchors in place the first time `resolveSavedPos()` reads them; `x/y` are still written alongside for readability but are never read once anchors exist
 - The HP HUD binds to `myCharacter` (the card whose name equals `userName`), **not** `currentCharacter` (whatever the character panel is showing). A player browsing someone else's sheet must still see their own HP, and the ± buttons must still edit their own card. The DM never sees the bar at all (`isDM` short-circuits `renderHpHud`)
 - `character:setHp` ({name, cur, max}) touches only the `hp` field and rebroadcasts `character:hpUpdated`. The HP HUD uses it rather than `character:save` because the full-card save reads the character sheet's DOM inputs, which are empty unless the sheet has been populated — saving from the HUD that way would wipe the card. Players may only set their own (`name === player.name`); the DM may set anyone's
 - `player:leave` (the 退出 button) bypasses the grace period entirely — `finalizePlayerLeave()` runs immediately, so a deliberate exit is instant while a suspended tab is not

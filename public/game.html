@@ -2301,6 +2301,63 @@
         return { x: Math.max(m, Math.min(x, maxX)), y: Math.max(m, Math.min(y, maxY)) };
     }
 
+    // --- 位置以「贴哪条边 + 到该边的距离」存储，而不是绝对像素 ---
+    // 浏览器缩放改变的是视口的 CSS 像素尺寸：一组绝对坐标在新比例下会落到界外，
+    // 被 clampToViewport 拉到边上；缩放回去之后 DOM 里已经是被夹过的值，位置就永久丢了。
+    // 记成「离右边 40px」这类相对量，任何缩放比例下都还原到同一个视觉位置。
+    function toAnchor(x, y, panel) {
+        const w = panel.offsetWidth, h = panel.offsetHeight;
+        const vw = window.innerWidth, vh = window.innerHeight;
+        // 按窗口中心落在视口的哪一半来决定贴哪条边
+        const ax = (x + w / 2) <= vw / 2 ? 'left' : 'right';
+        const ay = (y + h / 2) <= vh / 2 ? 'top'  : 'bottom';
+        return {
+            ax, ox: Math.round(ax === 'left' ? x : vw - (x + w)),
+            ay, oy: Math.round(ay === 'top'  ? y : vh - (y + h))
+        };
+    }
+
+    function fromAnchor(a, panel) {
+        const w = panel.offsetWidth, h = panel.offsetHeight;
+        return {
+            x: a.ax === 'right'  ? window.innerWidth  - w - a.ox : a.ox,
+            y: a.ay === 'bottom' ? window.innerHeight - h - a.oy : a.oy
+        };
+    }
+
+    function hasAnchor(a) {
+        return !!a && (a.ax === 'left' || a.ax === 'right') && (a.ay === 'top' || a.ay === 'bottom')
+            && Number.isFinite(a.ox) && Number.isFinite(a.oy);
+    }
+
+    // 取该窗口记住的位置；没有记录返回 null（交给 defaultPanelPos）
+    function resolveSavedPos(panelId, panel) {
+        const saved = savedLayout[panelId];
+        if (hasAnchor(saved)) return fromAnchor(saved, panel);
+        // 旧数据只有绝对像素：按当前视口就地升级成锚点并回存，此后就跟着缩放走
+        if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+            const a = toAnchor(saved.x, saved.y, panel);
+            Object.assign(saved, a);
+            socket.emit('layout:save', Object.assign({ panelId }, a));
+            return { x: saved.x, y: saved.y };
+        }
+        return null;
+    }
+
+    function persistPanelPos(panelId, panel, x, y) {
+        const a = toAnchor(x, y, panel);
+        savedLayout[panelId] = Object.assign({}, savedLayout[panelId], a, { x: Math.round(x), y: Math.round(y) });
+        socket.emit('layout:save', Object.assign({ panelId, x: Math.round(x), y: Math.round(y) }, a));
+    }
+
+    // 视口尺寸变了（缩放 / 改窗口大小 / 面板内容撑大）就按锚点重新落位。
+    // 关键是从 savedLayout 重新推导，而不是拿 DOM 里可能已被夹过的 offsetLeft 顺延
+    function relayoutPanel(panel) {
+        const pos = resolveSavedPos(panel.id, panel);
+        if (pos) placePanel(panel.id, pos.x, pos.y);
+        else placePanel(panel.id, panel.offsetLeft, panel.offsetTop);
+    }
+
     // 悬浮展开时尽量不压在已经固定显示的窗口上
     function findFreeSpot(panel, preferred) {
         const blockers = [...document.querySelectorAll('.float-panel.show')]
@@ -2343,9 +2400,7 @@
         panel.style.zIndex = ++topZ;
 
         // 先显示再量尺寸，否则 offsetWidth 为 0
-        const saved = savedLayout[panelId];
-        const hasSaved = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y);
-        let pos = hasSaved ? { x: saved.x, y: saved.y } : defaultPanelPos(panelId, panel);
+        let pos = resolveSavedPos(panelId, panel) || defaultPanelPos(panelId, panel);
         // 固定的窗口回到用户放的位置；临时展开的则避开已固定的窗口
         if (!isPinned(panelId)) pos = findFreeSpot(panel, clampToViewport(pos.x, pos.y, panel));
         placePanel(panelId, pos.x, pos.y);
@@ -2425,9 +2480,7 @@
         document.addEventListener('mouseup', () => {
             if (!dragging) return;
             dragging = false;
-            const x = panel.offsetLeft, y = panel.offsetTop;
-            savedLayout[panel.id] = Object.assign({}, savedLayout[panel.id], { x, y });
-            socket.emit('layout:save', { panelId: panel.id, x, y });
+            persistPanelPos(panel.id, panel, panel.offsetLeft, panel.offsetTop);
         });
     }
 
@@ -2475,11 +2528,9 @@
 
             makeDraggable(panel);
 
-            // 内容撑大窗口后（比如载入角色卡）重新夹回视口内
+            // 内容撑大窗口后（比如载入角色卡）按锚点重新落位
             new ResizeObserver(() => {
-                if (panel.classList.contains('show')) {
-                    placePanel(panel.id, panel.offsetLeft, panel.offsetTop);
-                }
+                if (panel.classList.contains('show')) relayoutPanel(panel);
             }).observe(panel);
         });
     }
@@ -2498,11 +2549,9 @@
         });
     }
 
-    // 窗口尺寸变化时把飘到界外的窗口拉回来
+    // 视口变化（含浏览器缩放，缩放同样会触发 resize）后按锚点重新落位
     window.addEventListener('resize', () => {
-        document.querySelectorAll('.float-panel.show').forEach(panel => {
-            placePanel(panel.id, panel.offsetLeft, panel.offsetTop);
-        });
+        document.querySelectorAll('.float-panel.show').forEach(relayoutPanel);
     });
 
     // --- 退出游戏 ---
