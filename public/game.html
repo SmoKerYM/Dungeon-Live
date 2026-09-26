@@ -2870,11 +2870,41 @@
     let chatHistoryIndex = -1;     // -1 = 没在翻历史，正在编辑草稿
     let chatHistoryDraft = '';     // 开始翻之前手上那条没发出去的内容
 
+    // 存在 sessionStorage 里，刷新页面（常有，为了拿新版本）不会丢。
+    // 按名字分桶，和浮动窗口布局一样——这里没有账号，名字就是身份
+    function chatInputHistoryKey() {
+        return 'chatInputHistory:' + (userName || '');
+    }
+
+    // 隐私模式 / 禁用站点数据时读写都可能抛，失败就退回纯内存，不该拖垮聊天
+    function loadChatInputHistory() {
+        try {
+            const arr = JSON.parse(sessionStorage.getItem(chatInputHistoryKey()) || '[]');
+            if (!Array.isArray(arr)) return;
+            arr.filter(t => typeof t === 'string' && t)
+               .slice(-CHAT_INPUT_HISTORY_MAX)
+               .forEach(t => chatInputHistory.push(t));
+        } catch (err) {
+            console.error('读取聊天输入历史失败:', err);
+        }
+    }
+
+    function saveChatInputHistory() {
+        try {
+            sessionStorage.setItem(chatInputHistoryKey(), JSON.stringify(chatInputHistory));
+        } catch (err) {
+            console.error('保存聊天输入历史失败:', err);
+        }
+    }
+
+    loadChatInputHistory();
+
     function pushChatInputHistory(text) {
         // 连续重复的不占两格，跟 shell 一样
         if (chatInputHistory[chatInputHistory.length - 1] !== text) {
             chatInputHistory.push(text);
             if (chatInputHistory.length > CHAT_INPUT_HISTORY_MAX) chatInputHistory.shift();
+            saveChatInputHistory();
         }
         chatHistoryIndex = -1;
         chatHistoryDraft = '';
