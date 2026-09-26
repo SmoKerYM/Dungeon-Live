@@ -61,6 +61,8 @@
         return '<div class="dice-damage">' +
             `<div class="dice-damage-head"><b>${esc(damage.label || '伤害')}</b> ` +
             `${esc(damage.expr || '')}${critTag}` +
+            // 表达式和结果之间要有等号，否则「2d4+3 7」读起来像两个并列的数
+            '<span class="dice-damage-eq">=</span>' +
             `<span class="dice-damage-total">${esc(String(damage.total))}</span></div>` +
             `<div class="dice-damage-expr">${breakdown}</div>` +
         '</div>';

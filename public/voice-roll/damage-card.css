@@ -17,11 +17,18 @@
     color: #e67e22;   /* 伤害用橙色，和命中投标签的黄色区分开 */
 }
 
-/* 总伤害跟在表达式后面，比正文亮一档；卡片右侧的大数字是命中投的，别抢它 */
+/* 表达式和结果之间的等号：比结果小一档，只做连接不抢视线 */
+.dice-damage-eq {
+    margin: 0 4px 0 6px;
+    color: #8a949e;
+}
+
+/* 总伤害跟在等号后面，放大到一眼能读；卡片右侧 19px 的大数字是命中投的，别抢它 */
 .dice-damage-total {
-    margin-left: 6px;
+    font-size: 15px;
     font-weight: bold;
     color: #e67e22;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 
