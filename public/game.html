@@ -559,22 +559,34 @@
         }
         #chat-panel-input-container { display: flex; padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); position: relative; flex-shrink: 0; }
         /* 气泡消息（Teams 风格） */
-        .panel-msg { display: flex; gap: 8px; align-items: flex-start; }
-        .panel-msg.mine { flex-direction: row-reverse; }
+        /* 外层是列：名字行在上，头像与气泡在同一行——头像要跟气泡齐平，
+           跟名字齐平会让它悬在气泡上方半格 */
+        .panel-msg { display: flex; flex-direction: column; align-items: flex-start; }
+        .panel-msg.mine { align-items: flex-end; }
+        .panel-row { display: flex; gap: 8px; align-items: flex-start; max-width: 88%; }
+        .panel-msg.mine .panel-row { flex-direction: row-reverse; }
         .panel-avatar {
             width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
             display: flex; align-items: center; justify-content: center;
             font-size: 12px; font-weight: bold; color: white;
         }
-        .panel-body { display: flex; flex-direction: column; max-width: 78%; min-width: 0; }
+        /* flex-start 而不是默认的 stretch：否则短消息的气泡会被名字行撑宽 */
+        .panel-body { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
         .panel-msg.mine .panel-body { align-items: flex-end; }
         .panel-sender {
             font-size: 11px; color: #bdc3c7; margin-bottom: 3px; padding: 0 2px;
             display: flex; gap: 6px; align-items: baseline;
+            margin-left: 36px;   /* 28px 头像 + 8px 间距，保持名字与气泡左边缘对齐 */
         }
-        .panel-msg.mine .panel-sender { flex-direction: row-reverse; }
+        .panel-msg.mine .panel-sender { flex-direction: row-reverse; margin-left: 0; margin-right: 36px; }
         .panel-time { font-size: 10px; color: #7f8c99; flex-shrink: 0; }
-        .panel-private-tag { font-size: 10px; color: #c9a6e0; margin-bottom: 3px; padding: 0 2px; }
+        /* 和名字行一样待在气泡外面，缩进同样的一个头像宽——
+           留在气泡里的话，头像会被它顶高一行，就跟气泡对不齐了 */
+        .panel-private-tag {
+            font-size: 10px; color: #c9a6e0; margin-bottom: 3px; padding: 0 2px;
+            margin-left: 36px;
+        }
+        .panel-msg.mine .panel-private-tag { margin-left: 0; margin-right: 36px; }
         /* 同一人连发：省掉重复的头像和名字，只把气泡贴紧上一条 */
         .panel-msg.grouped { margin-top: -7px; }
         .panel-msg.grouped .panel-avatar { visibility: hidden; }
@@ -616,7 +628,7 @@
         }
         .panel-msg.mine .bubble-fold { align-self: flex-end; }
         .bubble-fold:hover { background: rgba(255,255,255,0.15); color: #ecf0f1; }
-        .panel-msg.system { justify-content: center; }
+        .panel-msg.system { align-items: center; }
         .panel-system-text {
             font-family: 'Courier New', Consolas, monospace;
             font-size: 11px; color: #f1c40f; font-style: italic; text-align: center;
@@ -2255,17 +2267,19 @@
         const time = fmtTime(entry.timestamp);
         const folded = shouldFold(entry.message);
         div.innerHTML =
-            avatarHtml(entry.name, entry.role, 'panel-avatar') +
-            '<div class="panel-body">' +
-                `<div class="panel-sender">${escapeHtml(displayName(entry))}` +
-                    (time ? `<span class="panel-time">${time}</span>` : '') +
+            `<div class="panel-sender">${escapeHtml(displayName(entry))}` +
+                (time ? `<span class="panel-time">${time}</span>` : '') +
+            '</div>' +
+            tag +
+            '<div class="panel-row">' +
+                avatarHtml(entry.name, entry.role, 'panel-avatar') +
+                '<div class="panel-body">' +
+                    `<div class="panel-bubble${entry.to ? ' private' : ''}${folded ? ' folded' : ''}"` +
+                        (entry.timestamp ? ` title="${escapeAttr(fmtFull(entry.timestamp))}"` : '') + '>' +
+                        renderMessageHtml(entry.message) +
+                    '</div>' +
+                    (folded ? '<button class="bubble-fold">展开</button>' : '') +
                 '</div>' +
-                tag +
-                `<div class="panel-bubble${entry.to ? ' private' : ''}${folded ? ' folded' : ''}"` +
-                    (entry.timestamp ? ` title="${escapeAttr(fmtFull(entry.timestamp))}"` : '') + '>' +
-                    renderMessageHtml(entry.message) +
-                '</div>' +
-                (folded ? '<button class="bubble-fold">展开</button>' : '') +
             '</div>';
         if (folded) {
             const btn = div.querySelector('.bubble-fold');
@@ -2504,6 +2518,7 @@
         const input = inputEl || document.getElementById('chat-panel-input');
         const message = input.value.trim();
         if (!message) return;
+        pushChatInputHistory(message);
         input.value = '';
         closeMentionPopup();
         const diceMatch = message.match(/^\/(\d+)?d(\d+)([+-]\d+)?$/i);
@@ -2848,6 +2863,51 @@
         socket.emit('dice:roll', { sides, result: total, rolls, modifier, count, expr });
     }
 
+    // --- 输入框历史（上下箭头调出发过的内容，跟终端一样）---
+    // 常用场景是重复投骰：投过一次 /d20 之后按上箭头 + 回车就行
+    const CHAT_INPUT_HISTORY_MAX = 50;
+    const chatInputHistory = [];   // 最新的在末尾
+    let chatHistoryIndex = -1;     // -1 = 没在翻历史，正在编辑草稿
+    let chatHistoryDraft = '';     // 开始翻之前手上那条没发出去的内容
+
+    function pushChatInputHistory(text) {
+        // 连续重复的不占两格，跟 shell 一样
+        if (chatInputHistory[chatInputHistory.length - 1] !== text) {
+            chatInputHistory.push(text);
+            if (chatInputHistory.length > CHAT_INPUT_HISTORY_MAX) chatInputHistory.shift();
+        }
+        chatHistoryIndex = -1;
+        chatHistoryDraft = '';
+    }
+
+    function setChatInputValue(input, value) {
+        input.value = value;
+        // 赋值后光标默认停在开头，挪到末尾才能接着打
+        input.setSelectionRange(value.length, value.length);
+        closeMentionPopup();
+    }
+
+    // dir = -1 往更早翻，+1 往更近翻
+    function recallChatInputHistory(input, dir) {
+        if (chatInputHistory.length === 0) return;
+
+        if (chatHistoryIndex === -1) {
+            if (dir > 0) return;                       // 没在翻历史，按下箭头不做事
+            chatHistoryDraft = input.value;            // 先把草稿收好
+            chatHistoryIndex = chatInputHistory.length - 1;
+        } else {
+            const next = chatHistoryIndex + dir;
+            if (next < 0) return;                      // 已经是最早一条，停在这
+            if (next >= chatInputHistory.length) {     // 翻过最新一条，回到草稿
+                chatHistoryIndex = -1;
+                setChatInputValue(input, chatHistoryDraft);
+                return;
+            }
+            chatHistoryIndex = next;
+        }
+        setChatInputValue(input, chatInputHistory[chatHistoryIndex]);
+    }
+
     function handleChatKeypress(e) {
         // 建议框打开时，方向键/回车/Tab/Esc 归建议框使用
         if (mentionCtx && mentionCtx.input === e.target) {
@@ -2856,6 +2916,9 @@
             if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyMention(); return; }
             if (e.key === 'Escape') { e.preventDefault(); closeMentionPopup(); return; }
         }
+        // 单行输入框里上下箭头本来只是把光标挪到首尾，让给历史更有用
+        if (e.key === 'ArrowUp')   { e.preventDefault(); recallChatInputHistory(e.target, -1); return; }
+        if (e.key === 'ArrowDown') { e.preventDefault(); recallChatInputHistory(e.target,  1); return; }
         if (e.key === 'Enter') sendChat(e.target);
     }
 
