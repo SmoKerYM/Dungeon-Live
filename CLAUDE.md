@@ -151,6 +151,7 @@ coc_app/
 {
   "CharName": {
     name, hp: { cur, max },
+    ac,                 // 护甲等级，默认 12；老卡没有这个字段，前端按 DEFAULT_AC 显示、保存时补上
     proficiencyBonus,
     attributes: { strength, dexterity, constitution, intelligence, wisdom, charisma },
     savingThrows: [],   // max 2
@@ -170,6 +171,8 @@ npm start       # Production server
 
 ## Important Notes
 - HTML **and the standalone `.js` / `.css` under `public/voice-roll/`** are served with `Cache-Control: no-cache` (see the `express.static` options): nearly every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build — and a cached `voice-roll.js` freezes that module the same way. `no-cache` only forces ETag revalidation — unchanged content still returns 304
+- **护甲（AC）**在角色卡顶栏的「血量」和「熟练加值」之间，编辑方式跟熟练加值一样（编辑模式下的 number 输入框）。默认 `DEFAULT_AC = 12`，`characters.json` 里的老卡没有 `ac` 字段，读卡时按默认值显示、保存时补上。它**没有**进 `characterFingerprint()`：AI 总结讲的是「这个人擅长什么」，护甲不改变那个结论，算进去只会让所有卡的缓存白白失效
+- **iPad 的双指捏合**被接管成地图缩放（`initStagePinchZoom`）。Safari 默认把捏合当成缩放整个页面（放大顶飞布局、缩小退到标签页总览），要三道一起上才拦得住：`<meta name="viewport">` 的 `user-scalable=no, maximum-scale=1`、`#viewport { touch-action: none }`、以及全局 `preventDefault` 掉 Safari 专有的 `gesturestart/gesturechange/gestureend`。少任何一道都还会漏。接管后双指同时支持缩放和平移（按两指中点换算，和滚轮缩放共用 `MIN_ZOOM/MAX_ZOOM` 夹紧）；第二根手指落下时要 `konvaStage.stopDrag()`，否则 Konva 会继续跟着第一根手指甩画布
 - **AI character summary**: `character:summarize` calls DeepSeek server-side (`DEEPSEEK_API_KEY` env var — never exposed to the client) and caches the result in the character's `aiSummary`. The cache key is `characterFingerprint()`, a hash of the fields that actually change the conclusion (attributes / proficiency / saves / skills / feats) — editing HP does not trigger regeneration. Model is `deepseek-flash` with `thinking: { type: 'disabled' }`; the reasoning variant costs 3-4x for no benefit on this task
 - **语音掷骰（voice roll）**：玩家复述 DM 让自己做的检定（「带优势的隐匿」「过魅力豁免」「撬个锁」「命中投」），系统判出「哪类检定 × 哪一项 × 优劣势」，服务端掷 d20 并在聊天里发一张带标签的骰子卡片。实现全部在 `lib/voice-roll/`（服务端）和 `public/voice-roll/`（前端），`server.js` / `game.html` 只做接线
 - 意图类型：`ability` / `save` / `skill` / `attack`（命中投）/ `initiative` / `deathSave`

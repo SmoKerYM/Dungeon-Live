@@ -2,10 +2,13 @@
 <html lang="zh-CN" class="sl-theme-dark">
 <head>
     <meta charset="UTF-8">
+    <!-- iPad 上不给页面本身留缩放余地：双指捏合要归地图视角用（见 initStagePinchZoom） -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>DND 线上跑团地图工具 - 多人协作版</title>
     <style>
         * { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; box-sizing: border-box; }
-        body { margin: 0; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #1a1a1a; color: white; }
+        /* manipulation 关掉双击放大，但保留浮窗里的滚动 */
+        body { margin: 0; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #1a1a1a; color: white; touch-action: manipulation; }
 
         /* ===== 全屏地图 + 悬浮 UI 外壳 ===== */
         :root {
@@ -276,7 +279,8 @@
         .action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* 画布与地图 */
-        #viewport { position: fixed; inset: 0; display: flex; background: #1a1a1a; overflow: hidden; z-index: 1; }
+        /* touch-action: none —— 地图区域的触摸一律自己处理，不交给浏览器去滚动/缩放页面 */
+        #viewport { position: fixed; inset: 0; display: flex; background: #1a1a1a; overflow: hidden; z-index: 1; touch-action: none; }
 
         /* Konva 网格世界容器 */
         #world-container {
@@ -940,13 +944,13 @@
         #char-sheet { display: none; }
         #char-sheet.visible { display: block; }
 
-        /* 顶部一行：姓名 / 血量 / 熟练加值 */
+        /* 顶部一行：姓名 / 血量 / 护甲 / 熟练加值 */
         .char-header {
-            display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+            display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px;
             align-items: end; margin-bottom: 12px;
         }
         .char-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-        /* 血量和熟练加值的数字是居中的，标题默认左对齐就会偏在数字左边一截，
+        /* 血量、护甲、熟练加值的数字是居中的，标题默认左对齐就会偏在数字左边一截，
            所以除了姓名那栏（输入框内容左对齐），标题一律跟着数字居中 */
         .char-field:not(.char-field-name) { align-items: center; }
         .char-field .section-title {
@@ -964,7 +968,7 @@
         .char-field .hp-inputs { display: flex; align-items: center; gap: 4px; }
         .char-field .hp-inputs input { width: 54px; text-align: center; }
         .char-field .hp-inputs span { color: #8b95ab; }
-        #proficiency-bonus { width: 54px; text-align: center; }
+        #proficiency-bonus, #char-ac { width: 54px; text-align: center; }
         /* WebKit 默认的 spinner 太小，放大并常驻显示 */
         .char-field input[type="number"]::-webkit-inner-spin-button,
         .char-field input[type="number"]::-webkit-outer-spin-button {
@@ -1401,7 +1405,7 @@
 
         <!-- 角色卡内容 -->
         <div id="char-sheet">
-            <!-- 顶部一行：姓名 / 血量 / 熟练加值 -->
+            <!-- 顶部一行：姓名 / 血量 / 护甲 / 熟练加值 -->
             <div class="char-header">
                 <div class="char-field char-field-name">
                     <div class="section-title">角色姓名</div>
@@ -1414,6 +1418,10 @@
                         <span>/</span>
                         <input type="number" id="char-hp-max" class="char-input" disabled value="10">
                     </div>
+                </div>
+                <div class="char-field">
+                    <div class="section-title">护甲（AC）</div>
+                    <input type="number" id="char-ac" class="char-input" disabled value="12">
                 </div>
                 <div class="char-field">
                     <div class="section-title">熟练加值</div>
@@ -3891,11 +3899,14 @@
         updateSkillsDisplay();
     }
 
+    const DEFAULT_AC = 12;   // 护甲默认值：老卡没有这个字段时也按它显示
+
     // 新建角色卡
     function newCharacter() {
         currentCharacter = {
             name: '',
             hp: { cur: 10, max: 10 },
+            ac: DEFAULT_AC,
             proficiencyBonus: 2,
             attributes: {
                 strength: 0,
@@ -3921,6 +3932,8 @@
         document.getElementById('char-name').value = currentCharacter.name;
         document.getElementById('char-hp-cur').value = currentCharacter.hp.cur;
         document.getElementById('char-hp-max').value = currentCharacter.hp.max;
+        // 这个字段是后加的，老卡里没有，一律按默认值显示（保存时补上）
+        document.getElementById('char-ac').value = Number.isFinite(currentCharacter.ac) ? currentCharacter.ac : DEFAULT_AC;
         document.getElementById('proficiency-bonus').value = currentCharacter.proficiencyBonus || 2;
         document.getElementById('attr-str').value = currentCharacter.attributes.strength;
         document.getElementById('attr-dex').value = currentCharacter.attributes.dexterity;
@@ -3935,12 +3948,15 @@
 
     // 从 UI 获取角色卡数据
     function getCharacterFromUI() {
+        // AC 用 parseInt 单独判一次：`|| DEFAULT_AC` 会把填 0 的卡悄悄改回 12
+        const ac = parseInt(document.getElementById('char-ac').value, 10);
         return {
             name: document.getElementById('char-name').value.trim(),
             hp: {
                 cur: parseInt(document.getElementById('char-hp-cur').value) || 0,
                 max: parseInt(document.getElementById('char-hp-max').value) || 0
             },
+            ac: Number.isFinite(ac) ? ac : DEFAULT_AC,
             proficiencyBonus: parseInt(document.getElementById('proficiency-bonus').value) || 2,
             attributes: {
                 strength: parseInt(document.getElementById('attr-str').value) || 0,
@@ -4316,6 +4332,7 @@
         konvaStage.add(drawingLayer);
 
         konvaStage.on('wheel', onStageWheel);
+        initStagePinchZoom();
         konvaStage.on('dragmove', onStageTransformChanged);
         konvaStage.on('dragend', onStageTransformChanged);
         // 点击空白（stage 本身）取消选中
@@ -4339,6 +4356,65 @@
         initHpTooltip();
         initNameTooltip();
     }
+
+    // ===== 触屏双指捏合缩放（iPad）=====
+    // iPad Safari 默认把双指捏合当成「缩放整个页面」：放大会顶飞布局，缩小会退到标签页总览。
+    // 三道一起上才真拦得住 —— viewport meta（不给页面缩放余地）、
+    // touch-action: none（地图区的触摸不交给浏览器）、gesture* 事件 preventDefault（Safari 专有手势）。
+    // 拦下来之后，双指做的事换成和滚轮一样的地图缩放（顺带支持双指平移）
+    let pinchState = null;   // { dist, center }：上一帧的两指间距与中点（中点是 stage 容器内坐标）
+
+    function twoFingerMetrics(touches, rect) {
+        const [a, b] = touches;
+        return {
+            dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+            center: {
+                x: (a.clientX + b.clientX) / 2 - rect.left,
+                y: (a.clientY + b.clientY) / 2 - rect.top
+            }
+        };
+    }
+
+    function initStagePinchZoom() {
+        const el = konvaStage.container();
+        el.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 2) return;
+            // 第二根手指落下就不再算拖拽，否则 Konva 会跟着第一根手指把画布甩出去
+            if (konvaStage.isDragging()) konvaStage.stopDrag();
+            pinchState = twoFingerMetrics(e.touches, el.getBoundingClientRect());
+        }, { passive: false });
+
+        el.addEventListener('touchmove', (e) => {
+            if (!pinchState || e.touches.length !== 2) return;
+            e.preventDefault();
+            if (konvaStage.isDragging()) konvaStage.stopDrag();
+            const now = twoFingerMetrics(e.touches, el.getBoundingClientRect());
+            if (!pinchState.dist || !now.dist) { pinchState = now; return; }
+            const oldScale = konvaStage.scaleX();
+            const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldScale * (now.dist / pinchState.dist)));
+            // 上一帧中点下的世界坐标，缩放后要落回这一帧的中点：捏合的同时也能平移
+            const worldPos = {
+                x: (pinchState.center.x - konvaStage.x()) / oldScale,
+                y: (pinchState.center.y - konvaStage.y()) / oldScale,
+            };
+            konvaStage.scale({ x: newScale, y: newScale });
+            konvaStage.position({
+                x: now.center.x - worldPos.x * newScale,
+                y: now.center.y - worldPos.y * newScale,
+            });
+            pinchState = now;
+            onStageTransformChanged();
+        }, { passive: false });
+
+        const endPinch = (e) => { if (e.touches.length < 2) pinchState = null; };
+        el.addEventListener('touchend', endPinch);
+        el.addEventListener('touchcancel', endPinch);
+    }
+
+    // Safari 的 gesture* 是页面缩放的正主，全局挡掉（浮窗里也不该缩放整页）
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(type => {
+        document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    });
 
     function onStageWheel(e) {
         e.evt.preventDefault();
