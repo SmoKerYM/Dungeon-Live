@@ -1,0 +1,19 @@
+{
+  "_说明": "前情提要的人名对照表。name 是正确写法；aliases 是可能出现的其他叫法（英文名、简称）；note 是一句话身份。会同时喂给 ASR 做热词、喂给 DeepSeek 做纠错。改完 nodemon 会自动重启。",
+  "players": [
+    { "name": "V", "note": "玩家角色" },
+    { "name": "艾琳", "note": "玩家角色" },
+    { "name": "弗塞斯", "aliases": ["Forsyth"], "note": "玩家角色" },
+    { "name": "禾易苇", "note": "玩家角色" }
+  ],
+  "npcs": [
+    { "name": "恶魔克尔", "aliases": ["克尔"], "note": "做生意的恶魔" },
+    { "name": "精魄", "note": "势力" },
+    { "name": "黑油", "note": "势力" },
+    { "name": "刘波", "note": "" },
+    { "name": "村长", "note": "" },
+    { "name": "美羽", "note": "" },
+    { "name": "暗物质", "note": "外星人" },
+    { "name": "火山神", "note": "" }
+  ]
+}

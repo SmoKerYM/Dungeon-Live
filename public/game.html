@@ -1133,6 +1133,8 @@
     <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/shoelace-autoloader.js"></script>
     <!-- 语音掷骰：这个功能的 CSS/JS 是独立文件（不内联），见 lib/voice-roll 与 public/voice-roll -->
     <link rel="stylesheet" href="/voice-roll/voice-roll.css">
+    <!-- 前情提要：同样是独立文件，见 lib/recap 与 public/recap -->
+    <link rel="stylesheet" href="/recap/recap.css">
 </head>
 <body>
 
@@ -1169,6 +1171,7 @@
     <button class="rail-btn " data-panel="panel-players"><span class="rail-icon">👥</span><span class="rail-label">玩家</span></button>
     <button class="rail-btn dm-only" data-panel="panel-npcs"><span class="rail-icon">👹</span><span class="rail-label">NPC</span></button>
     <button class="rail-btn " data-panel="panel-notes"><span class="rail-icon">📝</span><span class="rail-label">笔记</span></button>
+    <button class="rail-btn " data-panel="panel-recap"><span class="rail-icon">📜</span><span class="rail-label">前情</span></button>
 </div>
 
 <!-- 右侧：角色卡 + 骰子 -->
@@ -1343,6 +1346,15 @@
         </div>
     </div>
     </div>
+</div>
+
+<!-- 前情提要：只有外壳在这里（给浮动窗口系统接管），内容全部由 /recap/recap.js 渲染 -->
+<div class="float-panel " id="panel-recap">
+    <div class="float-panel-header">
+        <span class="float-panel-title">前情提要</span>
+        <button class="float-panel-btn close-btn" title="关闭">✕</button>
+    </div>
+    <div class="float-panel-body" id="recap-mount"></div>
 </div>
 
 <div class="float-panel " id="panel-character">
@@ -2656,7 +2668,9 @@
     const PANEL_SIZE_LIMITS = {
         'panel-chat':  { minW: 300, maxW: 760,  minH: 260, maxH: 900 },
         // 笔记是左右两栏（共享笔记 + 登场人物表），比聊天需要更宽的下限
-        'panel-notes': { minW: 460, maxW: 1400, minH: 300, maxH: 1000 }   // 460 = 左 180 + 右 220 + 间距与内边距
+        'panel-notes': { minW: 460, maxW: 1400, minH: 300, maxH: 1000 },  // 460 = 左 180 + 右 220 + 间距与内边距
+        // 前情提要同样左右两栏（正文 70% + 人物 30%），下限 = 左 200 + 右 170 + 间距与内边距
+        'panel-recap': { minW: 420, maxW: 1400, minH: 300, maxH: 1000 }
     };
     // 正在缩放的窗口：缩放期间 ResizeObserver 不能去「重新落位」，
     // 否则拖左边/上边时它会按旧锚点把窗口拽回去，边拖边抖
@@ -5842,6 +5856,15 @@
         getMyCharacter: () => myCharacter,   // 用 getter：myCharacter 会在运行中被重新赋值
         getEnabled: () => voiceRollEnabled,  // 同理：joinSuccess 之后才知道服务端配没配 ASR
         escapeHtml
+    });
+</script>
+<!-- 前情提要：同理放在主 <script> 之后，依赖通过 init 显式传入 -->
+<script src="/recap/recap.js"></script>
+<script>
+    Recap.init({
+        socket,
+        mountEl: document.getElementById('recap-mount'),
+        isDM
     });
 </script>
 </body>

@@ -1,0 +1,119 @@
+/*
+ * 「前情提要」面板样式。
+ *
+ * 负责：public/recap/recap.js 渲染进 #panel-recap 的全部元素，以及面板的默认尺寸。
+ * 不负责：浮动窗口外壳（.float-panel，样式在 game.html）。
+ *
+ * 谁引入：game.html 的 <head> 里 <link rel="stylesheet" href="/recap/recap.css">。
+ * 依赖：无。配色沿用 game.html 的深色毛玻璃风格（笔记面板的输入框、登场人物表）。
+ */
+
+#panel-recap { width: 760px; height: 62vh; }
+
+.rc-root { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+
+/* ---- 顶部工具条：录制按钮 + 状态 ---- */
+.rc-toolbar { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-height: 30px; }
+.rc-status { flex: 1; font-size: 12px; color: #9aa4bb; min-width: 0; }
+.rc-status.rc-status-busy { color: #f1c40f; }
+.rc-status.rc-status-busy::after {
+    content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 6px;
+    border-radius: 50%; background: currentColor; vertical-align: middle;
+    animation: rc-blink 1s ease-in-out infinite;
+}
+@keyframes rc-blink { 50% { opacity: 0.2; } }
+
+.rc-btn {
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    background: rgba(255, 255, 255, 0.06); color: #cdd6e0;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    white-space: nowrap;
+}
+.rc-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.rc-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.rc-rec {
+    background: rgba(231, 76, 60, 0.18); color: #ff8a7a;
+    border-color: rgba(231, 76, 60, 0.5);
+    font-variant-numeric: tabular-nums;
+}
+.rc-rec:hover:not(:disabled) { background: rgba(231, 76, 60, 0.3); color: #fff; }
+/* 录音中：实心红底 + 按音量的外发光，一眼就知道麦克风开着 */
+.rc-rec.recording {
+    --rc-level: 0;
+    background: #e74c3c; color: #fff; border-color: #e74c3c;
+    box-shadow: 0 0 0 calc(2px + var(--rc-level) * 8px) rgba(231, 76, 60, 0.35);
+    transition: box-shadow 0.1s linear;
+}
+.rc-retry { color: #f1c40f; border-color: rgba(241, 196, 15, 0.45); }
+.rc-clear { color: #9aa4bb; }
+
+/* ---- 主体：左 70% 正文，右 30% 人物 ---- */
+.rc-view { display: flex; gap: 14px; flex: 1; min-height: 0; }
+.rc-left { flex: 7 1 0; min-width: 200px; display: flex; flex-direction: column; min-height: 0; }
+.rc-right { flex: 3 1 0; min-width: 170px; display: flex; flex-direction: column; min-height: 0; }
+
+.rc-brief-input, .rc-brief-text {
+    width: 100%; height: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #eef1f5;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 14px; line-height: 1.8;
+    padding: 16px 18px;
+    box-sizing: border-box;
+}
+.rc-brief-input { resize: none; outline: none; }
+.rc-brief-input:focus { border-color: #3498db; }
+.rc-brief-input::placeholder { color: #666; }
+.rc-brief-input.rc-busy { opacity: 0.6; }
+.rc-brief-text { overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+.rc-brief-text.rc-empty {
+    display: flex; align-items: center; justify-content: center;
+    color: #7d8796; font-size: 13px;
+}
+
+.rc-section-title {
+    font-size: 13px; color: #bdc3c7; flex-shrink: 0;
+    border-bottom: 1px solid #555; padding-bottom: 5px; margin-bottom: 6px;
+}
+.rc-people { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
+.rc-people-empty { color: #666; font-size: 12px; padding: 6px 2px; }
+
+.rc-person { padding: 6px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.rc-person-head { display: flex; align-items: center; gap: 4px; }
+.rc-person-name, .rc-person-note {
+    background: transparent; border: none; outline: none;
+    color: #fff; font-family: 'Segoe UI', sans-serif;
+    width: 100%; min-width: 0; padding: 0;
+}
+.rc-person-name { font-size: 13px; font-weight: 600; flex: 1; }
+.rc-person-note {
+    display: block; margin-top: 2px;
+    font-size: 12px; color: #aab3bf; line-height: 1.4;
+    resize: none; overflow: hidden;
+}
+.rc-person-name::placeholder, .rc-person-note::placeholder { color: #555; }
+.rc-person-name:focus, .rc-person-note:focus { background: rgba(52, 152, 219, 0.12); border-radius: 4px; }
+
+.rc-new {
+    flex-shrink: 0; font-size: 10px; line-height: 1; padding: 3px 5px; border-radius: 4px;
+    background: rgba(241, 196, 15, 0.18); color: #f1c40f; cursor: help;
+}
+.rc-person-del {
+    flex-shrink: 0; background: none; border: none; color: #e74c3c;
+    cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: 0.5;
+}
+.rc-person-del:hover { opacity: 1; }
+
+.rc-person-name-text { font-size: 13px; font-weight: 600; color: #fff; }
+.rc-person-note-text { font-size: 12px; color: #aab3bf; line-height: 1.4; margin-top: 2px; }
+
+.rc-add {
+    margin-top: 8px; padding: 6px 12px; flex-shrink: 0;
+    background: rgba(46, 204, 113, 0.2);
+    border: 1px solid rgba(46, 204, 113, 0.4);
+    border-radius: 6px; color: #2ecc71; cursor: pointer; font-size: 13px;
+}
+.rc-add:hover { background: rgba(46, 204, 113, 0.3); }
