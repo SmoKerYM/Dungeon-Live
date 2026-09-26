@@ -670,6 +670,11 @@
         .dice-card-flag { font-size: 10px; font-weight: bold; }
         .dice-card.crit   .dice-card-flag { color: #2ecc71; }
         .dice-card.fumble .dice-card-flag { color: #e74c3c; }
+        /* 语音掷骰的标签（「带优势的察觉检定」）：一眼看出这骰子是为什么投的 */
+        .dice-card-label { color: #f1c40f; }
+        /* 优势/劣势时被舍弃的那颗骰子 */
+        .dice-card-expr .keep { color: #cdd6e0; }
+        .dice-card-expr .drop { text-decoration: line-through; color: #5b636c; }
         /* 往上翻历史时来了新消息：不强行拉到底，给个可点的提示 */
         #chat-jump-latest {
             display: none; position: absolute; left: 50%; transform: translateX(-50%);
@@ -2207,29 +2212,59 @@
         return text.length > FOLD_CHARS || text.split('\n').length > FOLD_LINES;
     }
 
-    // 掷骰是游戏事件，不该和系统提示混在一起
+    // 掉骨是游戏事件，不该和系统提示混在一起
+    // entry 可能带语音掉骨的额外字段：label（「带优势的察觉检定」）、
+    // advantage（normal/advantage/disadvantage）、kept（两颗骨里实际采用的那一颗）
     function buildDiceCard(entry) {
         const who = entry.role === 'DM' ? 'DM' : entry.name;
         const count = entry.count || 1;
         const modifier = entry.modifier || 0;
         const rolls = Array.isArray(entry.rolls) ? entry.rolls : [];
         const expr = entry.expr || ('d' + entry.sides);
+        const advantage = entry.advantage || 'normal';
+        const hasKept = typeof entry.kept === 'number';
 
-        let breakdown = '';
-        if (rolls.length > 1 || (rolls.length && modifier !== 0)) {
-            breakdown = modifier < 0
+        // 调整值部分：' + 5' / ' − 1' / ''
+        const modPart = modifier === 0 ? ''
+            : (modifier > 0 ? ' + ' + modifier : ' − ' + Math.abs(modifier));
+
+        // 优势/劣势是两颗骨取一颗，不能像普通多骨那样相加；
+        // 被舍弃的那颗划掉变灰，一眼看得出用的是哪个
+        let breakdownHtml = '';
+        if (advantage !== 'normal' && rolls.length > 1 && hasKept) {
+            const fn = advantage === 'advantage' ? 'max' : 'min';
+            let dropped = false;
+            const parts = rolls.map(r => {
+                // 两颗相等时只把第一颗标成采用，另一颗照样划掉
+                if (!dropped && r === entry.kept) {
+                    dropped = true;
+                    return `<span class="keep">${escapeHtml(String(r))}</span>`;
+                }
+                return `<span class="drop">${escapeHtml(String(r))}</span>`;
+            });
+            breakdownHtml = `${fn}(${parts.join(', ')})${escapeHtml(modPart)} = ${escapeHtml(String(entry.result))}`;
+        } else if (rolls.length > 1 || (rolls.length && modifier !== 0)) {
+            const sum = modifier < 0
                 ? rolls.join(' + ') + ' − ' + Math.abs(modifier)
                 : (modifier > 0 ? [...rolls.map(String), String(modifier)] : rolls.map(String)).join(' + ');
-            breakdown += ' = ' + entry.result;
+            breakdownHtml = escapeHtml(sum + ' = ' + entry.result);
         }
 
-        // 单颗 d20 的大成功/大失败值得一眼认出来
+        // 单颗 d20 的大成功/大失败值得一眼认出来。
+        // 优势/劣势投两颗，算的是采用的那颗（kept），不是两颗之和
         let cls = '', flag = '';
-        if (entry.sides === 20 && count === 1 && rolls.length <= 1) {
-            const raw = rolls.length ? rolls[0] : entry.result;
+        let raw = null;
+        if (hasKept) raw = entry.kept;
+        else if (count === 1 && rolls.length <= 1) raw = rolls.length ? rolls[0] : entry.result;
+        if (entry.sides === 20 && raw !== null) {
             if (raw === 20) { cls = ' crit';   flag = '大成功'; }
             if (raw === 1)  { cls = ' fumble'; flag = '大失败'; }
         }
+
+        const advWord = advantage === 'advantage' ? '（两次取高）'
+            : (advantage === 'disadvantage' ? '（两次取低）' : '');
+        const labelHtml = entry.label
+            ? `<b class="dice-card-label">${escapeHtml(entry.label)}</b>：` : '';
 
         const div = document.createElement('div');
         div.className = 'dice-card' + cls;
@@ -2237,9 +2272,10 @@
         div.innerHTML =
             avatarHtml(entry.name, entry.role, 'dice-card-avatar') +
             '<div class="dice-card-main">' +
-                `<div class="dice-card-head"><b>${escapeHtml(who)}</b> 投掷 ${escapeHtml(expr)}` +
+                `<div class="dice-card-head">${labelHtml}<b>${escapeHtml(who)}</b> 投掷 ` +
+                `${escapeHtml(expr + advWord)}` +
                 (flag ? ` <span class="dice-card-flag">${flag}</span>` : '') + '</div>' +
-                (breakdown ? `<div class="dice-card-expr">${escapeHtml(breakdown)}</div>` : '') +
+                (breakdownHtml ? `<div class="dice-card-expr">${breakdownHtml}</div>` : '') +
             '</div>' +
             `<div class="dice-card-total">${escapeHtml(String(entry.result))}</div>`;
         return div;
@@ -2377,6 +2413,11 @@
             rolls: data.rolls || null,
             modifier: data.modifier || 0,
             count: data.count || 1,
+            // 语音掉骨的额外字段（手打掉骨没有，为 undefined）
+            label: data.label || null,
+            advantage: data.advantage || 'normal',
+            kept: typeof data.kept === 'number' ? data.kept : null,
+            source: data.source || null,
             timestamp: data.timestamp || Date.now()
         });
     }
