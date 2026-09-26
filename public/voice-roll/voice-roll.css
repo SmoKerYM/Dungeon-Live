@@ -1,0 +1,77 @@
+/*
+ * 语音掷骰前端样式：预览卡片、麦克风按钮、录音状态。
+ *
+ * 负责：public/voice-roll/voice-roll.js 渲染出来的那些元素的样式。
+ * 不负责：聊天里的骰子卡片（.dice-card，样式在 game.html 里，语音投和手打投长得一样）。
+ *
+ * 谁引入：game.html 的 <head> 里 <link rel="stylesheet" href="/voice-roll/voice-roll.css">。
+ * 依赖：无。配色沿用 game.html 的深色毛玻璃风格。
+ */
+
+/* 挂载点本身不占位，麦克风按钮和预览卡片都挂在它里面 */
+#voice-roll-mount { display: flex; align-items: center; }
+
+/* 预览卡片：贴在聊天输入框上方，和 @ 建议框同一个位置语汇 */
+.vr-preview {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 8px; right: 8px;
+    background: rgba(20, 26, 34, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    padding: 8px 10px 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    z-index: 30;
+    overflow: hidden;
+}
+.vr-preview-transcript {
+    font-size: 10px; color: #8a949e;
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+.vr-preview-main {
+    display: flex; align-items: baseline; gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.vr-preview-label { font-size: 13px; font-weight: bold; color: #f1c40f; }
+.vr-preview-expr {
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 11px; color: #cdd6e0;
+}
+.vr-preview-actions { display: flex; align-items: center; gap: 8px; }
+.vr-preview-hint { font-size: 10px; color: #8a949e; margin-right: auto; }
+.vr-btn {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: #ecf0f1;
+    font-size: 11px; padding: 4px 12px;
+    border-radius: 6px; cursor: pointer;
+}
+.vr-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.vr-btn-primary {
+    border-color: rgba(52, 152, 219, 0.6);
+    background: rgba(52, 152, 219, 0.35);
+}
+.vr-btn-primary:hover { background: rgba(52, 152, 219, 0.55); }
+
+/* 自动确认倒计时：进度条走完就投，走的过程里随时能取消 */
+.vr-progress {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 2px; background: rgba(255, 255, 255, 0.08);
+}
+.vr-progress > i {
+    display: block; height: 100%; width: 100%;
+    background: #3498db;
+    transform-origin: left center;
+    animation: vr-countdown linear forwards;
+}
+@keyframes vr-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* 低置信度：不自动投，边框换个颜色提示「这条我没太听清」 */
+.vr-preview.vr-unsure { border-color: rgba(243, 156, 18, 0.55); }
+.vr-preview.vr-unsure .vr-preview-label { color: #f39c12; }
+
+/* 出错提示（没听清是哪项豁免 / 没听懂 / 没有同名角色卡） */
+.vr-preview.vr-error { border-color: rgba(231, 76, 60, 0.55); }
+.vr-preview-error-text { font-size: 12px; color: #e74c3c; }

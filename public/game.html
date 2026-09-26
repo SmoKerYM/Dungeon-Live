@@ -1104,6 +1104,8 @@
     <script src="https://unpkg.com/konva@9/konva.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/themes/dark.css" />
     <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/shoelace-autoloader.js"></script>
+    <!-- 语音掷骰：这个功能的 CSS/JS 是独立文件（不内联），见 lib/voice-roll 与 public/voice-roll -->
+    <link rel="stylesheet" href="/voice-roll/voice-roll.css">
 </head>
 <body>
 
@@ -1441,6 +1443,8 @@
             <div class="mention-popup" id="mention-popup-panel"></div>
             <input type="text" id="chat-panel-input" placeholder="输入消息，@ 私聊，或 /2d6+3 投骰..."
                    onkeydown="handleChatKeypress(event)" oninput="onChatInput(event)">
+            <!-- 语音掷骰的挂载点：麦克风按钮和识别结果预览卡片都由 voice-roll.js 挂在这里 -->
+            <div id="voice-roll-mount"></div>
             <button id="chat-panel-send" onclick="sendChat(document.getElementById('chat-panel-input'))">发送</button>
         </div>
 </div>
@@ -5637,6 +5641,18 @@
     // 所有变量和监听器就绪后启动应用
     startApp();
 
+</script>
+<!-- 语音掷骰：放在主 <script> 之后，这样 socket / userName / myCharacter 都已就绪。
+     依赖显式通过 init 传入，不靠「顶层脚本变量恰好全局可见」这件事 -->
+<script src="/voice-roll/voice-roll.js"></script>
+<script>
+    VoiceRoll.init({
+        socket,
+        mountEl: document.getElementById('voice-roll-mount'),
+        isDM,
+        getMyCharacter: () => myCharacter,   // 用 getter：myCharacter 会在运行中被重新赋值
+        escapeHtml
+    });
 </script>
 </body>
 </html>
