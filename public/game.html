@@ -749,12 +749,15 @@
         }
         #exit-btn:hover { background: #e74c3c; color: white; border-color: #e74c3c; }
 
-        /* 笔记视图 */
-        #notes-view { display: flex; gap: 16px; height: 100%; }
+        /* 笔记视图。左右两栏同高：都撑满窗口内容区，各自在内部滚动
+           （min-height: 0 少一个，flex 子项就会被内容顶高，右栏的人物表
+           会一路长出左栏底部，整个面板跟着一起滚） */
+        #notes-view { display: flex; gap: 16px; height: 100%; min-height: 0; }
         #notes-left {
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-height: 0;
             /* 窗口可以被拖窄，但共享笔记再窄就变成一列单字了 */
             min-width: 180px;
         }
@@ -762,9 +765,12 @@
             /* 允许收缩到 220px：固定 360px 的话，窗口一拖窄全压在左栏头上 */
             flex: 0 1 360px;
             min-width: 220px;
+            min-height: 0;
             display: flex;
             flex-direction: column;
         }
+        /* 表格在这里滚，「+ 添加人物」留在栏底不跟着滚走 */
+        #char-notes-scroll { flex: 1; min-height: 0; overflow-y: auto; }
         #notes-textarea {
             width: 100%;
             height: 100%;
@@ -792,7 +798,13 @@
             border-collapse: collapse;
         }
         #char-notes-table th {
-            background: rgba(52, 152, 219, 0.3);
+            /* 表格自己滚，表头钉在顶上。这里不能用半透明的蓝（原本是
+               rgba(52,152,219,0.3) 叠在面板玻璃上）——钉住之后行会从底下透出来，
+               所以换成同色但不透的版本：蓝 0.3 叠在 --glass-bg 上的实际观感色 */
+            background: rgba(31, 62, 88, 0.97);
+            position: sticky;
+            top: 0;
+            z-index: 1;
             padding: 8px;
             text-align: left;
             font-size: 13px;
@@ -1363,10 +1375,12 @@
         </div>
         <div id="notes-right">
             <div class="section-title">登场人物</div>
-            <table id="char-notes-table">
-                <thead><tr><th>人物名字</th><th>人物信息</th><th></th></tr></thead>
-                <tbody id="char-notes-body"></tbody>
-            </table>
+            <div id="char-notes-scroll">
+                <table id="char-notes-table">
+                    <thead><tr><th>人物名字</th><th>人物信息</th><th></th></tr></thead>
+                    <tbody id="char-notes-body"></tbody>
+                </table>
+            </div>
             <button class="char-notes-add-btn" onclick="addCharacterNote()">+ 添加人物</button>
         </div>
     </div>
