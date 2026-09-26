@@ -35,6 +35,11 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-26: 再修工具条 tooltip 错位（上一次只解决了与弹出面板重叠）
+  - 用户环境仍错位，本机复现不出来（偏移恒为 0）→ 怀疑与浏览器缩放有关
+  - 唯一能造成「固定向右偏移」的机制：`#bottom-bar` 的 `transform: translateX(-50%)` 会成为绝对定位的包含块，Floating UI 在 transform 上下文里算坐标，叠加缩放时容易偏
+  - 两处根治：① `#bottom-bar` 改为 `left/right: 0 + justify-content: center` 居中，彻底去掉 transform（配 `pointer-events: none` + 子元素 `auto`，避免横跨全屏挡住地图）；② 7 个 `sl-tooltip` 全加 `hoist`，渲染到独立的 `position: fixed` 层，不再依赖祖先的定位上下文
+  - 实测 `strategy` 由 `absolute` 变为 `fixed`，偏移 0；`elementFromPoint` 验证 bar 空白处仍命中 CANVAS，按钮处命中按钮
 - 2026-09-25: 修 DM 工具条 tooltip 与二级弹出面板重叠
   - 表象是「文字描述和工具位置不匹配」，实测 tooltip 本身对齐正常（与按钮中心偏移 0）
   - 真因：`positionPopout` 把面板放在 `btnRect.top - ph - 8`，与 `sl-tooltip` 的 `placement="top"` 落在同一条水平带上（实测面板 594~，tooltip 601~），tooltip 被画进面板的按钮行里，读起来像在标注面板上的按钮

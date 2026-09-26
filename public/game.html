@@ -69,9 +69,11 @@
 
         /* 底部中央：聊天展开按钮 + DM 工具条 */
         #bottom-bar {
-            position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-            z-index: 40; display: flex; align-items: center; gap: 10px;
+            position: fixed; bottom: 18px; left: 0; right: 0;
+            z-index: 40; display: flex; align-items: center; justify-content: center; gap: 10px;
+            pointer-events: none;   /* 整条横跨屏幕，别挡住地图 */
         }
+        #bottom-bar > * { pointer-events: auto; }
         #chat-rail-btn {
             position: relative;
             display: flex; align-items: center; gap: 8px;
@@ -1151,27 +1153,27 @@
         <span>💬</span><span>聊天</span><span id="chat-badge"></span>
     </button>
 <div id="dm-toolbar" class="dm-only">
-            <sl-tooltip content="移动" placement="top">
+            <sl-tooltip content="移动" placement="top" hoist>
                 <sl-icon-button id="btn-move" class="dm-tool-btn active" name="arrows-move" label="移动" onclick="setTool('move')"></sl-icon-button>
             </sl-tooltip>
             <sl-divider></sl-divider>
-            <sl-tooltip content="画笔" placement="top">
+            <sl-tooltip content="画笔" placement="top" hoist>
                 <sl-icon-button id="btn-pen" class="dm-tool-btn" name="pencil-fill" label="画笔" onclick="setTool('draw')"></sl-icon-button>
             </sl-tooltip>
-            <sl-tooltip content="矩形" placement="top">
+            <sl-tooltip content="矩形" placement="top" hoist>
                 <sl-icon-button id="btn-rect" class="dm-tool-btn" name="bounding-box" label="矩形" onclick="setTool('rect')"></sl-icon-button>
             </sl-tooltip>
-            <sl-tooltip content="橡皮" placement="top">
+            <sl-tooltip content="橡皮" placement="top" hoist>
                 <sl-icon-button id="btn-eraser" class="dm-tool-btn" name="eraser-fill" label="橡皮" onclick="setTool('erase')"></sl-icon-button>
             </sl-tooltip>
-            <sl-tooltip content="迷雾遮罩（拖拽绘制，双击删除）" placement="top">
+            <sl-tooltip content="迷雾遮罩（拖拽绘制，双击删除）" placement="top" hoist>
                 <sl-icon-button id="btn-fog" class="dm-tool-btn" name="clouds-fill" label="迷雾" onclick="setTool('fog')"></sl-icon-button>
             </sl-tooltip>
             <sl-divider></sl-divider>
-            <sl-tooltip content="撤销 (Ctrl+Z)" placement="top">
+            <sl-tooltip content="撤销 (Ctrl+Z)" placement="top" hoist>
                 <sl-icon-button id="btn-undo" class="dm-tool-btn" name="arrow-counterclockwise" label="撤销" onclick="emitWorldUndo()"></sl-icon-button>
             </sl-tooltip>
-            <sl-tooltip content="重做 (Ctrl+Shift+Z)" placement="top">
+            <sl-tooltip content="重做 (Ctrl+Shift+Z)" placement="top" hoist>
                 <sl-icon-button id="btn-redo" class="dm-tool-btn" name="arrow-clockwise" label="重做" onclick="emitWorldRedo()"></sl-icon-button>
             </sl-tooltip>
         </div>
