@@ -27,6 +27,14 @@ coc_app/
 │       ├── asr.js             # ASR adapter：阿里云实时识别 WebSocket 会话
 │       ├── system-prompt.txt  # llm.js 的 system prompt 原文（改它也会触发 nodemon 重启）
 │       └── dice.js            # 调整值、中文标签、表达式、crypto 掷 d20
+│   └── recap/             # 前情提要（服务端）。对 server.js 只暴露 createRecap({io, filePath, deepseek, asr}).register(socket, {getPlayer})
+│       ├── index.js           # 唯一入口：recap:* 事件、录音会话（按 5 分钟一段轮换 ASR 连接）、处理阶段广播
+│       ├── store.js           # recap.json 读写（500ms 防抖）、DM 手改的清洗、AI 修订稿整份替换、清空
+│       ├── summarize.js       # summarizeRecap：调 DeepSeek，在当前内容上修订，输出完整的 {brief, people, changes}
+│       ├── context.js         # 读人名对照表 + 世界观背景，拼 ASR 热词串 / DeepSeek 输入
+│       ├── checklist.json     # 人名对照表（玩家 + NPC/势力，含别名、一句话身份）
+│       ├── world-background.txt # 世界观背景（DM 自行补充）
+│       └── system-prompt.txt  # summarize.js 的 system prompt
 ├── public/
 │   ├── index.html         # Login page (~229 lines)
 │   ├── game.html          # Main game UI (inline CSS+JS, Konva VTT model)
@@ -34,6 +42,9 @@ coc_app/
 │       ├── voice-roll.js      # VoiceRoll.init({socket, mountEl, isDM, getMyCharacter, getEnabled, escapeHtml})
 │       ├── pcm-worklet.js     # AudioWorklet：48kHz Float32 → 16kHz PCM16 单声道
 │       └── voice-roll.css
+│   └── recap/             # 前情提要（前端）：Recap.init({socket, mountEl, isDM})，渲染 #panel-recap 的内容
+│       ├── recap.js           # 录音复用 /voice-roll/pcm-worklet.js
+│       └── recap.css
 ├── scripts/
 │   └── test-voice-intent.js   # 离线跑语音掷骰纯函数的用例表（node scripts/test-voice-intent.js）
 ├── data/
@@ -43,6 +54,7 @@ coc_app/
 │   ├── map_assets.json        # Map image assets { assetId: { base64, originalWidth, originalHeight } }
 │   ├── world.json             # World state (placedMaps, tokens, npcs, freeDrawings, rects, fogRects)
 │   ├── ui_prefs.json          # DM pen/rect colors + per-user float panel layouts
+│   ├── recap.json             # 前情提要 { brief, people: [{name, note}], updatedAt, pendingTranscript }
 │   └── notes.txt              # Shared notes (plain text)
 └── images/                # (legacy, no longer used)
 ```
@@ -84,6 +96,7 @@ coc_app/
 | Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
 | VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId }`）, `voice:text`（`{ text, via }`：跳过 ASR 直接喂文本，`via='text'` 是聊天框 @ai） |
+| Recap | `recap:fetch`（任何人）；DM 专用：`recap:start`, `recap:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `recap:stop`（`{ brief, people }`＝文本框当前内容）, `recap:cancel`, `recap:retry`（同上）, `recap:update`（`{ brief, people }`）, `recap:clear`, `recap:text`（调试：跳过 ASR） |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
 ### Server -> Client
@@ -104,6 +117,8 @@ coc_app/
 | `voice:intent` | 语音掷骰的识别结果预览，**只发给说话者**：`{ intentId, transcript, intent, label, expr, modifier, source, confidence, autoConfirm }` |
 | `voice:partial` | 录音中的实时转写，只发给说话者 |
 | `voice:error` | 语音掷骰的中文错误提示，只发给说话者（没听清是哪项豁免 / 没听懂 / 未找到同名角色卡 / 说太快了） |
+| `recap:sync` | 前情提要全文 `{ brief, people: [{name, note, known}], updatedAt }`；`known=false` 表示对照表里没有、AI 新加的名字 |
+| `recap:status` | 处理阶段（公开广播）`{ phase: idle/recording/transcribing/summarizing, message, canRetry, asrEnabled, llmEnabled }` |
 
 ## Data Models
 
@@ -176,6 +191,14 @@ npm start       # Production server
 - ASR（语音转文字）走阿里云 Model Studio 的实时识别 WebSocket，默认接入地址是国际站通用域名 `wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference`——文档上写的是按 workspace 分的 `wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/…`，但通用地址实测可用且不需要 WorkspaceId；要换地域/账号用 `ASR_WS_URL` / `ASR_WORKSPACE_ID` / `ASR_REGION` 覆盖。模型 `ASR_MODEL`（线上用 `qwen-audio-3.1-asr-flash-streaming`），key 在 `ASR_API_KEY`，和 `DEEPSEEK_API_KEY` 一样**只存在于服务端**，浏览器永远不直连 ASR
 - 音频约定 **16kHz / PCM16 LE / 单声道**，前端 `pcm-worklet.js` 负责从设备采样率（通常 48kHz）降下来，每 100ms 一帧。`run-task` 里带 `input.context` 热词串（`ASR_CONTEXT_PROMPT`）——「豁免」「奥秘」「劣势」这些低频词不给上下文很容易写成同音错字，而「豁免」正是判豁免路径的硬规则依据
 - 麦克风按钮按住说话、松开发送；DM 隐藏，没有同名角色卡或服务端没配 ASR key（`joinSuccess` 的 `voiceRollEnabled`）时禁用。单次录音上限 8 秒（前端自动松手 + 服务端按字节数兜底），同一 socket 两次开录间隔 2 秒。`getUserMedia` 需要 HTTPS 或 localhost
+- **前情提要（recap）**：左侧第五个按钮「前情」。DM 点「开始录制」（点一下开始、再点一下结束，**不用按住**）口述之前的剧情，转写**不回显**给前端；结束后把「转写 + 人名对照表（`lib/recap/checklist.json`）+ 世界观背景（`lib/recap/world-background.txt`）+ 当前前情与人物」交给 DeepSeek，输出修订后的完整 `{ brief, people, changes }`。面板左 70% 正文、右 30% 重要人物表。实现全部在 `lib/recap/` 与 `public/recap/`，`server.js` / `game.html` 只做接线（`game.html` 里只有按钮和空的面板外壳）
+- 人名纠错两道：对照表同时作为 ASR 热词（`cfg.contextPrompt`，覆盖 `asr.js` 默认的掷骰黑话）和 DeepSeek 的纠错依据。对照表里没有、AI 认为重要的新名字 `known=false`，DM 视角标黄色「新」提醒核对写法；DM 改过这个名字后标记消失
+- 再次录制**不是追加**：DeepSeek 以当前内容为底稿，自己判断这次口述是续写、补细节、纠正还是删除，返回**修订后的完整**正文和人物表，服务端整份替换（不再合并，否则按口述删掉的会被加回来）。口述没涉及的部分要求原样保留 DM 的文字；`changes` 一句话说明改了什么，显示在 DM 的状态栏
+- 修订底稿**一律取自 DM 前端的文本框**（DM 会手改）：`recap:stop` / `recap:retry` / `recap:text` 都带着文本框当前内容，服务端先 `setContent` 再总结，所以还在 400ms 防抖里没发出去的手改也不会漏。转写 / 总结期间编辑框只读——结果回来会整份覆盖
+- 兜底：模型输出 `{"unchanged": true}`（口述里没剧情）时不改动；原本有内容、修订稿却是空的，视为出错，保留原内容并允许重试——真要清空走「清空」按钮
+- 「清空」只有 DM 有，点两下（第一下变红色「确认清空？」，3 秒内再点才生效），走 `recap:clear`：正文、人物和存着的未总结转写（`pendingTranscript`）一起清掉，否则「重试总结」会把旧讲述带回来
+- 转写结果**先存盘**（`pendingTranscript`）再总结：DeepSeek 失败时 DM 可点「重试总结」，不用再讲一遍。长录音按 5 分钟一段轮换 ASR 连接，某段出错时用 `err.partialText`（`asr.js` 出错时带出已识别文本）保住已识别的部分并重开一段；连续 3 次失败才收尾。上限 30 分钟；DM 掉线时照常收尾去总结
+- 权限：只有 DM 能录制和编辑（服务端 `role === 'DM'` guard），玩家只读；没有内容时玩家看到「等待 DM 进行讲述…」，DM 录制 / 总结中时看到对应状态。调试：DM 控制台 `Recap.debugText('……')` 跳过 ASR
 - `data/` is **git-ignored**. Production (`NODE_ENV=production`) reads and writes the Render persistent disk at `/data`; the repo's `data/` is only a local dev snapshot, so untracking it cannot affect deployed data. `map_assets.json` alone runs to tens of MB of Base64
 - Map images are Base64-encoded and can be large (50MB max buffer); stored in `data/map_assets.json`
 - World state persisted to `data/world.json`; debounced 500ms on every mutation

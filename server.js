@@ -6,6 +6,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 // 语音掷骰：全部实现在 lib/voice-roll/ 下，这里只做接线（依赖由参数注入）
 const { registerVoiceRollHandlers, isVoiceRollEnabled } = require('./lib/voice-roll');
+// 前情提要：全部实现在 lib/recap/ 下，这里只做接线
+const { createRecap } = require('./lib/recap');
 
 // 笔记文件路径（Render Disk 挂载点）
 const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
@@ -29,6 +31,8 @@ const MAP_ASSETS_FILE = process.env.NODE_ENV === 'production' ? '/data/map_asset
 const WORLD_FILE = process.env.NODE_ENV === 'production' ? '/data/world.json' : './data/world.json';
 // UI 偏好文件路径（DM 画笔/矩形颜色持久化）
 const UI_PREFS_FILE = process.env.NODE_ENV === 'production' ? '/data/ui_prefs.json' : './data/ui_prefs.json';
+// 前情提要文件路径
+const RECAP_FILE = process.env.NODE_ENV === 'production' ? '/data/recap.json' : './data/recap.json';
 
 // 读取笔记
 function loadNotes() {
@@ -519,6 +523,15 @@ const gameState = {
   uiPrefs: loadUiPrefs(),     // UI 偏好 { penColor, rectColor, layouts: { 用户名: { 面板id: {x,y,pinned} } } }
 };
 
+// 前情提要：DM 口述 → ASR 转写 → DeepSeek 总结。数据与状态都在 lib/recap 里，
+// 复用语音掷骰的 ASR 配置和角色卡总结的 DeepSeek 配置
+const recap = createRecap({
+  io,
+  filePath: RECAP_FILE,
+  deepseek: { apiKey: DEEPSEEK_API_KEY, model: DEEPSEEK_MODEL },
+  asr: VOICE_ASR_CONFIG
+});
+
 // Socket.IO 连接处理
 io.on('connection', (socket) => {
   console.log(`用户连接: ${socket.id}`);
@@ -718,6 +731,9 @@ io.on('connection', (socket) => {
     deepseek: { apiKey: DEEPSEEK_API_KEY, model: DEEPSEEK_MODEL },
     asr: VOICE_ASR_CONFIG
   });
+
+  // 前情提要（recap:*）。实现在 lib/recap/
+  recap.register(socket, { getPlayer: () => gameState.players.get(socket.id) });
 
   // 骰子投掷 (所有人)
   socket.on('dice:roll', (data) => {
