@@ -2,7 +2,8 @@
  * 「前情提要」面板前端。
  *
  * 负责：#panel-recap 面板里的全部内容——左 70% 前情正文、右 30% 重要人物表；
- *       DM 视角的录制按钮（点一下开始、再点一下结束）、处理状态、重试 / 清空、手改后同步；
+ *       DM 视角的录制按钮（点一下开始、再点一下结束）、处理状态、重试 / 清空（点两下）、手改后同步；
+ *       结束录制 / 重试时把文本框的当前内容一并发给服务端，作为 AI 修订的底稿；
  *       玩家视角只读，没有内容时显示「等待 DM 进行讲述」。
  * 不负责：面板本身的悬浮展开 / 固定 / 拖拽 / 缩放（game.html 的浮动窗口系统管，
  *         面板外壳和左侧「前情」按钮是写在 game.html 里的静态标记）。
@@ -13,7 +14,7 @@
  *
  * 用到的 socket 事件（服务端见 lib/recap/index.js）：
  *   recap:fetch / recap:start / recap:chunk / recap:stop / recap:cancel /
- *   recap:retry / recap:update / recap:text（→S）
+ *   recap:retry / recap:update / recap:clear / recap:text（→S）
  *   recap:sync / recap:status（←S）
  */
 (function () {
@@ -23,6 +24,8 @@
     const EDIT_DEBOUNCE_MS = 400;
     /** 和服务端 MAX_RECORD_MS 对齐：到点前端自己先结束 */
     const MAX_RECORD_MS = 30 * 60 * 1000;
+    /** 「清空」点第一下后，等第二下确认的时间 */
+    const CLEAR_ARM_MS = 3000;
 
     const PHASE_TEXT = {
         recording: '录制中…',
@@ -37,6 +40,7 @@
     let editTimer = null;
     let rec = null;          // { stream, audioCtx, node, source, startedAt, tick, timer }
     let starting = false;    // getUserMedia / worklet 还没就绪
+    let clearArmTimer = null; // 「清空」已点过一下、等确认
 
     /**
      * 初始化。由 game.html 在主脚本之后调用一次。
@@ -100,10 +104,14 @@
         if (ctx.isDM) {
             els.retryBtn = el('button', 'rc-btn rc-retry', '重试总结');
             els.retryBtn.type = 'button';
-            els.retryBtn.addEventListener('click', () => ctx.socket.emit('recap:retry'));
+            els.retryBtn.addEventListener('click', () => {
+                clearTimeout(editTimer);
+                ctx.socket.emit('recap:retry', currentContent());
+            });
             els.clearBtn = el('button', 'rc-btn rc-clear', '清空');
             els.clearBtn.type = 'button';
-            els.clearBtn.addEventListener('click', clearAll);
+            els.clearBtn.title = '清空前情提要和重要人物（需要再点一次确认）';
+            els.clearBtn.addEventListener('click', onClearClick);
             toolbar.append(els.retryBtn, els.clearBtn);
         }
         root.appendChild(toolbar);
@@ -112,7 +120,7 @@
         const left = el('div', 'rc-left');
         if (ctx.isDM) {
             els.brief = el('textarea', 'rc-brief-input');
-            els.brief.placeholder = '还没有前情提要。\n\n点「开始录制」，把之前发生的事讲一遍，点「结束录制」后 AI 会整理成前情提要，自动出现在这里。\n\n也可以直接在这里写或修改。';
+            els.brief.placeholder = '还没有前情提要。\n\n点「开始录制」，把之前发生的事讲一遍，点「结束录制」后 AI 会整理成前情提要，自动出现在这里。\n\n之后再录，AI 会在这里现有内容的基础上续写、补充或更正。也可以直接在这里写或修改。';
             els.brief.addEventListener('input', scheduleEdit);
         } else {
             els.brief = el('div', 'rc-brief-text');
@@ -253,7 +261,8 @@
         }
         els.recBtn.disabled = !canRecord || (!rec && !starting && phase !== 'idle');
         els.retryBtn.style.display = status.canRetry && phase === 'idle' ? '' : 'none';
-        els.clearBtn.disabled = phase !== 'idle';
+        els.clearBtn.disabled = phase !== 'idle' || !!(rec || starting);
+        if (els.clearBtn.disabled) disarmClear();
     }
 
     function updateRecLabel() {
@@ -271,23 +280,52 @@
         editTimer = setTimeout(flushEdit, EDIT_DEBOUNCE_MS);
     }
 
-    /** 立刻把手改的内容发出去（开始录制前要先 flush，免得和总结结果打架） */
+    /**
+     * 文本框里的当前内容。AI 修订一律以它为底稿——DM 随时可能手改，
+     * 不能拿服务端那份（可能还差一次防抖没发出去）
+     * @returns {{brief: string, people: {name: string, note: string}[]}}
+     */
+    function currentContent() {
+        data.brief = els.brief.value;
+        return {
+            brief: data.brief,
+            people: data.people.map(p => ({ name: p.name, note: p.note }))
+        };
+    }
+
+    /** 立刻把手改的内容发出去 */
     function flushEdit() {
         clearTimeout(editTimer);
         editTimer = null;
         if (!ctx.isDM) return;
-        data.brief = els.brief.value;
-        ctx.socket.emit('recap:update', {
-            brief: data.brief,
-            people: data.people.map(p => ({ name: p.name, note: p.note }))
-        });
+        ctx.socket.emit('recap:update', currentContent());
     }
 
-    function clearAll() {
-        if (!confirm('确定清空前情提要和重要人物表吗？玩家那边也会一起清空。')) return;
+    /**
+     * 「清空」要点两下：第一下变成红色的「确认清空？」，3 秒内再点才真的清。
+     * 清掉的是正文、人物和服务端存着的未总结转写，玩家那边同步清空，收不回来
+     */
+    function onClearClick() {
+        if (!clearArmTimer) {
+            els.clearBtn.textContent = '确认清空？';
+            els.clearBtn.classList.add('armed');
+            clearArmTimer = setTimeout(disarmClear, CLEAR_ARM_MS);
+            return;
+        }
+        disarmClear();
+        clearTimeout(editTimer);
+        editTimer = null;
         data = { brief: '', people: [], updatedAt: null };
         render();
-        flushEdit();
+        ctx.socket.emit('recap:clear');
+    }
+
+    function disarmClear() {
+        if (!clearArmTimer) return;
+        clearTimeout(clearArmTimer);
+        clearArmTimer = null;
+        els.clearBtn.textContent = '清空';
+        els.clearBtn.classList.remove('armed');
     }
 
     // ===== 录制 =====
@@ -372,7 +410,10 @@
         if (starting && !rec) { starting = false; renderStatus(); return; }
         if (!rec) return;
         teardownRecording();
-        ctx.socket.emit('recap:stop');
+        // 带上文本框的当前内容：录音期间 DM 可能还在手改，这就是 AI 修订的底稿
+        clearTimeout(editTimer);
+        editTimer = null;
+        ctx.socket.emit('recap:stop', currentContent());
         renderStatus();
     }
 
@@ -383,7 +424,8 @@
      */
     function debugText(text) {
         if (!ctx) return;
-        ctx.socket.emit('recap:text', { text: String(text || '') });
+        clearTimeout(editTimer);
+        ctx.socket.emit('recap:text', { text: String(text || ''), ...currentContent() });
     }
 
     window.Recap = { init, debugText };

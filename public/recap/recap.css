@@ -46,7 +46,10 @@
     transition: box-shadow 0.1s linear;
 }
 .rc-retry { color: #f1c40f; border-color: rgba(241, 196, 15, 0.45); }
-.rc-clear { color: #9aa4bb; }
+.rc-clear { color: #ff8a7a; border-color: rgba(231, 76, 60, 0.35); }
+/* 点过一下、等确认：实心红，和「真的要清掉了」对得上 */
+.rc-clear.armed { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+.rc-clear.armed:hover:not(:disabled) { background: #c0392b; color: #fff; }
 
 /* ---- 主体：左 70% 正文，右 30% 人物 ---- */
 .rc-view { display: flex; gap: 14px; flex: 1; min-height: 0; }
