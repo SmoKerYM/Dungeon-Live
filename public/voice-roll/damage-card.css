@@ -1,0 +1,47 @@
+/*
+ * 伤害骰那一行的样式（配 damage-card.js）。
+ * 骰子卡片其余部分的样式仍在 game.html 的内联 CSS 里，这里只加伤害这一段，
+ * 颜色沿用卡片里已有的那套：标签黄、明细灰、总数偏亮。
+ */
+
+/* 伤害挂在命中投下面，用一条分隔线断开——它是「命中之后」的第二件事 */
+.dice-damage {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+    font-size: 11px;
+    color: #cdd6e0;
+}
+
+.dice-damage-head b {
+    color: #e67e22;   /* 伤害用橙色，和命中投标签的黄色区分开 */
+}
+
+/* 总伤害跟在表达式后面，比正文亮一档；卡片右侧的大数字是命中投的，别抢它 */
+.dice-damage-total {
+    margin-left: 6px;
+    font-weight: bold;
+    color: #e67e22;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 明细行和命中投的 .dice-card-expr 同一套排版：宁可换行也不截断 */
+.dice-damage-expr {
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 10px;
+    color: #8a949e;
+    white-space: normal;
+    word-break: break-all;
+}
+
+.dice-damage-crit {
+    font-size: 10px;
+    font-weight: bold;
+    color: #2ecc71;
+}
+
+/* 没投伤害（没听出武器 / 大失败未命中）：灰掉，但必须显示 */
+.dice-damage-skipped {
+    font-size: 10px;
+    color: #6b7280;
+}

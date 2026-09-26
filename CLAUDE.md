@@ -41,7 +41,9 @@ coc_app/
 │   └── voice-roll/        # 语音掷骰（前端）：预览卡片与麦克风按钮
 │       ├── voice-roll.js      # VoiceRoll.init({socket, mountEl, isDM, getMyCharacter, getEnabled, escapeHtml})
 │       ├── pcm-worklet.js     # AudioWorklet：48kHz Float32 → 16kHz PCM16 单声道
-│       └── voice-roll.css
+│       ├── voice-roll.css
+│       ├── damage-card.js     # 伤害骰在骰子卡片里那一行：window.DamageCard.html(damage, escapeHtml)
+│       └── damage-card.css
 │   └── recap/             # 前情提要（前端）：Recap.init({socket, mountEl, isDM})，渲染 #panel-recap 的内容
 │       ├── recap.js           # 录音复用 /voice-roll/pcm-worklet.js
 │       └── recap.css
@@ -95,7 +97,7 @@ coc_app/
 | History | `history:undo`, `history:redo` |
 | Character | `character:list`, `character:load`, `character:save`, `character:delete`（仅 DM）, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
-| VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId }`）, `voice:text`（`{ text, via }`：跳过 ASR 直接喂文本，`via='text'` 是聊天框 @ai） |
+| VoiceRoll | `voice:start`, `voice:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `voice:stop`, `voice:cancel`, `voice:confirm`（`{ intentId, supernatural }`，后者是符具攻击时勾的「对抗超自然生物」）, `voice:text`（`{ text, via }`：跳过 ASR 直接喂文本，`via='text'` 是聊天框 @ai） |
 | Recap | `recap:fetch`（任何人）；DM 专用：`recap:start`, `recap:chunk`（ArrayBuffer，16kHz PCM16 单声道）, `recap:stop`（`{ brief, people }`＝文本框当前内容）, `recap:cancel`, `recap:retry`（同上）, `recap:update`（`{ brief, people }`）, `recap:clear`, `recap:text`（调试：跳过 ASR） |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
@@ -115,7 +117,7 @@ coc_app/
 | `chat:message` | Chat payload; carries `to` + `toRole` when private (sent only to sender + target) |
 | `chat:error` | Private-message failure sent back to sender only (offline target / self-whisper) |
 | `chat:notice` | Sender-only hint that the whisper target is mid-grace and will receive it on reconnect |
-| `voice:intent` | 语音掷骰的识别结果预览，**只发给说话者**：`{ intentId, transcript, intent, label, expr, modifier, source, confidence, autoConfirm }` |
+| `voice:intent` | 语音掷骰的识别结果预览，**只发给说话者**：`{ intentId, transcript, intent, label, expr, modifier, damage, source, confidence, autoConfirm }` |
 | `voice:partial` | 录音中的实时转写，只发给说话者 |
 | `voice:error` | 语音掷骰的中文错误提示，只发给说话者（没听清是哪项豁免 / 没听懂 / 未找到同名角色卡 / 说太快了） |
 | `recap:sync` | 前情提要全文 `{ brief, people: [{name, note, known}], updatedAt }`；`known=false` 表示对照表里没有、AI 新加的名字 |
@@ -133,6 +135,7 @@ coc_app/
   chatHistory: [{ type: 'chat'|'dice', name, role, ..., to?, toRole?, timestamp }],  // max 100, FIFO; `to` marks a private message
   // 语音掷骰的 dice 条目额外带 { kept, advantage, label, source: 'voice' }
   // 命中投还带 { modifierParts: [{name, value, note}], transcript, intentSource: 'rule'|'llm' }
+  //           以及 damage: null | { rolled: false, note } | { rolled: true, label, expr, rolls, parts, modifier, total, crit, ... }
   mapAssets: { "asset_xxx": { base64, originalWidth, originalHeight } },
   uiPrefs: { penColor, rectColor, layouts: { "<userName>": { "<panelId>": { ax, ox, ay, oy, pinned, x, y } } } },
   world: {
@@ -181,7 +184,14 @@ npm start       # Production server
 - **命中投的属性**：`melee` 用力量，`ranged` 用敏捷，`finesse`（刀匕首）**以及没提武器时**取力量/敏捷中较高的、相等记为敏捷（本桌规则）。`buildAttackPlan(card, intent)` 一次算出属性、是否加熟练**和两者的理由**，调整值 / label / 卡片明细全都从它出，别各算一遍
 - **可观测性（用户硬性要求）**：命中投的卡片要让任何人只看这一张卡就能复核——明细行逐项写出数值和理由「15 + 3 敏捷（刀类·力敏取高）+ 2 熟练（刀类·默认熟练）= 20」，没加熟练也要显示「未加熟练（未提武器·默认不加）」；再加一行灰色小字「识别自：「原话」· 规则/AI」。对应字段是 `modifierParts`（每项带 `note`）、`transcript`、`intentSource`，和 `label` 一样必须同时走实时广播与历史回放
 - 明细行的排版（各段空一格、全角「）」后不留空格）在 `lib/voice-roll/dice.js` 的 `formatModifierBreakdown` 和 `game.html` 的 `buildDiceCard` 里**各有一份**（前端拿不到 `lib/`），改一边要改另一边；`scripts/test-voice-intent.js` 按方案 §10 的表逐字校验服务端那份
-- 伤害骰第一版不支持：文本里出现「伤害 / damage」直接回 `voice:error`「暂不支持伤害骰」。这一步排在攻击判定**之前**，否则「攻击伤害」会被当成命中投投出去
+- **伤害骰跟在命中投后面自动投出**（用户 2026-09-26 定的本桌规则，全部写在 `vocab.js` 的 `DAMAGE_CLASSES` + `WEAPON_CLASSES.damage` 里）：刀具 2d8、钝器 2d6、业余器具 2d4、手枪 2d10、步枪 2d12、符具 2d6（魔法伤害）。**所有二选一/三选一的调整值都取角色卡上较高的那项**——物理类取力量/敏捷较高的（并列记敏捷），符具取智力/感知/魅力最高的（并列按智→感→魅）。手枪**不加**任何调整值
+- 伤害类别和武器类别是**两张表**，不是一一对应：飞刀命中投算刀（灵巧、默认熟练）但伤害算业余器具 2d4；短剑细剑伤害算刀具 2d8；斧头锤子撬棍铁管都算钝器。`剔骨刀` 和 `飞刀` 从 `knife` 里拆出来单成一类，`手枪`/`步枪` 从 `ranged` 里拆出来——因为伤害要分，命中投的口径反而没变
+- **判不出武器就不投伤害**：只说「命中投」「砍他一刀」（`none`）、或只说「开枪」没说手枪还是步枪（`ranged`）时，命中投照投，伤害那行写「没听出用的什么武器 / 没听出是手枪还是步枪，伤害没投」。2d4 和 2d12 差太远，猜错比不投更糟；玩家补一句再说一次即可
+- **按角色给的加值**（`WEAPON_CLASSES` 的 `proficientFor` / `damageBonus`，按角色卡的 `name` 精确匹配）：枪械熟练只有艾琳有、符具熟练只有禾易苇有（玩家口头说「加熟练 / 不加熟练」仍然优先）；V 用剔骨刀伤害额外 +6，别人拿同一把刀没有这个加值
+- **符具的「对抗超自然生物」是预览卡片上的勾选框**（2d6 → 4d6），不靠识别口述里有没有「恶魔」。有这个勾选框时**强制关掉自动确认**，否则 1.5 秒倒计时投出去了玩家还没来得及勾
+- 大成功（采用的那颗 d20 = 20）**骰子数翻倍**（2d8 → 4d8），调整值不翻倍；大失败（= 1，必定未命中）**不投伤害**，卡片写「大失败·未命中」。两者都按 `kept` 判断，和卡片上的大成功/大失败标记同一个依据
+- 单独要一个伤害骰仍然不支持：文本里有「伤害 / damage」**且没有攻击触发词**时回 `voice:error`「伤害骰会跟着命中投一起投，不用单独投」。有触发词的（「攻击检定，顺便算伤害」）照常走命中投——判定顺序因此从「伤害优先于攻击」改成了「先看有没有攻击触发词」
+- 伤害那一行的渲染在 `public/voice-roll/damage-card.js`（`window.DamageCard.html`），`game.html` 的 `buildDiceCard` 里只有一行钩子；样式在 `damage-card.css`。明细行的排版规则和命中投那行一样是前后端各一份（`lib/voice-roll/dice.js` 的 `formatModifierBreakdown` ↔ `damage-card.js`），改一边要改另一边
 - 意图识别是**规则优先、DeepSeek 兜底**：`parseRollIntent()` 覆盖绝大多数说法（0ms、0 成本、不会幻觉），判不出来才调 LLM。**LLM 只输出意图枚举，不掷骰、不算数、不碰角色卡数值**——它的随机数不可信、算术偶尔出错。LLM 返回的 JSON 一律过 `validateIntent()` 严格校验，任何一项不合法都按「没听懂」处理
 - 规则层只认明确的攻击触发词（命中投 / 攻击检定 / attack roll / to hit…）；只描述动作的（「我砍他一刀」「偷袭」）交给 LLM。「偷袭」判成命中投而不是隐匿，「擒抱」判成运动而不是命中投——这些歧义写在 system prompt 里
 - 「豁免」是**硬规则**：转写文本里出现「豁免」就走豁免路径，不交给 LLM；说了豁免却没说是哪一项 → 直接报错「没听清是哪项豁免」，不猜也不调 LLM。规则表里**只放无歧义的别名**（「撒谎」这种——自己说谎是欺瞒、看别人说谎是洞悉——必须留给 LLM）

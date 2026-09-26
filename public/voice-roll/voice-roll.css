@@ -39,6 +39,27 @@
     font-family: 'Courier New', Consolas, monospace;
     font-size: 11px; color: #cdd6e0;
 }
+/* 伤害骰预览：命中投下面一行，橙色和上面的黄色标签区分开 */
+.vr-preview-damage {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+    margin: -4px 0 8px;
+    font-size: 11px; color: #cdd6e0;
+}
+.vr-damage-expr {
+    font-family: 'Courier New', Consolas, monospace;
+    color: #e67e22;
+}
+/* 没投伤害（没听出武器 / 没说清哪种枪）：灰掉，但必须显示，玩家据此补一句再说一次 */
+.vr-damage-skip { color: #8a949e; font-size: 10px; }
+/* 「对抗超自然生物」勾选框：只有符具攻击才出现，勾了当场换成 4d6 */
+.vr-damage-toggle {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; color: #8a949e; cursor: pointer;
+    -webkit-user-select: none; user-select: none;
+}
+.vr-damage-toggle input { margin: 0; cursor: pointer; }
+
 .vr-preview-actions { display: flex; align-items: center; gap: 8px; }
 .vr-preview-hint { font-size: 10px; color: #8a949e; margin-right: auto; }
 .vr-btn {

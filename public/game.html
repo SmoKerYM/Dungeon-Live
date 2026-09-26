@@ -1170,6 +1170,10 @@
     <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.19.1/cdn/shoelace-autoloader.js"></script>
     <!-- 语音掷骰：这个功能的 CSS/JS 是独立文件（不内联），见 lib/voice-roll 与 public/voice-roll -->
     <link rel="stylesheet" href="/voice-roll/voice-roll.css">
+    <!-- 伤害骰在骰子卡片里的那一行：渲染逻辑和样式都在独立文件里，
+         buildDiceCard 只留一行钩子。script 要在主 <script> 之前加载 -->
+    <link rel="stylesheet" href="/voice-roll/damage-card.css">
+    <script src="/voice-roll/damage-card.js"></script>
     <!-- 前情提要：同样是独立文件，见 lib/recap 与 public/recap -->
     <link rel="stylesheet" href="/recap/recap.css">
 </head>
@@ -2445,6 +2449,8 @@
                 `${escapeHtml(expr + advWord)}` +
                 (flag ? ` <span class="dice-card-flag">${flag}</span>` : '') + '</div>' +
                 (breakdownHtml ? `<div class="dice-card-expr">${breakdownHtml}</div>` : '') +
+                // 伤害骰那一行由 /voice-roll/damage-card.js 渲染（这里只留钩子）
+                (window.DamageCard ? window.DamageCard.html(entry.damage, escapeHtml) : '') +
                 srcHtml +
             '</div>' +
             `<div class="dice-card-total">${escapeHtml(String(entry.result))}</div>`;
@@ -2593,6 +2599,8 @@
             transcript: data.transcript || '',
             intentSource: data.intentSource || null,
             source: data.source || null,
+            // 伤害骰（只有命中投有）：渲染在 /voice-roll/damage-card.js 里
+            damage: data.damage || null,
             timestamp: data.timestamp || Date.now()
         });
     }

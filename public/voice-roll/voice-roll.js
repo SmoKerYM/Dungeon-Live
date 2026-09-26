@@ -14,7 +14,7 @@
  *
  * 用到的 socket 事件：
  *   voice:start / voice:chunk / voice:stop / voice:cancel（→S，录音）
- *   voice:text（→S，调试用）、voice:confirm（→S）
+ *   voice:text（→S，调试用）、voice:confirm（→S，带「对抗超自然生物」的勾选）
  *   voice:intent（←S，只发给说话者）、voice:error（←S）、voice:partial（←S）
  */
 (function () {
@@ -179,6 +179,12 @@
         const advWord = adv === 'advantage' ? '（两次取高）'
             : (adv === 'disadvantage' ? '（两次取低）' : '');
 
+        const dmg = data.damage || null;
+        const canToggle = !!(dmg && dmg.available && dmg.canToggleSupernatural);
+        // 提示语分三种：要勾选的、没听清要人工确认的、马上自动投的
+        const hint = canToggle ? '确认是不是超自然生物'
+            : (data.autoConfirm ? '即将自动掷骰' : '没太听清，确认一下');
+
         const el = document.createElement('div');
         el.className = 'vr-preview' + (data.autoConfirm ? '' : ' vr-unsure');
         el.innerHTML =
@@ -187,8 +193,9 @@
                 `<span class="vr-preview-label">${esc(data.label || '')}</span>` +
                 `<span class="vr-preview-expr">${esc((data.expr || 'd20') + advWord)}</span>` +
             '</div>' +
+            damageHtml(dmg, esc) +
             '<div class="vr-preview-actions">' +
-                `<span class="vr-preview-hint">${data.autoConfirm ? '即将自动掷骰' : '没太听清，确认一下'}</span>` +
+                `<span class="vr-preview-hint">${hint}</span>` +
                 '<button type="button" class="vr-btn vr-cancel">取消</button>' +
                 '<button type="button" class="vr-btn vr-btn-primary vr-confirm">掷骰</button>' +
             '</div>' +
@@ -198,6 +205,17 @@
 
         ctx.mountEl.appendChild(el);
         current = { intentId: data.intentId, el, timers: [] };
+
+        // 勾「对抗超自然生物」当场换掉骰子（2d6 → 4d6），别让玩家勾完还要猜投的是什么
+        const sup = el.querySelector('.vr-supernatural');
+        if (sup && dmg) {
+            const exprEl = el.querySelector('.vr-damage-expr');
+            sup.addEventListener('change', () => {
+                exprEl.textContent = sup.checked
+                    ? `${dmg.supernaturalLabel} ${dmg.supernaturalExpr}`
+                    : `${dmg.label} ${dmg.expr}`;
+            });
+        }
 
         el.querySelector('.vr-confirm').addEventListener('click', () => confirmRoll(data.intentId));
         el.querySelector('.vr-cancel').addEventListener('click', () => cancelRoll(data.intentId));
@@ -211,11 +229,35 @@
         }, PREVIEW_TTL_MS));
     }
 
-    /** 确认掷骰：voice:confirm（Client → Server）{ intentId } */
+    /**
+     * 预览卡片里伤害那一行。判不出武器时写清缺了什么信息——
+     * 玩家补一句「用刀」再说一次就能投出伤害，什么都不显示的话他不会知道。
+     *
+     * @param {object|null} dmg voice:intent 的 damage 字段
+     * @param {(s: string) => string} esc 转义函数
+     * @returns {string}
+     */
+    function damageHtml(dmg, esc) {
+        if (!dmg) return '';
+        if (!dmg.available) {
+            return `<div class="vr-preview-damage vr-damage-skip">伤害：${esc(dmg.note || '没投')}</div>`;
+        }
+        const toggle = dmg.canToggleSupernatural
+            ? '<label class="vr-damage-toggle">' +
+              '<input type="checkbox" class="vr-supernatural">对抗超自然生物</label>'
+            : '';
+        return '<div class="vr-preview-damage">伤害 ' +
+            `<span class="vr-damage-expr">${esc(dmg.label)} ${esc(dmg.expr)}</span>${toggle}</div>`;
+    }
+
+    /** 确认掷骰：voice:confirm（Client → Server）{ intentId, supernatural } */
     function confirmRoll(intentId) {
         if (!current || current.intentId !== intentId) return;
+        // 勾选框在卡片里，dismiss() 之后就没了，先读出来
+        const sup = current.el && current.el.querySelector('.vr-supernatural');
+        const supernatural = !!(sup && sup.checked);
         dismiss();
-        ctx.socket.emit('voice:confirm', { intentId });
+        ctx.socket.emit('voice:confirm', { intentId, supernatural });
     }
 
     /** 放弃本次识别结果：voice:cancel（Client → Server）{ intentId } */

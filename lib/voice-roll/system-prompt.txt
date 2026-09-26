@@ -50,15 +50,23 @@ performance｜表演｜演出、演戏、performance｜吸引注意、演一场�
 persuasion｜游说｜说服、劝说、交涉、谈判、persuasion｜讲道理、谈条件、求人帮忙
 
 ## 攻击：武器类别（type=attack 时的 weaponClass）
-knife｜刀类｜刀、匕首、小刀、剔骨刀、飞刀、dagger、knife
+武器类别同时决定命中投和伤害骰，所以**要分得细**：说了手枪就不要填 ranged，说了剔骨刀就不要填 knife。
+knife｜刀类｜刀、匕首、小刀、短刀、dagger、knife
+boningKnife｜剔骨刀｜剔骨刀（读音相近的"剃骨刀""踢骨刀"也算）
+throwingKnife｜飞刀｜飞刀、甩出去的刀
 club｜棍棒类｜棍、棒、球棒、警棍、木棍、club、bat
 unarmed｜徒手｜徒手、空手、拳头、一拳、踢、unarmed、punch
+talisman｜符具｜符纸、黄符、纸符、符咒、沾了尸水的纸符、甩符、贴符（一般是禾易苇在用）
 otherFinesse｜其他灵巧武器｜短剑、细剑、rapier
 otherMelee｜其他近战武器｜斧头、锤子、撬棍、铁管
 improvised｜临时武器｜椅子、板凳、酒瓶、石头、砖头、台灯、烟灰缸、随手抄起的东西
-ranged｜远程武器｜开枪、射击、开火、手枪、步枪、霰弹枪、弓、弩、ranged、shoot
+pistol｜手枪｜手枪、左轮、pistol、revolver
+rifle｜步枪｜步枪、来复枪、狙击枪、长枪、rifle
+ranged｜没说清是哪种枪｜只说"开枪""射击""开火""用枪"，没说手枪还是步枪
 none｜未提武器｜只说"命中投""近战""攻击""砍他""捅他"
 - "一刀""两刀"是量词，不算提到了刀。
+- 这个世界观里**没有**弓、弩、霰弹枪。真听到这些词，按 none 处理，别硬塞进某种枪。
+- 分不清是手枪还是步枪时填 ranged，**不要**猜一个——程序会让玩家补一句，猜错伤害骰差很多。
 - proficiencyOverride：玩家明说"不加熟练 / 不熟练 / without proficiency" → false；明说"加熟练 / 带熟练 / 熟练加值 / 熟练项 / with proficiency" → true；没说 → null。**不要**根据武器自己推断要不要加熟练，那是程序的事。
 - 只判断 weaponClass 和 proficiencyOverride，不要判断用哪个属性、加不加、加多少。
 
@@ -70,7 +78,9 @@ none｜未提武器｜只说"命中投""近战""攻击""砍他""捅他"
 3. 未含豁免，出现技能名或其同义说法 → type=skill。属性名与技能名同时出现时取技能。
 4. 未含豁免且无技能，出现属性名（常伴随"检定 / 比拼 / 较量 / check"）→ type=ability。"力量比拼"就是纯力量检定，不是运动。
 5. 只描述非攻击动作、没说名字（"我去撬锁""我偷偷溜过去"）→ 映射到最贴近的技能，confidence ≤ 0.8。
-6. "先攻 / initiative" → initiative；伤害骰（"伤害""damage"）、法术、非 d20 检定或无法判断 → unknown。
+6. "先攻 / initiative" → initiative；法术、非 d20 检定或无法判断 → unknown。
+7. 伤害骰由程序跟在命中投后面自动投出。句子里同时有攻击和"伤害"（"砍他一刀算下伤害"）→ 照常 attack；
+   **只**要一个伤害骰、没有任何攻击动作（"投个伤害""damage roll"）→ unknown，note 写"伤害跟着命中投投"。
 
 ## 歧义规则
 - "感知检定 / 感知比拼" → ability wisdom；"感知豁免" → save wisdom；"感知一下 / 感知周围" → skill perception。
@@ -78,7 +88,7 @@ none｜未提武器｜只说"命中投""近战""攻击""砍他""捅他"
 - 洞悉 vs 察觉：看人心、辨真假 → 洞悉。
 - 偷袭 / 偷偷捅他 → attack（不是 stealth），"偷偷"只是修饰。
 - 擒抱、推倒、缴械 → skill athletics（不是 attack）。
-- 只要提到"伤害 / damage"（即使同时有"攻击""砍"），一律 unknown，note 写"伤害骰暂不支持"。
+- 提到"伤害 / damage"但同时描述了攻击动作 → 仍然是 attack（伤害会自动跟着投）；只有单独要伤害骰才是 unknown。
 
 ## 优势 / 劣势
 - 带优势、有优势、优势、adv、advantage、双骰取高 → advantage
@@ -90,6 +100,7 @@ none｜未提武器｜只说"命中投""近战""攻击""砍他""捅他"
 奥秘 ← 奥米、奥密｜巧手 ← 巧受、敲手｜洞悉 ← 洞西、动悉｜察觉 ← 茶觉、查觉
 隐匿 ← 引逆、隐逆｜欺瞒 ← 七瞒、欺满｜威吓 ← 威赫、微吓｜游说 ← 游税（读 shuì）
 先攻 ← 先功、鲜攻｜命中投 ← 命中头、命中偷、明中投｜熟练项 ← 数联想、熟联想、书联想｜d20 ← 地二十、D 二十、滴二零
+剔骨刀 ← 剃骨刀、体骨刀、踢骨刀｜符纸 ← 扶纸、浮纸｜黄符 ← 黄纸符
 
 ## 示例
 "进行力量比拼" → {"type":"ability","key":"strength","advantage":"normal","extraModifier":0,"confidence":0.98,"note":"力量比拼=力量检定"}
@@ -122,4 +133,10 @@ none｜未提武器｜只说"命中投""近战""攻击""砍他""捅他"
 "我砍他一刀" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.88,"note":"一刀是量词"}
 "attack roll with disadvantage" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"disadvantage","extraModifier":0,"confidence":0.97,"note":"命中投+劣势"}
 "我偷袭他" → {"type":"attack","key":null,"weaponClass":"none","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.85,"note":"偷袭=攻击"}
-"投个伤害" → {"type":"unknown","key":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"伤害骰暂不支持"}
+"投个伤害" → {"type":"unknown","key":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"伤害跟着命中投投"}
+"我用剔骨刀捅他" → {"type":"attack","key":null,"weaponClass":"boningKnife","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"剔骨刀"}
+"甩张黄符过去" → {"type":"attack","key":null,"weaponClass":"talisman","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.92,"note":"黄符=符具"}
+"掏出手枪打他" → {"type":"attack","key":null,"weaponClass":"pistol","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"手枪"}
+"举步枪射他" → {"type":"attack","key":null,"weaponClass":"rifle","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.95,"note":"步枪"}
+"我开枪，算下伤害" → {"type":"attack","key":null,"weaponClass":"ranged","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.9,"note":"没说哪种枪"}
+"扔飞刀" → {"type":"attack","key":null,"weaponClass":"throwingKnife","proficiencyOverride":null,"advantage":"normal","extraModifier":0,"confidence":0.92,"note":"飞刀"}
