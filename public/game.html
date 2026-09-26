@@ -827,6 +827,60 @@
         .char-field .hp-inputs input { width: 54px; text-align: center; }
         .char-field .hp-inputs span { color: #8b95ab; }
         #proficiency-bonus { width: 54px; text-align: center; }
+        /* WebKit 默认的 spinner 太小，放大并常驻显示 */
+        .char-field input[type="number"]::-webkit-inner-spin-button,
+        .char-field input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: inner-spin-button;
+            appearance: auto;
+            opacity: 1;
+            width: 18px;
+            height: 26px;
+            margin-left: 4px;
+            cursor: pointer;
+        }
+        .char-field input[type="number"] { padding-right: 4px; }
+        .char-field input[type="number"]:disabled::-webkit-inner-spin-button { display: none; }
+
+        /* 角色名放大，它是这张卡的主角 */
+        .char-field-name input {
+            font-size: 24px !important;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 4px 10px !important;
+        }
+
+        /* AI 一句话总结 */
+        #char-ai-summary {
+            display: flex; align-items: flex-start; gap: 8px;
+            margin-bottom: 12px; padding: 9px 11px;
+            border: 1px solid rgba(93, 173, 226, 0.28);
+            border-left: 3px solid rgba(93, 173, 226, 0.75);
+            border-radius: 9px;
+            background: rgba(93, 173, 226, 0.08);
+        }
+        #char-ai-text {
+            flex: 1; min-width: 0;
+            font-size: 12px; line-height: 1.6; color: #c9d4e6;
+        }
+        #char-ai-summary.loading #char-ai-text { color: #8b95ab; font-style: italic; }
+        #char-ai-summary.error {
+            border-color: rgba(231, 76, 60, 0.35);
+            border-left-color: rgba(231, 76, 60, 0.75);
+            background: rgba(231, 76, 60, 0.08);
+        }
+        #char-ai-summary.error #char-ai-text { color: #e8a0a0; }
+        #char-ai-refresh {
+            flex-shrink: 0; width: 24px; height: 24px; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            border: 1px solid var(--glass-border); border-radius: 7px;
+            background: rgba(255,255,255,0.06); color: #9aa4bb;
+            font-size: 12px; cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        #char-ai-refresh:hover { background: rgba(255,255,255,0.16); color: #fff; }
+        #char-ai-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+        #char-ai-summary.loading #char-ai-refresh sl-icon { animation: aiSpin 0.9s linear infinite; }
+        @keyframes aiSpin { to { transform: rotate(360deg); } }
 
         /* 六维属性：3 列 × 2 行，label 在上、值在下 */
         .char-section { margin-bottom: 12px; }
@@ -1189,7 +1243,7 @@
         <div id="char-sheet">
             <!-- 顶部一行：姓名 / 血量 / 熟练加值 -->
             <div class="char-header">
-                <div class="char-field">
+                <div class="char-field char-field-name">
                     <div class="section-title">角色姓名</div>
                     <input type="text" id="char-name" class="char-input" disabled placeholder="输入角色名">
                 </div>
@@ -1205,6 +1259,14 @@
                     <div class="section-title">熟练加值</div>
                     <input type="number" id="proficiency-bonus" class="char-input" disabled value="2">
                 </div>
+            </div>
+
+            <!-- AI 一句话总结：提醒玩家自己这个角色擅长什么 -->
+            <div id="char-ai-summary">
+                <div id="char-ai-text">—</div>
+                <button id="char-ai-refresh" onclick="requestCharacterSummary(true)" title="重新生成总结">
+                    <sl-icon name="arrow-clockwise"></sl-icon>
+                </button>
             </div>
 
             <!-- 六维属性：3 列 × 2 行 -->
@@ -1336,6 +1398,23 @@
     // --- Tab 切换 ---
     const notesTextarea = document.getElementById('notes-textarea');
     let notesTimeout = null;
+
+    // ===== 角色卡 AI 总结 =====
+    function setAiSummary(text, state) {
+        const box = document.getElementById('char-ai-summary');
+        const btn = document.getElementById('char-ai-refresh');
+        document.getElementById('char-ai-text').textContent = text;
+        box.classList.toggle('loading', state === 'loading');
+        box.classList.toggle('error', state === 'error');
+        btn.disabled = state === 'loading' || !currentCharacter;
+    }
+
+    // force=true 时跳过服务端缓存重新生成
+    function requestCharacterSummary(force) {
+        if (!currentCharacter || !currentCharacter.name) return;
+        setAiSummary('正在分析这个角色…', 'loading');
+        socket.emit('character:summarize', { name: currentCharacter.name, force: !!force });
+    }
 
     // 打开角色卡面板时才拉取列表（原先由 switchTab('character') 触发）
     function onCharacterPanelOpen() {
@@ -3278,12 +3357,15 @@
         currentCharacter = data;
         syncHpHudFromCharacter();
         loadCharacterToUI();
+        requestCharacterSummary(false);
         document.getElementById('char-sheet').classList.add('visible');
         isCharEditMode = false;
         updateCharEditUI();
     });
 
     socket.on('character:saved', (data) => {
+        // 数值改了，重新算一句总结（指纹没变则仍走缓存）
+        setTimeout(() => requestCharacterSummary(false), 100);
         showCharToast(data.isNew ? '✓ 角色卡已保存' : '✓ 角色卡已更新');
         isCharEditMode = false;
         updateCharEditUI();
@@ -3296,6 +3378,15 @@
     });
 
     // Player 自动加载时，未找到同名角色卡
+    socket.on('character:summaryPending', () => setAiSummary('正在分析这个角色…', 'loading'));
+
+    socket.on('character:summary', (data) => {
+        // 可能在等待期间切换了角色卡，只认当前这张
+        if (!currentCharacter || data.name !== currentCharacter.name) return;
+        if (data.error) setAiSummary(data.error, 'error');
+        else setAiSummary(data.summary, 'ok');
+    });
+
     socket.on('character:notFound', (data) => {
         if (data && data.name === userName) renderHpHud(null, null);
         const wasSilent = silentCharLoad;

@@ -68,7 +68,7 @@ coc_app/
 | NPC | `npc:spawn`, `npc:move`, `npc:remove`, `npc:clearAll` |
 | Draw | `draw:freeStroke`, `draw:rect`, `draw:liveStroke`, `draw:remove`, `draw:clearAll` |
 | History | `history:undo`, `history:redo` |
-| Character | `character:list`, `character:load`, `character:save`, `character:setHp` |
+| Character | `character:list`, `character:load`, `character:save`, `character:setHp`, `character:summarize` |
 | CharacterNotes | `characterNotes:update` |
 | Other | `chat:message`（payload `{ message, to }`，`to` 为玩家名时是私聊）, `dice:roll`, `notes:update` |
 
@@ -119,7 +119,8 @@ coc_app/
     attributes: { strength, dexterity, constitution, intelligence, wisdom, charisma },
     savingThrows: [],   // max 2
     skills: [],         // max 4
-    feats: [{ name, description }]
+    feats: [{ name, description }],
+    aiSummary: { text, fingerprint, at }   // DeepSeek 生成的一句话总结 + 输入指纹（可选字段）
   }
 }
 ```
@@ -133,6 +134,7 @@ npm start       # Production server
 
 ## Important Notes
 - HTML is served with `Cache-Control: no-cache` (see the `express.static` options): every CSS and JS byte is inline in the HTML, so a cached HTML freezes the entire frontend on an old build. `no-cache` only forces ETag revalidation — unchanged content still returns 304
+- **AI character summary**: `character:summarize` calls DeepSeek server-side (`DEEPSEEK_API_KEY` env var — never exposed to the client) and caches the result in the character's `aiSummary`. The cache key is `characterFingerprint()`, a hash of the fields that actually change the conclusion (attributes / proficiency / saves / skills / feats) — editing HP does not trigger regeneration. Model is `deepseek-flash` with `thinking: { type: 'disabled' }`; the reasoning variant costs 3-4x for no benefit on this task
 - Map images are Base64-encoded and can be large (50MB max buffer); stored in `data/map_assets.json`
 - World state persisted to `data/world.json`; debounced 500ms on every mutation
 - Notes, character records, and chat history writes are debounced at 500ms

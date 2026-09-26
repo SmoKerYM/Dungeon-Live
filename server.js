@@ -3,6 +3,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // 笔记文件路径（Render Disk 挂载点）
 const NOTES_FILE = process.env.NODE_ENV === 'production' ? '/data/notes.txt' : './data/notes.txt';
@@ -282,6 +283,120 @@ function findSocketIdsByName(name) {
     if (p.name === name) ids.push(socketId);
   });
   return ids;
+}
+
+// ===== 角色卡 AI 一句话总结（DeepSeek）=====
+// API Key 只存在于服务端环境变量，客户端永远拿不到
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+// deepseek-flash 关掉 thinking：这个任务只是读几个数字写一句话，
+// 用 v4-pro 的话输入贵 4 倍、输出贵 3 倍，没有必要
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-flash';
+
+const ATTR_CN = {
+  strength: '力量', dexterity: '敏捷', constitution: '体质',
+  intelligence: '智力', wisdom: '感知', charisma: '魅力'
+};
+const SKILL_CN = {
+  athletics: '运动', acrobatics: '体操', sleightOfHand: '巧手', stealth: '隐匿',
+  arcana: '奥秘', history: '历史', investigation: '调查', nature: '自然',
+  religion: '宗教', animalHandling: '驯兽', insight: '洞悉', medicine: '医药',
+  perception: '察觉', survival: '求生', deception: '欺瞒', intimidation: '威吓',
+  performance: '表演', persuasion: '游说'
+};
+
+// 只把影响结论的字段纳入指纹，改血量不该触发重新生成
+function characterFingerprint(c) {
+  const src = JSON.stringify({
+    name: c.name,
+    attributes: c.attributes,
+    proficiencyBonus: c.proficiencyBonus,
+    savingThrows: [...(c.savingThrows || [])].sort(),
+    skills: [...(c.skills || [])].sort(),
+    feats: (c.feats || []).map(f => `${f.name}|${f.description}`)
+  });
+  return crypto.createHash('sha1').update(src).digest('hex').slice(0, 16);
+}
+
+function buildSummaryPrompt(c) {
+  const bonus = c.proficiencyBonus || 0;
+  const attrs = Object.entries(c.attributes || {})
+    .map(([k, v]) => `${ATTR_CN[k] || k} ${v >= 0 ? '+' : ''}${v}`).join('，');
+  const saves = (c.savingThrows || []).map(a => ATTR_CN[a] || a).join('、') || '无';
+  const skills = (c.skills || []).map(k => SKILL_CN[k] || k).join('、') || '无';
+  const feats = (c.feats || []).length
+    ? (c.feats || []).map(f => `「${f.name}」：${f.description || '（无描述）'}`).join('；')
+    : '无';
+
+  return `角色名：${c.name}
+六项属性调整值：${attrs}
+熟练加值：+${bonus}
+擅长的豁免检定：${saves}
+熟练的技能：${skills}
+专长：${feats}`;
+}
+
+const SUMMARY_SYSTEM_PROMPT = `你在为一个跑团游戏的角色卡生成一句话speaking总结。
+
+【世界观】故事发生在 2000 年前后的现代社会。玩家扮演的是**没有超能力、不会魔法的普通人**，他们在现实世界里探索、调查，并与恶魔战斗。所以请用现代人的语境描述能力，不要提到法术、魔力、异能这类东西。
+
+【数值含义】属性是调整值，大致范围 -1 到 +5，越高越强：
+- 力量：搬抬、攀爬、近身角力
+- 敏捷：闪避、平衡、手上的精细活
+- 体质：耐力、扛伤、熬夜和中毒
+- 智力：知识、推理、从线索里拼出真相
+- 感知：观察力、直觉、察言观色
+- 魅力：说服、唬人、临场表现
+
+"熟练的技能"是这个人真正擅长的具体行动，含义按现代语境理解，例如：
+运动=攀爬追逐翻越，体操=翻窗跳跃闪身脱身，巧手=开锁与手上小动作，隐匿=潜行不被发现，
+调查=搜查现场找线索，察觉=注意到异常，洞悉=看穿谎言，医药=急救处理伤口，
+求生=野外生存与追踪，欺瞒=撒谎伪装，威吓=施压恐吓，游说=谈判说服，
+历史/自然/宗教/奥秘=对应领域的知识储备，驯兽=与动物打交道，表演=吸引注意力。
+
+【输出要求】只输出一句中文，不要解释、不要换行、不要 Markdown。严格用这个句式：
+{角色名}是一个……的人，ta十分擅长……，并且……。
+第一段用性格或身手概括这个人；第二段点出他最拿手的两三件具体事情（要落到"能做什么"，比如"从窗户翻进去""在人群里跟着目标不被发现"）；第三段写专长带来的独特本事，如果没有专长就写他凭数值撑起的另一个长处。整句控制在 80 字以内。`;
+
+async function generateCharacterSummary(character) {
+  if (!DEEPSEEK_API_KEY) {
+    const err = new Error('服务端未配置 DEEPSEEK_API_KEY');
+    err.code = 'NO_KEY';
+    throw err;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages: [
+          { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+          { role: 'user', content: buildSummaryPrompt(character) }
+        ],
+        temperature: 0.7,
+        max_tokens: 200,
+        thinking: { type: 'disabled' }
+      }),
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`DeepSeek 返回 ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new Error('DeepSeek 返回内容为空');
+    return text.replace(/\s*\n\s*/g, ' ');
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // 判断一条聊天历史对指定用户是否可见（私聊仅收发双方可见）
@@ -731,6 +846,41 @@ io.on('connection', (socket) => {
       return;
     }
     io.emit('character:hpUpdated', { name, hp: character.hp });
+  });
+
+  // 角色卡 AI 总结：命中指纹就直接返回缓存，不调 API
+  socket.on('character:summarize', async ({ name, force }) => {
+    const player = gameState.players.get(socket.id);
+    if (!player || typeof name !== 'string') return;
+
+    const characters = loadCharacters();
+    const character = characters[name];
+    if (!character) {
+      socket.emit('character:summary', { name, error: `没有找到角色卡：${name}` });
+      return;
+    }
+
+    const fingerprint = characterFingerprint(character);
+    const cached = character.aiSummary;
+    if (!force && cached && cached.fingerprint === fingerprint && cached.text) {
+      socket.emit('character:summary', { name, summary: cached.text, cached: true });
+      return;
+    }
+
+    socket.emit('character:summaryPending', { name });
+    try {
+      const text = await generateCharacterSummary(character);
+      character.aiSummary = { text, fingerprint, at: Date.now() };
+      saveCharacter(character);
+      console.log(`为角色卡「${name}」生成了 AI 总结`);
+      socket.emit('character:summary', { name, summary: text, cached: false });
+    } catch (err) {
+      console.error('生成角色卡总结失败:', err.message);
+      socket.emit('character:summary', {
+        name,
+        error: err.code === 'NO_KEY' ? '服务端未配置 DEEPSEEK_API_KEY' : 'AI 总结生成失败，请稍后重试'
+      });
+    }
   });
 
   socket.on('character:save', (data) => {
