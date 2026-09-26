@@ -35,6 +35,12 @@
   - plan-extend.md L98 锁定 icon 位置矛盾已修正为左上角并补充右上角删除按钮描述；L96 `ratio` 字段已与 Phase 3 模型对齐为 `originalWidth/originalHeight`
 
 ## 已完成的非 plan 内变更
+- 2026-09-26: 二级菜单与 tooltip 改为互斥，取消上一版的抬高
+  - 上一版用 `TOOLTIP_CLEARANCE = 38` 把二级菜单抬高避让 tooltip，线上看起来"往上飘了一截"，观感奇怪
+  - 改为二者共用工具条正上方那一条带、互斥切换：悬浮出名字气泡，点击后名字气泡收掉并禁用、原地换成二级菜单，图标高亮
+  - 新增 `setToolbarTooltipsEnabled(enabled)`，在 `openToolbarPopout` 末尾关、`closeToolbarPopout` 里开；关时同步把已弹出的 `tip.open` 置 false
+  - `setTool` 本来就先 `closeToolbarPopout()` 再开新的，"选 A 自动关 B 的菜单"无需额外改动
+  - 实测：tooltip 带 701~729，二级菜单带 695~729，底边严格对齐
 - 2026-09-26: 再修工具条 tooltip 错位（上一次只解决了与弹出面板重叠）
   - 用户环境仍错位，本机复现不出来（偏移恒为 0）→ 怀疑与浏览器缩放有关
   - 唯一能造成「固定向右偏移」的机制：`#bottom-bar` 的 `transform: translateX(-50%)` 会成为绝对定位的包含块，Floating UI 在 transform 上下文里算坐标，叠加缩放时容易偏
