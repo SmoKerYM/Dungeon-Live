@@ -108,7 +108,10 @@ const CASES = [
   ['近战命中投',            'attack', 'finesse', 'normal',        3, '命中投（敏捷 +3，未加熟练）'],
   ['用球棒的命中投',        'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
   ['徒手的命中投',          'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
-  ['用斧头的命中投',        'attack', 'melee',   'normal',       -1, '命中投（力量 -1，未加熟练）'],
+  // 斧头/撬棍/铁管在这个团里都是随手抓的工具 → 人人熟练（伤害仍是钝器 2d6）
+  ['用斧头的命中投',        'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
+  ['用撬棍的命中投',        'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
+  ['抄起椅子的命中投',      'attack', 'melee',   'normal',        1, '命中投（力量 -1，熟练 +2）'],
   ['开枪的攻击检定',        'attack', 'ranged',  'normal',        3, '命中投（敏捷 +3，未加熟练）'],
   // 枪要分手枪 / 步枪（伤害 2d10 vs 2d12），熟练只有艾琳有，V 一律不加
   ['用手枪的命中投',        'attack', 'ranged',  'normal',        3, '命中投（敏捷 +3，未加熟练）'],
@@ -214,7 +217,7 @@ console.log('\n【可观测性：命中投明细行（V，骰出 15）】');
 console.log('\n【可观测性：临时武器（LLM 路径的意图）】');
 [[{ type: 'attack', key: 'melee', weaponClass: 'improvised', proficiencyOverride: null,
     advantage: 'normal', extraModifier: 0 },
-   '15 − 1 力量（临时武器·近战用力量）+ 未加熟练（临时武器·默认不加）= 14']
+   '15 − 1 力量（临时武器·近战用力量）+ 2 熟练（临时武器·默认熟练）= 16']
 ].forEach(([intent, expected]) => {
   const parts = buildModifierParts(CARD_V, intent);
   const line = formatModifierBreakdown('15', parts, 15 + computeRollModifier(CARD_V, intent));
@@ -268,6 +271,12 @@ console.log('\n【伤害骰：按角色给的熟练（只影响命中投的 PB�
   [CARD_V,       '用手枪的命中投',   '命中投（敏捷 +3，未加熟练）'],
   [CARD_HEYIWEI, '甩张黄符的命中投', '命中投（感知 +3，熟练 +2）'],
   [CARD_V,       '甩张黄符的命中投', '命中投（感知 +3，未加熟练）'],
+  // 短剑细剑是军用武器：同样只有艾琳有
+  [CARD_AILIN,   '用短剑的命中投',   '命中投（敏捷 +1，熟练 +2）'],
+  [CARD_V,       '用短剑的命中投',   '命中投（敏捷 +3，未加熟练）'],
+  // 简易武器 / 徒手 / 临时武器人人都有，艾琳也一样
+  [CARD_AILIN,   '用撬棍的命中投',   '命中投（力量 -1，熟练 +2）'],
+  [CARD_AILIN,   '徒手的命中投',     '命中投（力量 -1，熟练 +2）'],
   // 口头覆盖仍然优先于「按角色给」的默认值
   [CARD_V,       '用手枪的命中投，加熟练', '命中投（敏捷 +3，熟练 +2）'],
   [CARD_AILIN,   '用手枪的命中投，不加熟练', '命中投（敏捷 +1，未加熟练）']
